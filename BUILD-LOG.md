@@ -648,3 +648,45 @@ accumulate on top of it.
 the session's working directory, so there is nothing for it to check. This one stays a
 written rule, which is weaker than the rest of the enforcement and worth saying plainly
 rather than pretending otherwise.
+
+---
+
+## Correction — the worktree rule can be made mechanical after all
+
+**Date:** 2026-08-04  **Affects:** the worktree-rule entry above
+
+That entry concluded: "Not made mechanical. `Scripts/check-docs.sh` runs inside the
+repo and cannot see the session's working directory, so there is nothing for it to
+check." The premise was right and the conclusion was wrong. `check-docs.sh` cannot do
+it — but a **Stop hook** can, because it fires when a turn ends, which is exactly the
+moment the rule is about. I reasoned about the one enforcement point already in use
+instead of asking what enforcement points exist.
+
+`Scripts/check-worktree.sh` now runs as a Stop hook from `.claude/settings.json` and
+blocks the turn with a message telling the agent to leave.
+
+**The hard part was not detection, it was the discriminator.** A naive "am I in a
+worktree?" check fires the instant one is entered, which would make it noise, and a
+Stop hook that cries wolf gets ignored. Both "just entered" and "finished" are clean
+trees, so cleanliness cannot distinguish them. Nor can "commits ahead of main": after
+a squash merge the local commits are not ancestors of `main`, so a finished branch
+still looks ahead.
+
+The signal that does work is the **upstream branch being gone** — pushed, then its
+remote counterpart deleted, which in this workflow happens exactly on squash-merge.
+So the hook fires only when: inside `.claude/worktrees/`, working tree clean, an
+upstream is configured, and that upstream ref no longer resolves.
+
+**Tested against every state it must tell apart**, in a scratch repo with a real bare
+remote: repo root (silent), fresh worktree with no upstream (silent), pushed with a
+live upstream (silent), upstream gone but tree dirty (silent), and pushed-merged-
+deleted-clean (fires). Five for five. `shellcheck` clean.
+
+**Also:** `.claude/worktrees/` and `.claude/settings.local.json` added to
+`.gitignore`. Worktrees are checkouts, not content, and were previously untracked but
+un-ignored.
+
+**Caveat:** unlike the other checks, this one is not in CI — it is a local hook, so it
+protects this machine and anyone who has the project settings loaded, not the
+repository. It also cannot fire if hooks are disabled. Weaker than a required status
+check, considerably stronger than a sentence in a document.

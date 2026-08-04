@@ -37,8 +37,7 @@ it, including any `### Carry-forward` block on that prompt.
 4. Push anything deferred into `PLAN.md` at the stage where it belongs.
 5. Bump the `**Status:**` line in `STAGE1-PROMPTS.md`.
 6. `make check` must pass. It also runs as a pre-commit hook and in CI.
-7. Merge the PR, then leave the worktree — `ExitWorktree` with `remove` once the
-   branch is merged. A prompt ends back at the repo root, not in its worktree.
+7. Merge the PR, then `ExitWorktree` with `remove`. A prompt ends at the repo root.
 
 **Between prompts.** Record decisions *at the moment they are made*, never deferred:
 
@@ -55,6 +54,9 @@ it, including any `### Carry-forward` block on that prompt.
 over 100 lines, any edit to existing `BUILD-LOG.md` lines, a `Sources/` change with no
 build-log entry, a missing or malformed status line, carry-forward notes outliving
 their prompt, and undeclared SwiftPM dependencies.
+
+`Scripts/check-worktree.sh` runs as a Stop hook and blocks the turn when a worktree
+outlives its prompt: pushed, merged, remote branch deleted, working tree clean.
 
 When a convention here proves important, make it mechanical rather than writing it
 more emphatically.
