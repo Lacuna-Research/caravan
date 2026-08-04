@@ -21,3 +21,6 @@ DerivedData/
 
 # Local tooling state (machine-specific)
 .claude-pm
+.claude/settings.local.json
+# Worktrees live here; they are checkouts, not content.
+.claude/worktrees/
