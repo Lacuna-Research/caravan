@@ -369,3 +369,24 @@ Related: `STAGE1-PROMPTS.md` referenced "stage 2, items 28–29" by number. PLAN
 explicitly a living roadmap whose numbering is expected to shift, so numeric
 cross-references between documents are a latent breakage. That reference is now by
 name, and future ones should be too.
+
+---
+
+## Decision — CLAUDE.md holds rules, BUILD-LOG holds reasoning
+
+**Date:** 2026-08-04  **Affects:** CLAUDE.md
+
+`CLAUDE.md` had reached 95 of its 100 allowed lines before a line of code existed,
+leaving no headroom and guaranteeing that the first prompt needing a rule would hit
+the cap mid-flight.
+
+**Chose:** a split that makes the cap sustainable rather than merely painful —
+`CLAUDE.md` states operative rules, `BUILD-LOG.md` holds the reasoning behind them.
+Where the two overlapped, the reasoning was cut from `CLAUDE.md` and left in the log,
+which is where anyone asking "but why" would look anyway. 95 lines to 87.
+
+**Over:** raising the cap, which would have defeated its purpose on the first
+occasion it did any work.
+
+Also folded in: reference `PLAN.md` items by name rather than number, promoted from
+the previous entry's process note into an actual rule.
