@@ -43,8 +43,7 @@ Record them *at the moment they are made*, never deferred to the next wrap-up:
 - A question left open → the Open section of the latest decision entry, marked
   blocking or not. Unanswered questions are as easy to lose as answers.
 
-Bias toward over-recording. A redundant line costs nothing; a lost decision gets
-re-derived, wrongly, weeks later.
+Bias toward over-recording; a redundant line costs nothing.
 
 ## Enforced mechanically
 
@@ -53,18 +52,19 @@ over 100 lines, any edit to existing `BUILD-LOG.md` lines, a `Sources/` change w
 build-log entry, a missing or malformed status line, carry-forward notes outliving
 their prompt, and undeclared SwiftPM dependencies.
 
-Prefer this shape of rule — one a machine checks — over a rule written in a document,
-wherever one can be found. When a convention here proves important, the next move is
-to make it mechanical, not to write it more emphatically.
+When a convention here proves important, make it mechanical rather than writing it
+more emphatically.
 
 ## Maintaining these documents
 
-Keep docs current without being asked. Fix a stale doc in the same commit as the code
-that staled it; a stale doc is worse than a missing one, because it is trusted.
+Keep docs current without being asked; fix a stale doc in the same commit as the code
+that staled it. Reasoning belongs in `BUILD-LOG.md`, not here — this file holds
+operative rules, and that split is what keeps it under the cap.
 
-Revisit this file at every stage boundary and **prune as readily as you add** — the
-100-line cap is deliberate and is not to be raised. `PLAN.md` is a living roadmap:
-reorder, rescope and delete freely, since `BUILD-LOG.md` preserves the history.
+Revisit it at every stage boundary and **prune as readily as you add** — the 100-line
+cap is deliberate and is not to be raised. `PLAN.md` is a living roadmap: reorder,
+rescope and delete freely, since `BUILD-LOG.md` preserves the history. Reference
+`PLAN.md` items by name, never by number; the numbering shifts.
 
 Propose structural changes to this file rather than making them silently; routine
 corrections and prunes need no permission.
@@ -77,11 +77,7 @@ traffic, no credentials — not even under a gitignored path.
 - Settings → `$XDG_CONFIG_HOME/irc-client/`, defaulting to `~/.config/irc-client/`.
 - Logs, scrollback DB → `$XDG_DATA_HOME/irc-client/`, defaulting to `~/.local/share/irc-client/`.
 - Caches → `$XDG_CACHE_HOME/irc-client/`, defaulting to `~/.cache/irc-client/`.
-- **Credentials → the macOS Keychain, never a file.** A password in a config file is
-  readable by every process running as that user and lands unencrypted in backups.
-  CertFP also needs a `SecIdentity` for `NWProtocolTLS`, which is a Keychain item by
-  construction — so splitting credentials across Keychain and files would be strictly
-  worse than putting all of them in one place.
+- **Credentials → the macOS Keychain, never a file.** Reasoning in `BUILD-LOG.md`.
 
 Config files are plain text and user-editable; treat their paths as public API.
 
