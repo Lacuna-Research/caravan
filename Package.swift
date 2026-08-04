@@ -5,11 +5,15 @@ import PackageDescription
 // `.package(...)` entry appears here without an accompanying decision entry.
 
 /// Applied to every target. Swift 6 language mode implies complete strict
-/// concurrency; treating warnings as errors makes the zero-warnings rule the
-/// compiler's job rather than a promise we audit ourselves.
+/// concurrency.
+///
+/// Warnings-as-errors is deliberately *not* set here. `.treatAllWarnings(as: .error)`
+/// becomes `-warnings-as-errors`, which conflicts with the `-suppress-warnings` Xcode
+/// injects when it compiles package targets as dependencies of an app — the app build
+/// fails outright. It is applied at the build invocation instead (see Makefile and
+/// ci.yml), which covers `swift build`, `swift test` and CI.
 let strict: [SwiftSetting] = [
-    .swiftLanguageMode(.v6),
-    .treatAllWarnings(as: .error),
+    .swiftLanguageMode(.v6)
 ]
 
 let package = Package(

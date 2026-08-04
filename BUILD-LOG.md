@@ -536,3 +536,60 @@ macOS build/test/lint job.
 
 **Carry-forward raised:** prompt 1 (the outstanding Xcode work, blocking its
 completion); prompt 3 (running `IRCProtocolTests` on Linux in the purity job).
+
+---
+
+## Prompt 1 — Scaffold (complete)
+
+**Commit:** see PR  **Date:** 2026-08-04
+
+**Shipped:** `irc-client.xcodeproj` with the `IRCClient` app target, the SwiftUI shell
+(`App/`), entitlements, a shared scheme, and an `xcodebuild` step in CI. Completes the
+prompt begun in the previous entry.
+
+**Deviations:**
+- **`treatAllWarnings(as: .error)` had to come out of `Package.swift`.** It lowers to
+  `-warnings-as-errors`, which conflicts with the `-suppress-warnings` Xcode injects
+  when compiling package targets as dependencies of an app — every package target
+  failed to build with `error: conflicting options`. Setting
+  `SWIFT_SUPPRESS_WARNINGS = NO` in the project did not help; Xcode adds the flag for
+  package dependencies regardless. Warnings-as-errors now lives at the build
+  invocation (`SWIFTFLAGS := -Xswiftc -warnings-as-errors` in the Makefile, and
+  explicitly in `ci.yml`), so `swift build`, `swift test` and CI all enforce it and
+  the app target enforces it via `SWIFT_TREAT_WARNINGS_AS_ERRORS`. The one gap: package
+  targets compiled *through Xcode* no longer treat warnings as errors. CI is the gate,
+  so this is acceptable, but it is a genuine weakening worth knowing about.
+- **Hardened runtime is set but inert.** `xcodebuild` reports "Disabling hardened
+  runtime with ad-hoc codesigning". It requires a real signing identity, which requires
+  a paid Apple Developer account. The setting is retained so it takes effect the moment
+  a Developer ID is configured; the distribution decision in PLAN.md is where that
+  lands.
+- The network client entitlement is declared but does nothing while unsandboxed. Kept
+  deliberately so enabling the sandbox later cannot silently break networking.
+- `.pbxproj` was hand-written rather than generated — no GUI, and XcodeGen would have
+  been an external dependency. Uses `PBXFileSystemSynchronizedRootGroup` (objectVersion
+  77), so `App/` syncs from the filesystem and new files need no project edit. That
+  makes the file about 250 lines instead of the usual sprawl, and means adding sources
+  in later prompts touches nothing here.
+
+**Learned:**
+- `CGWindowListCopyWindowInfo` reports the window owner as the **display name**
+  ("IRC Client"), not the target/executable name ("IRCClient"). My first verification
+  reported "NO WINDOW FOUND" and the app was fine — the filter was wrong. Worth
+  remembering for prompt 7, where the scrollback benchmark will want window
+  introspection.
+- Verification of the running app was limited: `osascript`/System Events needs
+  assistive access and `screencapture` needs screen-recording permission, neither of
+  which this environment has. The window's existence, size, layer and opacity were
+  confirmed via `CGWindowList`; its *contents* were not visually confirmed.
+
+**Measured:** app window 900x600 at layer 0, alpha 1.0, matching `.defaultSize`.
+Bundle: `com.lacuna-research.irc-client`, display name "IRC Client",
+`LSMinimumSystemVersion` 15.0, ad-hoc signed, no embedded frameworks (static). Full
+`make all` — build, 4 tests, lint, docs check, xcodebuild — passes.
+
+**Carry-forward consumed:** the prompt 1 note recording the outstanding Xcode work.
+Deleted; everything it listed now exists. Status bumped to 1/10.
+
+**Carry-forward raised:** none new. The note on prompt 3 (running `IRCProtocolTests`
+on Linux) still stands.
