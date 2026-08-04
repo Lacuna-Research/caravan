@@ -34,8 +34,8 @@ at a point where the app is genuinely usable.
   settings) is plain SwiftUI.
 - **Persistence:** SQLite for scrollback + full-text search; plain-text mIRC-style
   logs in parallel for user-facing logs. Nothing is written inside the source tree:
-  settings in `~/.config/mirage/`, data in `~/.local/share/mirage/`, caches in
-  `~/.cache/mirage/` (all honouring the matching `XDG_*` variables), and every
+  settings in `~/.config/irc-client/`, data in `~/.local/share/irc-client/`, caches in
+  `~/.cache/irc-client/` (all honouring the matching `XDG_*` variables), and every
   credential in the macOS Keychain rather than any file.
 
 ### Settled
@@ -180,6 +180,19 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 45. **Diagnostics.** OSLog structured logging, opt-in crash reporting, a raw-traffic
     debug window.
 46. **Release engineering.** Notarization, DMG, Sparkle auto-update, release notes.
+
+    ### Carry-forward
+
+    - **Naming gate — the last cheap moment to rename is here, before the first
+      signed build leaves the machine.** `irc-client` is a working name. Renaming is
+      find-and-replace until distribution, after which two things are permanent:
+      the bundle id (`com.lacuna-research.irc-client`), because Keychain items are
+      ACL'd to the bundle id and code signature, so changing it strands every stored
+      credential and orphans `~/Library/Preferences/<bundle-id>.plist`; and the
+      config paths (`~/.config/irc-client/` and friends), which would need a
+      detect-and-migrate path carried forever. Decide the final name before shipping
+      anything, or accept `irc-client` permanently. Do not ship while this note is
+      still here.
 47. **mIRC import.** Read `mirc.ini`, `servers.ini`, `aliases.ini`, `popups.ini`,
     `remote.ini` — a genuine differentiator for anyone migrating.
 48. **Sync.** Optional iCloud settings/server-list sync.
