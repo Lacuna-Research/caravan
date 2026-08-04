@@ -228,3 +228,49 @@ defence, but it fails locally in a second rather than after a rejected push.
 **Lesson, recorded because it will recur:** a limitation asserted from memory is a
 guess. Test the limit before designing a workaround for it — the workaround here
 would have been strictly worse than the thing I assumed was unavailable.
+
+---
+
+## Decision — Public repo under Lacuna-Research, and where data lives
+
+**Date:** 2026-08-04  **Affects:** repo settings, CLAUDE.md, PLAN.md, README.md, CI
+
+**Chose:** public, transferred to the `Lacuna-Research` org, over private under a
+personal account. Verified before flipping: a full-history scan of every blob ever
+committed found no credentials — only the words "password"/"secret" appearing in
+documentation about handling them. Branch protection, the required checks, and PR #1
+all survived the transfer intact.
+
+Consequences taken up rather than left implicit:
+- macOS Actions minutes are now free and unmetered, so prompt 1's Swift CI no longer
+  needs to ration runs. That prompt has been updated.
+- GitHub secret scanning and push protection are enabled. The gitleaks job stays:
+  GitHub's scanner targets provider-issued tokens, while this project's actual risk
+  is a captured IRC trace or a real NickServ password pasted into a test fixture.
+- Commit metadata is now public, including author name and email address.
+
+**Chose:** XDG-style paths for settings and data, over anything inside the source
+tree or an app-specific location invented for the purpose. Settings in
+`~/.config/mirage/`, data in `~/.local/share/mirage/`, caches in `~/.cache/mirage/`,
+each honouring the matching `XDG_*` variable.
+
+**Chose:** the macOS Keychain for every credential, over a plaintext file under
+`~/.config/mirage/`. This is a deliberate narrowing of "settings and secrets both go
+in .config". A password in a config file is readable by any process running as that
+user and lands unencrypted in Time Machine backups. More decisively: SASL
+EXTERNAL/CertFP needs a `SecIdentity` for `NWProtocolTLS`, which is a Keychain item
+by construction — so some credentials must live there regardless, and splitting them
+across two stores is worse than committing to one.
+**Revisit if:** you want config to be fully portable by copying a directory. Say so
+and credentials move to a `0600` file under `~/.config/mirage/` instead.
+
+**Consequence caught while editing:** the zero-external-dependency rule rules out
+GRDB, which PLAN.md still named for persistence. The persistence layer will wrap the
+system SQLite directly. Two documents disagreeing is exactly what the doc-maintenance
+rule exists to catch.
+
+### Open
+
+- **Author email in commit metadata is now public.** Not a secret, but a choice.
+  Nothing is merged yet and only four commits exist, so switching to a GitHub
+  noreply address is still cheap. Say the word.

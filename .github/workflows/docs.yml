@@ -1,7 +1,6 @@
 name: docs
 
-# Runs on every PR and every push to main. Ubuntu only — this job must stay cheap,
-# because macOS runner minutes bill at ~10x on a private repo.
+# Runs on every PR and every push to main. Ubuntu only, and fast.
 on:
   pull_request:
   push:
@@ -25,8 +24,9 @@ jobs:
         run: shellcheck Scripts/*.sh .githooks/*
 
   secrets:
-    # We chose a private repo, which means no GitHub secret scanning and no push
-    # protection. This project handles live IRC credentials, so scan explicitly.
+    # GitHub secret scanning and push protection are both on (free, public repo), but
+    # they target provider-issued tokens. This project's risk is a captured IRC trace
+    # or a real NickServ password pasted into a fixture, which those will not catch.
     runs-on: ubuntu-latest
     permissions:
       contents: read

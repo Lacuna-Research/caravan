@@ -69,8 +69,27 @@ reorder, rescope and delete freely, since `BUILD-LOG.md` preserves the history.
 Propose structural changes to this file rather than making them silently; routine
 corrections and prunes need no permission.
 
+## Where things live
+
+The app writes nothing to its own source tree. No settings, no logs, no captured
+traffic, no credentials — not even under a gitignored path.
+
+- Settings → `$XDG_CONFIG_HOME/mirage/`, defaulting to `~/.config/mirage/`.
+- Logs, scrollback DB → `$XDG_DATA_HOME/mirage/`, defaulting to `~/.local/share/mirage/`.
+- Caches → `$XDG_CACHE_HOME/mirage/`, defaulting to `~/.cache/mirage/`.
+- **Credentials → the macOS Keychain, never a file.** A password in a config file is
+  readable by every process running as that user and lands unencrypted in backups.
+  CertFP also needs a `SecIdentity` for `NWProtocolTLS`, which is a Keychain item by
+  construction — so splitting credentials across Keychain and files would be strictly
+  worse than putting all of them in one place.
+
+Config files are plain text and user-editable; treat their paths as public API.
+
 ## Secrets
 
 IRC carries live credentials: `PASS`, SASL `AUTHENTICATE`, `OPER`, and NickServ
 `identify`/`ghost`/`regain`/`release`/`setpass`. Redaction happens on insert into the
 trace buffer, never at export. Never log message payloads through `os.Logger`.
+
+The repo is public. Test fixtures may contain obviously-fake credentials; they must
+be recognisable as fake (`hunter2`, `s3cr3t-not-real`) and never a real-shaped token.

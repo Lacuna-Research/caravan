@@ -60,8 +60,9 @@ Create:
   `check`. Shell scripts start with `set -euo pipefail` and pass shellcheck.
 - README build/test/run instructions filled in.
 
-Swift CI at `.github/workflows/ci.yml`, on pull_request and pushes to main only —
-macOS runner minutes bill at ~10x on a private repo, so never on feature-branch push:
+Swift CI at `.github/workflows/ci.yml`, on pull_request and pushes to main. The repo
+is public, so macOS runner minutes are free and unmetered — run the full matrix
+rather than rationing it:
 - Job `purity` on ubuntu-latest: build and test IRCProtocol alone. This is a cost
   optimization AND a rule enforcement — Linux has no AppKit, no Network.framework and
   no Darwin os.Logger, so the job fails the moment IRCProtocol stops being pure.
@@ -108,6 +109,14 @@ Do not: build log routing, pluggable backends, custom level hierarchies, log
 rotation, remote shipping, or any log viewer UI. No IRC parsing — this module must
 not depend on IRCProtocol; it operates on raw line strings.
 ```
+
+### Carry-forward
+
+- The repo is public and CI runs gitleaks on every PR. The Redactor test table is
+  necessarily full of credential-shaped strings. Use obviously-fake values
+  (`hunter2`, `s3cr3t-not-real`) rather than anything resembling a real token, and if
+  gitleaks still trips, add a scoped `.gitleaksignore` entry rather than weakening
+  the scan. Same applies to the fake IRC server's `PASS` line in prompt 5.
 
 ---
 
