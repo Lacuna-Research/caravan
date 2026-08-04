@@ -18,3 +18,6 @@ DerivedData/
 *.p12
 *.mobileprovision
 .env
+
+# Local tooling state (machine-specific)
+.claude-pm
