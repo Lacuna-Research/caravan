@@ -690,3 +690,45 @@ un-ignored.
 protects this machine and anyone who has the project settings loaded, not the
 repository. It also cannot fire if hooks are disabled. Weaker than a required status
 check, considerably stronger than a sentence in a document.
+
+---
+
+## Prompt-adjacent — a second discriminator for the worktree hook
+
+**Date:** 2026-08-04  **Affects:** Scripts/check-worktree.sh
+
+Testing the hook against the very worktree that had just been merged exposed a blind
+spot the scratch tests missed: it stayed silent. The branch had been pushed with
+`git push origin HEAD:name` rather than `-u`, so no upstream was ever configured
+locally and signal 1 (upstream gone) had nothing to read. Easy to do by accident, and
+precisely the case where the reminder is wanted.
+
+**Added signal 2: content-identical to the base.** After a squash merge the branch's
+*tree* matches `origin/main`'s tree while the commits differ. A fresh worktree has
+HEAD equal to the base, so it does not match — which is what makes the pair of
+conditions (HEAD differs, tree identical) a clean fingerprint for "squash-merged".
+
+**Signal 1 regressed while adding it, and the cause is worth recording.** When the
+upstream ref is missing, `git rev-parse --abbrev-ref --symbolic-full-name @{u}` prints
+the literal string `@{u}` on stdout and exits 128 — byte-identical to what it prints
+when no upstream is configured at all. A guard added to filter the second case
+silently swallowed the first. Reading `branch.<name>.remote` and `branch.<name>.merge`
+from config and checking `refs/remotes/...` directly is unambiguous; asking rev-parse
+was not.
+
+**Seven states now covered**, all passing: repo root, fresh worktree, live upstream,
+dirty tree, upstream gone, squash-merged without upstream, and committed-but-unmerged
+work. The last matters most for false positives — genuine work in progress must never
+be told to pack up.
+
+**Two process lessons from the same episode.** The scratch harness passed five for
+five and the thing still had a hole, found only by running it against reality:
+synthetic tests check the cases you thought of.
+
+And the first attempt at this fix was pushed as a PR that GitHub reported `DIRTY`
+with no checks at all — because after the squash merge of the previous PR, I committed
+on top of the *old* branch instead of re-branching from the new `main`, so the two
+histories conflicted and GitHub could not compute a merge ref to run `pull_request`
+workflows against. The worktree rule being mechanised here would have prevented it:
+leaving the worktree forces the next piece of work to start from a fresh checkout of
+main. The rule earns its place.
