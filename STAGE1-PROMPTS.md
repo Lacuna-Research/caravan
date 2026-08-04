@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 0/10 complete. Next: prompt 1.
+**Status:** 1/10 complete. Next: prompt 2.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -81,30 +81,6 @@ sidebar, empty detail), and every CI job passes on the PR.
 Do not: write any IRC logic, networking, diagnostics, or UI beyond the empty split
 view. Diagnostics is prompt 2 — leave it a stub.
 ```
-
-### Carry-forward
-
-**Prompt 1 is incomplete. Xcode is not installed** — the machine still has Command
-Line Tools only (`xcode-select -p` → `/Library/Developer/CommandLineTools`). Delivered:
-the SwiftPM package with four library targets and their test targets, Swift 6 mode,
-warnings-as-errors, `.swift-format`, the Makefile targets, README, and `ci.yml` with
-both jobs. Outstanding, all of it needing Xcode:
-
-- `irc-client.xcodeproj` with the macOS app target: SwiftUI lifecycle, macOS 15
-  minimum, hardened runtime, network client entitlement, not sandboxed. Target and
-  product `IRCClient`, display name "IRC Client", bundle id
-  `com.lacuna-research.irc-client`.
-- The empty window with a `NavigationSplitView` placeholder, and the acceptance
-  criterion that it launches.
-
-Note that `swift-testing` and `XCTest` ship with Xcode rather than Command Line
-Tools, so `make test` cannot run locally either. CI's macOS runner covers it, which
-is why the tests here were verified in CI and not on the machine. Prompts 2–6 are all
-library work and can proceed with CI as the test oracle; prompt 7 is the first that
-genuinely needs an app to run.
-
-Do not mark prompt 1 complete or delete this note until the app target exists and
-launches.
 
 ---
 

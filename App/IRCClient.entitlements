@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Not sandboxed. DCC needs to accept incoming connections and write files
+	     the user chooses, and identd needs port 113; both are painful or
+	     impossible under the sandbox. Revisit only if the distribution decision
+	     in PLAN.md lands on the App Store. -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- Inert while unsandboxed, declared so the intent is explicit and so
+	     enabling the sandbox later does not silently break networking. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>
