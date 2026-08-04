@@ -620,3 +620,31 @@ permission attaches to the process that spawns `osascript` — for a background 
 is not necessarily the terminal application the grant was applied to. Screen capture
 is sufficient for this purpose, so this is not worth chasing; noted in case prompt 7's
 scrollback benchmark wants UI-element introspection rather than pixels.
+
+---
+
+## Decision — a prompt ends at the repo root, not in its worktree
+
+**Date:** 2026-08-04  **Affects:** CLAUDE.md
+
+Prompt 1 was merged, verified and reported done while the session was still sitting in
+`.claude/worktrees/prompt-01-scaffold` on a branch that had already been merged and
+deleted. The user noticed via the statusline. Leaving a stale worktree behind is
+untidy on its own, but the real cost is that the next prompt starts in a directory
+named for the last one, on a dead branch — precisely the confusion that produced the
+`prompt-01-scaffold` branch-name collision earlier in this same prompt.
+
+**Chose:** make leaving the worktree step 7 of finishing a prompt, alongside the
+build-log entry and the status bump. Over relying on noticing.
+
+**Paid for it under the 100-line cap** by cutting a paragraph that restated what the
+numbered list and the following sentence already said, and dropping "bias toward
+over-recording" — the rule above it already says record everything, and the reasoning
+lives here rather than in the instructions file. 96 lines to 95. This is the cap doing
+exactly what it was put there to do: a new rule had to displace an old one rather than
+accumulate on top of it.
+
+**Not made mechanical.** `Scripts/check-docs.sh` runs inside the repo and cannot see
+the session's working directory, so there is nothing for it to check. This one stays a
+written rule, which is weaker than the rest of the enforcement and worth saying plainly
+rather than pretending otherwise.
