@@ -130,3 +130,78 @@ about what was actually built.
   Leaning mIRC-subset — script compatibility is much of the point of the clone.
 - **Distribution:** App Store sandbox vs. direct + notarized. DCC and identd are
   painful-to-impossible sandboxed. Leaning direct.
+
+---
+
+## Decision — Toolchain, repo, and workflow
+
+**Date:** 2026-08-04  **Affects:** whole project
+
+**Chose:** full Xcode with a standard app target, over SwiftPM plus a hand-rolled
+bundle and `codesign` script. Signing, entitlements and Instruments all come for
+free, and prompt 7's scrollback benchmark needs Instruments.
+
+**Chose:** a private GitHub repo, over public. Accepts the cost: macOS Actions
+minutes bill at ~10x, so the free tier is roughly 200 macOS minutes a month, and
+private repos on the free plan get neither secret scanning nor branch protection.
+Both gaps are covered explicitly below rather than left implicit.
+
+**Chose:** one branch and PR per prompt, squash-merged behind green CI, over
+committing straight to main. Gives CI somewhere to report before work lands and
+keeps a 1:1 history with the prompt list.
+
+**Chose:** zero external SwiftPM dependencies for stage 1. `swift format` ships in
+the 6.3.0 toolchain, so SwiftFormat is unnecessary; SwiftLint is dropped entirely
+because strict concurrency plus warnings-as-errors covers most of its value.
+
+---
+
+## Decision — Move the meta-system from convention to enforcement
+
+**Date:** 2026-08-04  **Affects:** CLAUDE.md, Scripts/check-docs.sh, CI, STAGE1-PROMPTS.md
+
+A review of the tracking system found seven weaknesses. All seven are addressed
+below, and wherever possible the fix is mechanical rather than a more emphatic rule.
+
+**1. Nothing was enforced.** Every rule was a promise audited by the same party who
+made it. Now `Scripts/check-docs.sh` runs as a pre-commit hook and as a required CI
+job, failing on: CLAUDE.md over its line cap, any edit to existing BUILD-LOG.md lines
+(append-only, enforced by diff), a `Sources/` change with no build-log entry, a
+missing or malformed status line, carry-forward notes outliving their prompt, and
+undeclared SwiftPM dependencies. Warnings-as-errors is on, so zero-warnings is the
+compiler's rule rather than ours. The pre-commit hook also refuses commits to main,
+which is the only branch protection a free private repo can have.
+
+**2. Prompt 1 had grown into two prompts.** It accreted a four-component Diagnostics
+module on top of scaffolding within a single session — the Do-not fences guarded each
+prompt's scope but nothing guarded the prompt file itself. Split into `1 — Scaffold`
+and `2 — Diagnostics`; everything renumbered, now ten prompts. The references in the
+backfill entry above to prompts 1–9 are superseded by this renumbering.
+
+**3. Carry-forward notes had no home beyond stage 1.** PLAN.md items are one-liners
+with no note slot, so the convention silently did not apply past prompt 10. PLAN.md
+now documents the same `### Carry-forward` block under any numbered item.
+
+**4. No completion state.** STAGE1-PROMPTS.md now carries a machine-readable
+`**Status:** N/10 complete. Next: prompt M.` line, which the check script parses and
+requires — and which it uses to detect stale carry-forward notes.
+
+**5. No dependency pinning policy.** Vendored fixtures must record their upstream
+commit SHA (prompt 3 now requires `Tests/Fixtures/VENDOR.md`), and external SwiftPM
+dependencies fail the build unless the check script is explicitly amended.
+
+**6. Tooling was wrong.** `swift format` is in the toolchain at 6.3.0; neither
+SwiftFormat nor SwiftLint was installed and neither is needed.
+
+**7. CLAUDE.md was growing before any code existed.** Now hard-capped at 100 lines by
+the check script, and rewritten tighter to fit with room to spare. The cap is not to
+be raised — it exists to force pruning, which is the thing good intentions never do.
+
+**Also removed:** PLAN.md's stage-1 summary list, which duplicated
+STAGE1-PROMPTS.md. Two copies of one list drift, and the copy nobody edits is the one
+that gets read. PLAN.md now points at the prompt file instead. STAGE1-NOTES.md, which
+prompt 10 was going to create, is likewise gone — BUILD-LOG.md already does that job.
+
+**Cost accepted:** a private repo means no GitHub secret scanning, so CI runs gitleaks
+explicitly. This project handles live IRC credentials; that gap could not be left
+open.

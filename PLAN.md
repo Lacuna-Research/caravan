@@ -35,23 +35,35 @@ at a point where the app is genuinely usable.
 - **Persistence:** SQLite (GRDB) for scrollback + full-text search; plain-text mIRC-style
   `logs/` files in parallel for user-facing logs; Keychain for all passwords.
 
-### Decisions to make before stage 1
+### Settled
 
-1. **Xcode.** Only Command Line Tools are installed. SwiftPM alone can't produce a
-   signed `.app` bundle comfortably. Install full Xcode (or accept a hand-rolled bundle
-   + `codesign` script).
-2. **Scripting engine (stage 3):** reimplement a subset of the mIRC scripting language
-   (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Recommendation:
-   mIRC-subset interpreter, since script compatibility is much of the point.
-3. **Distribution:** App Store sandbox vs. direct/notarized. DCC (incoming connections,
-   arbitrary file writes) and identd (port 113) are painful-to-impossible sandboxed.
-   Recommendation: direct distribution, notarized, Sparkle for updates.
+Full Xcode with a standard app target; private GitHub repo; one branch and PR per
+prompt, squash-merged behind green CI. Zero external SwiftPM dependencies. See the
+decision entries in `BUILD-LOG.md` for the reasoning.
+
+### Still open
+
+1. **Scripting engine (stage 3):** reimplement a subset of the mIRC scripting language
+   (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Leaning
+   mIRC-subset, since script compatibility is much of the point. Not blocking.
+2. **Distribution:** App Store sandbox vs. direct/notarized. DCC (incoming
+   connections, arbitrary file writes) and identd (port 113) are
+   painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
+   Not blocking, but note the app target is already configured un-sandboxed.
 
 ### Testing strategy
 
-- `irc-parser-tests` YAML corpus against `IRCProtocol` from day one.
+- `irc-parser-tests` YAML corpus against `IRCProtocol` from day one, upstream commit
+  SHA recorded in `Tests/Fixtures/VENDOR.md`.
 - A scriptable fake IRC server for `IRCSession` integration tests.
 - Ergo (or InspIRCd) in Docker for end-to-end smoke tests against a real ircd.
+
+### Carry-forward notes
+
+Items below may carry a `### Carry-forward` block, appended when earlier work turns up
+something that item needs to know. Consume and delete it when the item is built, and
+record in `BUILD-LOG.md` that you did. This is the same convention
+`STAGE1-PROMPTS.md` uses, extended to stages that have no prompt file yet.
 
 ---
 
@@ -59,26 +71,9 @@ at a point where the app is genuinely usable.
 
 Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 
-1. **Scaffold.** SwiftPM workspace + macOS app target, module skeletons, swift-testing,
-   SwiftFormat/SwiftLint, empty main window that launches.
-2. **Message parser.** Full RFC 1459/2812 + IRCv3 message-tags grammar: tags, source
-   prefix, command, params, trailing. Round-trip serializer. Wire up the parser-tests
-   corpus.
-3. **Transport.** `NWConnection` TCP + TLS, CRLF line framing (8191-byte tag budget +
-   512 message), inbound `AsyncStream<IRCMessage>`, outbound queue, graceful close.
-4. **Registration & connection state machine.** `NICK`/`USER`, numerics 001–005,
-   `PING`/`PONG`, `ERROR`, ISUPPORT parsing (`PREFIX`, `CHANMODES`, `CHANTYPES`,
-   `CASEMAPPING`, `NETWORK`, `TARGMAX`), reconnect with exponential backoff.
-5. **Typed event model.** `IRCEvent` enum: privmsg, notice, join, part, quit, nick,
-   kick, mode, topic, numeric, raw. This is the seam the whole UI sits on.
-6. **Minimal UI.** Connect dialog (host, port, TLS toggle, nick, alt nick, ident, real
-   name). One window: sidebar, message view, input field.
-7. **Channel state.** `JOIN`/`PART`/`QUIT`/`NICK`, `353`/`366` NAMES, nick list sorted by
-   prefix rank (`@ % + `), topic from `332`/`333`, per-channel membership tracking.
-8. **Command line.** `/join /part /msg /me /nick /quit /raw`; unrecognized `/x` passes
-   through as a raw command. Input history with ↑/↓.
-9. **Status window.** Raw server output, unhandled numerics, connection log — mIRC's
-   status window equivalent.
+Stage 1 is broken into ten prompts in **`STAGE1-PROMPTS.md`**, which is authoritative
+for scope, ordering, and status. It is deliberately not summarized here — two copies
+of the same list drift, and the copy nobody edits is the one that gets read.
 
 **Done when:** you can idle in `#test` on Libera and talk.
 

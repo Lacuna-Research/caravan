@@ -1,0 +1,39 @@
+name: docs
+
+# Runs on every PR and every push to main. Ubuntu only — this job must stay cheap,
+# because macOS runner minutes bill at ~10x on a private repo.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  discipline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Documentation discipline
+        run: ./Scripts/check-docs.sh "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+
+      - name: shellcheck
+        run: shellcheck Scripts/*.sh .githooks/*
+
+  secrets:
+    # We chose a private repo, which means no GitHub secret scanning and no push
+    # protection. This project handles live IRC credentials, so scan explicitly.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
