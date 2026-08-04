@@ -16,8 +16,13 @@ A native macOS IRC client modeled on mIRC.
 
 ## Working method
 
-One prompt from `STAGE1-PROMPTS.md` per branch (`prompt-NN-slug`), per PR,
-squash-merged once CI is green. Never commit to `main`.
+One prompt from `STAGE1-PROMPTS.md` per branch (`prompt-NN-slug`), per PR. Never
+commit to `main` directly.
+
+**You merge your own PRs.** Squash-merge and delete the branch as soon as CI is
+green — do not hand back a merge checklist. Required checks and `enforce_admins` are
+the gate; a green PR is authorisation to land it. Stop and ask only if CI is red, the
+work diverged from the prompt, or a decision surfaced that is genuinely the user's.
 
 **Starting a prompt:** re-read `STAGE1-PROMPTS.md` rather than working from memory of
 it, including any `### Carry-forward` block on that prompt.

@@ -404,3 +404,27 @@ have not taken is the same failure as the branch-protection claim earlier — as
 from expectation rather than checking. Recorded rather than edited, because the log is
 append-only, and a small wrong number is exactly the kind of thing that quietly
 teaches you the log cannot be trusted.
+
+---
+
+## Decision — I own merges; commit identity is the Lacuna address
+
+**Date:** 2026-08-04  **Affects:** CLAUDE.md, git identity
+
+**Chose:** the assistant squash-merges its own PRs as soon as CI is green, over
+handing back a merge checklist for the user to execute. Stated reason: "I don't want
+to babysit code." Required status checks plus `enforce_admins` are the gate, so a
+green PR is authorisation to land. Escalate only when CI is red, the work diverged
+from its prompt, or a decision surfaced that is genuinely the user's.
+
+**Resolves the open question from two entries above.** Commit identity for this repo
+is `Cody Marx Bailey <cody@lacunaresearch.com>`, set at repo level so it does not
+disturb the global identity used elsewhere. The nine unmerged commits on
+`meta-enforcement` were rewritten to that address before merging, since a feature
+branch is safe to rewrite and the squash would otherwise have landed the wrong author
+permanently.
+
+**Not fixed, deliberately:** the two initial commits already on `main` (185477a,
+838491d) keep `superphly@gmail.com`. Correcting them would mean disabling branch
+protection, force-pushing `main`, and re-enabling it — destructive ceremony for
+cosmetic consistency, on commits that are honestly attributed to the same person.
