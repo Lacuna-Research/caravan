@@ -466,3 +466,24 @@ an effect without checking how the mechanism actually works — the same shape a
 branch-protection claim and the line count. Two of the three were caught only because
 something was verified afterwards. Verify the mechanism, not just the outcome you
 expect from it.
+
+---
+
+## Decision — commit identity settled as superphly@gmail.com
+
+**Date:** 2026-08-04  **Affects:** git config; closes the open question above
+
+**Chose:** `Cody Marx Bailey <superphly@gmail.com>` for this repo, over adding and
+verifying `cody@lacunaresearch.com` on the GitHub account. Decided by the user once
+the constraint was clear: GitHub's squash-merge attributes to the account's primary
+email regardless of what the branch commits say, so using the Lacuna address would
+have required account-level changes only the user can make.
+
+The repo-level `user.email` override has been removed, so this repository now
+inherits the global identity. Local commits and merged commits therefore agree —
+which was the actual problem, not the specific address.
+
+`main`'s existing commits are already consistent with this. No history rewrite, no
+force-push, nothing further to do. **This closes every question that was open at the
+end of the planning phase.** What remains open — the scripting engine, distribution,
+and the final name — belongs to stages 3 and 4 and is gated where it is needed.
