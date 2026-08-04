@@ -3,7 +3,7 @@
 A native macOS IRC client modeled on mIRC. Swift 6, SwiftUI shell with AppKit where
 it counts, no external dependencies.
 
-Working name; not yet buildable — the package lands in prompt 1.
+Working name. The package builds; the app target does not exist yet.
 
 ## Where your data lives
 
@@ -25,14 +25,42 @@ Nothing is ever written inside the source tree.
 | `BUILD-LOG.md` | Append-only history: decisions, deviations, surprises, measurements |
 | `CLAUDE.md` | Build standards and working method |
 
+## Modules
+
+Four libraries, no external dependencies. `IRCProtocol` is pure — no I/O, no
+Foundation networking, no Darwin APIs — and CI builds it alone on Linux so that
+stays true mechanically rather than by review.
+
+```
+IRCProtocol   (no dependencies)      parsing, serialization, casemapping
+Diagnostics   (no dependencies)      logging, redaction, wire tracing
+IRCTransport  → Diagnostics, IRCProtocol      sockets, TLS, line framing
+IRCSession    → all of the above     registration, state machine, events
+```
+
 ## Getting started
 
 ```sh
-make hooks   # install the pre-commit hook — do this once after cloning
-make check   # documentation discipline; also runs in CI
+make hooks   # install the pre-commit hook — once, after cloning
+make build   # compile the package
+make test    # requires full Xcode (see below)
+make lint    # swift format, strict
+make check   # documentation discipline
+make all     # everything above except hooks
 ```
 
-`make build`, `make test`, `make fmt` and `make lint` arrive with the package.
+### Requires full Xcode
+
+`swift-testing` and `XCTest` ship with Xcode, **not** with Command Line Tools, so
+`make test` cannot run on a CLT-only machine. `make build`, `lint` and `check` all
+work fine without it. CI runs the tests on its macOS runner either way.
+
+The app target and `irc-client.xcodeproj` also need Xcode and do not exist yet.
+
+## Running the app
+
+Not yet possible — there is no app target. Tracked as a carry-forward note on
+prompt 1 in `STAGE1-PROMPTS.md`.
 
 ## Working method
 
