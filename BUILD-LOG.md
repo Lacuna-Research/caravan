@@ -593,3 +593,30 @@ Deleted; everything it listed now exists. Status bumped to 1/10.
 
 **Carry-forward raised:** none new. The note on prompt 3 (running `IRCProtocolTests`
 on Linux) still stands.
+
+---
+
+## Verification — prompt 1's window contents, visually confirmed
+
+**Date:** 2026-08-04  **Affects:** the prompt 1 completion entry above
+
+That entry recorded an honest gap: the window's existence, size, layer and opacity
+were confirmed via `CGWindowList`, but its *contents* were not, because
+`screencapture` needed screen-recording permission this process did not have. The
+permission has since been granted, so the gap is now closed rather than left standing.
+
+Captured the window directly (`screencapture -l<windowid>`) and inspected it. It shows
+what prompt 1 specified and nothing more: title bar reading "IRC Client", a
+`NavigationSplitView` with an empty sidebar roughly 228pt wide — consistent with the
+`ideal: 220` plus divider — a sidebar-toggle in the toolbar, and an empty detail pane.
+`kCGWindowName` also reads "IRC Client", which independently confirms the title
+criterion.
+
+**Every part of prompt 1's acceptance criterion is now verified, none of it assumed.**
+
+**Still not available:** `osascript` / System Events accessibility. The failure code
+moved from -1728 to -1719 but access is still refused, most likely because the
+permission attaches to the process that spawns `osascript` — for a background job that
+is not necessarily the terminal application the grant was applied to. Screen capture
+is sufficient for this purpose, so this is not worth chasing; noted in case prompt 7's
+scrollback benchmark wants UI-element introspection rather than pixels.
