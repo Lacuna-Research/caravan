@@ -61,6 +61,10 @@ SQLite directly. See the decision entries in `BUILD-LOG.md` for the reasoning.
   SHA recorded in `Tests/Fixtures/VENDOR.md`.
 - A scriptable fake IRC server for `IRCSession` integration tests.
 - Ergo (or InspIRCd) in Docker for end-to-end smoke tests against a real ircd.
+- A local soju instance as the everyday development target. Preferable to pointing
+  at Libera while iterating on the state machine — reconnecting a few hundred times
+  against a real network during debugging is antisocial, and soju is a primary
+  target we need to exercise anyway.
 
 ### Carry-forward notes
 
@@ -91,8 +95,13 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 11. **Multi-window model.** mIRC treebar/switchbar: network → channels/queries/status
     tree, per-window activity state (normal / activity / message / highlight coloring),
     ⌘1–9 and Ctrl+Tab switching, detachable windows.
-12. **Multi-network.** Several simultaneous connections, each with independent state,
-    nick, and identity.
+12. **Multi-network.** Two modes behind one sidebar model, because a bouncer changes
+    the shape of this: *direct*, one TCP connection per network with independent
+    state, nick and identity; and *bouncer*, a single connection to soju where
+    `soju.im/bouncer-networks` enumerates the upstream networks. The UI must not care
+    which is in play. Fallback for the bouncer case is one connection per network
+    with the network in the username (`<user>/<network>`), which is also how a
+    stage-1 client reaches soju before capabilities exist.
 13. **Queries & CTCP.** PM windows; `VERSION`, `PING`, `TIME`, `USERINFO`, `CLIENTINFO`,
     `FINGER`, `ACTION` handling and replies, with reply throttling.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
@@ -110,7 +119,10 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 19. **Server list / address book.** Groups, per-server nick + password + autojoin
     channels + perform-on-connect commands, connect-on-startup, favorites.
 20. **Logging.** Per-network/per-channel plain-text logs in mIRC's layout, log viewer,
-    "reload last N lines on join" so windows aren't empty after reconnect.
+    "reload last N lines on join" so windows aren't empty after reconnect. Must
+    reconcile with `chathistory`: against a bouncer the server backfills the same
+    period the local log already covers, so the buffer needs de-duplication by
+    message id / `server-time` rather than blindly concatenating both sources.
 21. **Highlights & notifications.** Nick mention, custom keyword/regex list, per-window
     and per-event sounds, macOS notifications, Dock badge, menu-bar item.
 22. **Ignore list.** Wildcard `nick!user@host` masks with mIRC-style level flags
@@ -129,7 +141,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 29. **IRCv3 capabilities.** `cap-notify`, `multi-prefix`, `away-notify`, `account-notify`,
     `extended-join`, `userhost-in-names`, `server-time`, `message-tags`, `echo-message`,
     `batch`, `chghost`, `invite-notify`, `setname`, `standard-replies`,
-    `labeled-response`.
+    `labeled-response`. Plus the two that make soju work, promoted from stage 3
+    because they change how buffers get populated and the logging and multi-window
+    work needs that settled before building on top of it:
+    `soju.im/bouncer-networks` to enumerate and switch upstream networks over one
+    connection, and `draft/chathistory` to backfill what was missed while detached.
+    `BouncerServ` needs nothing special — it is a query window.
 30. **Buffer utilities.** ⌘F find-in-buffer with highlight, copy with/without formatting,
     scroll-lock, jump-to-latest, mark line at last-read position.
 
@@ -163,7 +180,10 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 37. **User levels.** mIRC's users list with access levels driving script event matching.
 38. **Paste protection.** Multi-line paste warning dialog with preview and line count.
 39. **Text niceties.** Spell check, emoji picker, macOS text replacement/services.
-40. **Bouncer support.** ZNC/soju: `draft/chathistory` playback, `znc.in/self-message`,
+40. **Bouncer extras.** The parts left after stage 2 takes `bouncer-networks` and
+    `chathistory`: soju's `filehost` (file upload), `metadata`, `search`, and
+    `webpush` — the last only matters once there is a mobile companion. Plus ZNC
+    compatibility quirks for anyone migrating: `znc.in/self-message`,
     per-network buffers, detach-aware behavior.
 41. **History search.** SQLite FTS across all logged history, cross-network, with a
     dedicated search window.
