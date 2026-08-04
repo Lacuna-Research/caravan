@@ -5,6 +5,17 @@ it counts, no external dependencies.
 
 Working name; not yet buildable — the package lands in prompt 1.
 
+## Where your data lives
+
+Nothing is ever written inside the source tree.
+
+| What | Where |
+|---|---|
+| Settings | `$XDG_CONFIG_HOME/mirage/`, default `~/.config/mirage/` |
+| Logs, scrollback | `$XDG_DATA_HOME/mirage/`, default `~/.local/share/mirage/` |
+| Caches | `$XDG_CACHE_HOME/mirage/`, default `~/.cache/mirage/` |
+| Passwords, client certs | macOS Keychain — never a file |
+
 ## Layout
 
 | File | Purpose |

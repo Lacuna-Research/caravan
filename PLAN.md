@@ -17,7 +17,7 @@ at a point where the app is genuinely usable.
 | `IRCSession` | Registration, CAP negotiation, SASL, connection state machine, channel/user state, typed event stream | yes |
 | `IRCFormat` | mIRC control codes (`^B ^C ^I ^U ^R ^O ^K`) ⇄ `AttributedString`, 99-color palette | none |
 | `ChatModel` | `@MainActor @Observable` app state: networks, windows, buffers, unread/activity | none |
-| `Persistence` | Settings, server list, logs (SQLite/GRDB), Keychain | yes |
+| `Persistence` | Settings, server list, logs (system SQLite), Keychain | yes |
 | `Scripting` | Aliases, identifiers, events, popups, timers (stage 3) | yes |
 | `App` | SwiftUI + AppKit bridges, windows, dialogs | yes |
 
@@ -32,14 +32,18 @@ at a point where the app is genuinely usable.
   degrades badly past a few thousand rich-text rows, and you lose native find, smooth
   selection across lines, and link detection. Everything else (sidebars, dialogs,
   settings) is plain SwiftUI.
-- **Persistence:** SQLite (GRDB) for scrollback + full-text search; plain-text mIRC-style
-  `logs/` files in parallel for user-facing logs; Keychain for all passwords.
+- **Persistence:** SQLite for scrollback + full-text search; plain-text mIRC-style
+  logs in parallel for user-facing logs. Nothing is written inside the source tree:
+  settings in `~/.config/mirage/`, data in `~/.local/share/mirage/`, caches in
+  `~/.cache/mirage/` (all honouring the matching `XDG_*` variables), and every
+  credential in the macOS Keychain rather than any file.
 
 ### Settled
 
-Full Xcode with a standard app target; private GitHub repo; one branch and PR per
-prompt, squash-merged behind green CI. Zero external SwiftPM dependencies. See the
-decision entries in `BUILD-LOG.md` for the reasoning.
+Full Xcode with a standard app target; public repo at `Lacuna-Research/irc-client`;
+one branch and PR per prompt, squash-merged behind green CI. Zero external SwiftPM
+dependencies — which rules out GRDB, so the persistence layer wraps the system
+SQLite directly. See the decision entries in `BUILD-LOG.md` for the reasoning.
 
 ### Still open
 
