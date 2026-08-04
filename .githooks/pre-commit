@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Install with: make hooks
+set -euo pipefail
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "main" ]; then
+	echo "pre-commit: refusing to commit directly to main." >&2
+	echo "            main is also protected server-side; this catches it earlier." >&2
+	echo "            Branch, then open a PR." >&2
+	exit 1
+fi
+
+exec "$(git rev-parse --show-toplevel)/Scripts/check-docs.sh"

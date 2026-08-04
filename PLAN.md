@@ -17,7 +17,7 @@ at a point where the app is genuinely usable.
 | `IRCSession` | Registration, CAP negotiation, SASL, connection state machine, channel/user state, typed event stream | yes |
 | `IRCFormat` | mIRC control codes (`^B ^C ^I ^U ^R ^O ^K`) ⇄ `AttributedString`, 99-color palette | none |
 | `ChatModel` | `@MainActor @Observable` app state: networks, windows, buffers, unread/activity | none |
-| `Persistence` | Settings, server list, logs (SQLite/GRDB), Keychain | yes |
+| `Persistence` | Settings, server list, logs (system SQLite), Keychain | yes |
 | `Scripting` | Aliases, identifiers, events, popups, timers (stage 3) | yes |
 | `App` | SwiftUI + AppKit bridges, windows, dialogs | yes |
 
@@ -32,26 +32,46 @@ at a point where the app is genuinely usable.
   degrades badly past a few thousand rich-text rows, and you lose native find, smooth
   selection across lines, and link detection. Everything else (sidebars, dialogs,
   settings) is plain SwiftUI.
-- **Persistence:** SQLite (GRDB) for scrollback + full-text search; plain-text mIRC-style
-  `logs/` files in parallel for user-facing logs; Keychain for all passwords.
+- **Persistence:** SQLite for scrollback + full-text search; plain-text mIRC-style
+  logs in parallel for user-facing logs. Nothing is written inside the source tree:
+  settings in `~/.config/irc-client/`, data in `~/.local/share/irc-client/`, caches in
+  `~/.cache/irc-client/` (all honouring the matching `XDG_*` variables), and every
+  credential in the macOS Keychain rather than any file.
 
-### Decisions to make before stage 1
+### Settled
 
-1. **Xcode.** Only Command Line Tools are installed. SwiftPM alone can't produce a
-   signed `.app` bundle comfortably. Install full Xcode (or accept a hand-rolled bundle
-   + `codesign` script).
-2. **Scripting engine (stage 3):** reimplement a subset of the mIRC scripting language
-   (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Recommendation:
-   mIRC-subset interpreter, since script compatibility is much of the point.
-3. **Distribution:** App Store sandbox vs. direct/notarized. DCC (incoming connections,
-   arbitrary file writes) and identd (port 113) are painful-to-impossible sandboxed.
-   Recommendation: direct distribution, notarized, Sparkle for updates.
+Full Xcode with a standard app target; public repo at `Lacuna-Research/irc-client`;
+one branch and PR per prompt, squash-merged behind green CI. Zero external SwiftPM
+dependencies — which rules out GRDB, so the persistence layer wraps the system
+SQLite directly. See the decision entries in `BUILD-LOG.md` for the reasoning.
+
+### Still open
+
+1. **Scripting engine (stage 3):** reimplement a subset of the mIRC scripting language
+   (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Leaning
+   mIRC-subset, since script compatibility is much of the point. Not blocking.
+2. **Distribution:** App Store sandbox vs. direct/notarized. DCC (incoming
+   connections, arbitrary file writes) and identd (port 113) are
+   painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
+   Not blocking, but note the app target is already configured un-sandboxed.
 
 ### Testing strategy
 
-- `irc-parser-tests` YAML corpus against `IRCProtocol` from day one.
+- `irc-parser-tests` YAML corpus against `IRCProtocol` from day one, upstream commit
+  SHA recorded in `Tests/Fixtures/VENDOR.md`.
 - A scriptable fake IRC server for `IRCSession` integration tests.
 - Ergo (or InspIRCd) in Docker for end-to-end smoke tests against a real ircd.
+- A local soju instance as the everyday development target. Preferable to pointing
+  at Libera while iterating on the state machine — reconnecting a few hundred times
+  against a real network during debugging is antisocial, and soju is a primary
+  target we need to exercise anyway.
+
+### Carry-forward notes
+
+Items below may carry a `### Carry-forward` block, appended when earlier work turns up
+something that item needs to know. Consume and delete it when the item is built, and
+record in `BUILD-LOG.md` that you did. This is the same convention
+`STAGE1-PROMPTS.md` uses, extended to stages that have no prompt file yet.
 
 ---
 
@@ -59,26 +79,9 @@ at a point where the app is genuinely usable.
 
 Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 
-1. **Scaffold.** SwiftPM workspace + macOS app target, module skeletons, swift-testing,
-   SwiftFormat/SwiftLint, empty main window that launches.
-2. **Message parser.** Full RFC 1459/2812 + IRCv3 message-tags grammar: tags, source
-   prefix, command, params, trailing. Round-trip serializer. Wire up the parser-tests
-   corpus.
-3. **Transport.** `NWConnection` TCP + TLS, CRLF line framing (8191-byte tag budget +
-   512 message), inbound `AsyncStream<IRCMessage>`, outbound queue, graceful close.
-4. **Registration & connection state machine.** `NICK`/`USER`, numerics 001–005,
-   `PING`/`PONG`, `ERROR`, ISUPPORT parsing (`PREFIX`, `CHANMODES`, `CHANTYPES`,
-   `CASEMAPPING`, `NETWORK`, `TARGMAX`), reconnect with exponential backoff.
-5. **Typed event model.** `IRCEvent` enum: privmsg, notice, join, part, quit, nick,
-   kick, mode, topic, numeric, raw. This is the seam the whole UI sits on.
-6. **Minimal UI.** Connect dialog (host, port, TLS toggle, nick, alt nick, ident, real
-   name). One window: sidebar, message view, input field.
-7. **Channel state.** `JOIN`/`PART`/`QUIT`/`NICK`, `353`/`366` NAMES, nick list sorted by
-   prefix rank (`@ % + `), topic from `332`/`333`, per-channel membership tracking.
-8. **Command line.** `/join /part /msg /me /nick /quit /raw`; unrecognized `/x` passes
-   through as a raw command. Input history with ↑/↓.
-9. **Status window.** Raw server output, unhandled numerics, connection log — mIRC's
-   status window equivalent.
+Stage 1 is broken into ten prompts in **`STAGE1-PROMPTS.md`**, which is authoritative
+for scope, ordering, and status. It is deliberately not summarized here — two copies
+of the same list drift, and the copy nobody edits is the one that gets read.
 
 **Done when:** you can idle in `#test` on Libera and talk.
 
@@ -92,8 +95,13 @@ Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 11. **Multi-window model.** mIRC treebar/switchbar: network → channels/queries/status
     tree, per-window activity state (normal / activity / message / highlight coloring),
     ⌘1–9 and Ctrl+Tab switching, detachable windows.
-12. **Multi-network.** Several simultaneous connections, each with independent state,
-    nick, and identity.
+12. **Multi-network.** Two modes behind one sidebar model, because a bouncer changes
+    the shape of this: *direct*, one TCP connection per network with independent
+    state, nick and identity; and *bouncer*, a single connection to soju where
+    `soju.im/bouncer-networks` enumerates the upstream networks. The UI must not care
+    which is in play. Fallback for the bouncer case is one connection per network
+    with the network in the username (`<user>/<network>`), which is also how a
+    stage-1 client reaches soju before capabilities exist.
 13. **Queries & CTCP.** PM windows; `VERSION`, `PING`, `TIME`, `USERINFO`, `CLIENTINFO`,
     `FINGER`, `ACTION` handling and replies, with reply throttling.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
@@ -111,7 +119,10 @@ Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 19. **Server list / address book.** Groups, per-server nick + password + autojoin
     channels + perform-on-connect commands, connect-on-startup, favorites.
 20. **Logging.** Per-network/per-channel plain-text logs in mIRC's layout, log viewer,
-    "reload last N lines on join" so windows aren't empty after reconnect.
+    "reload last N lines on join" so windows aren't empty after reconnect. Must
+    reconcile with `chathistory`: against a bouncer the server backfills the same
+    period the local log already covers, so the buffer needs de-duplication by
+    message id / `server-time` rather than blindly concatenating both sources.
 21. **Highlights & notifications.** Nick mention, custom keyword/regex list, per-window
     and per-event sounds, macOS notifications, Dock badge, menu-bar item.
 22. **Ignore list.** Wildcard `nick!user@host` masks with mIRC-style level flags
@@ -130,7 +141,12 @@ Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 29. **IRCv3 capabilities.** `cap-notify`, `multi-prefix`, `away-notify`, `account-notify`,
     `extended-join`, `userhost-in-names`, `server-time`, `message-tags`, `echo-message`,
     `batch`, `chghost`, `invite-notify`, `setname`, `standard-replies`,
-    `labeled-response`.
+    `labeled-response`. Plus the two that make soju work, promoted from stage 3
+    because they change how buffers get populated and the logging and multi-window
+    work needs that settled before building on top of it:
+    `soju.im/bouncer-networks` to enumerate and switch upstream networks over one
+    connection, and `draft/chathistory` to backfill what was missed while detached.
+    `BouncerServ` needs nothing special — it is a query window.
 30. **Buffer utilities.** ⌘F find-in-buffer with highlight, copy with/without formatting,
     scroll-lock, jump-to-latest, mark line at last-read position.
 
@@ -164,7 +180,10 @@ Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 37. **User levels.** mIRC's users list with access levels driving script event matching.
 38. **Paste protection.** Multi-line paste warning dialog with preview and line count.
 39. **Text niceties.** Spell check, emoji picker, macOS text replacement/services.
-40. **Bouncer support.** ZNC/soju: `draft/chathistory` playback, `znc.in/self-message`,
+40. **Bouncer extras.** The parts left after stage 2 takes `bouncer-networks` and
+    `chathistory`: soju's `filehost` (file upload), `metadata`, `search`, and
+    `webpush` — the last only matters once there is a mobile companion. Plus ZNC
+    compatibility quirks for anyone migrating: `znc.in/self-message`,
     per-network buffers, detach-aware behavior.
 41. **History search.** SQLite FTS across all logged history, cross-network, with a
     dedicated search window.
@@ -181,6 +200,19 @@ Target: connect to Libera.Chat over TLS, join a channel, hold a conversation.
 45. **Diagnostics.** OSLog structured logging, opt-in crash reporting, a raw-traffic
     debug window.
 46. **Release engineering.** Notarization, DMG, Sparkle auto-update, release notes.
+
+    ### Carry-forward
+
+    - **Naming gate — the last cheap moment to rename is here, before the first
+      signed build leaves the machine.** `irc-client` is a working name. Renaming is
+      find-and-replace until distribution, after which two things are permanent:
+      the bundle id (`com.lacuna-research.irc-client`), because Keychain items are
+      ACL'd to the bundle id and code signature, so changing it strands every stored
+      credential and orphans `~/Library/Preferences/<bundle-id>.plist`; and the
+      config paths (`~/.config/irc-client/` and friends), which would need a
+      detect-and-migrate path carried forever. Decide the final name before shipping
+      anything, or accept `irc-client` permanently. Do not ship while this note is
+      still here.
 47. **mIRC import.** Read `mirc.ini`, `servers.ini`, `aliases.ini`, `popups.ini`,
     `remote.ini` — a genuine differentiator for anyone migrating.
 48. **Sync.** Optional iCloud settings/server-list sync.

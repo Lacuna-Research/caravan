@@ -1,0 +1,50 @@
+name: docs
+
+# Runs on every PR and every push to main. Ubuntu only, and fast.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  discipline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Documentation discipline
+        run: ./Scripts/check-docs.sh "origin/${{ github.base_ref || github.event.repository.default_branch }}"
+
+      - name: shellcheck
+        run: shellcheck Scripts/*.sh .githooks/*
+
+  secrets:
+    # GitHub secret scanning and push protection are both on (free, public repo), but
+    # they target provider-issued tokens. This project's risk is a captured IRC trace
+    # or a real NickServ password pasted into a fixture, which those will not catch.
+    runs-on: ubuntu-latest
+    env:
+      # The gitleaks binary is MIT-licensed and free; only the Action wrapper requires
+      # a paid licence for org-owned repos. Running the binary directly avoids that,
+      # avoids a third-party action, and needs no token permissions.
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks version
+
+      - name: Scan full history
+        # --redact matters on a public repo: without it a finding would be printed
+        # into a world-readable CI log, which is worse than the leak it reported.
+        run: ./gitleaks git . --redact --verbose --exit-code 1
