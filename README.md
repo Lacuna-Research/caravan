@@ -1,0 +1,33 @@
+# mirage
+
+A native macOS IRC client modeled on mIRC. Swift 6, SwiftUI shell with AppKit where
+it counts, no external dependencies.
+
+Working name; not yet buildable — the package lands in prompt 1.
+
+## Layout
+
+| File | Purpose |
+|---|---|
+| `PLAN.md` | Staged roadmap: basic → intermediate → advanced → polish |
+| `STAGE1-PROMPTS.md` | The ten stage-1 work units, authoritative for scope and status |
+| `BUILD-LOG.md` | Append-only history: decisions, deviations, surprises, measurements |
+| `CLAUDE.md` | Build standards and working method |
+
+## Getting started
+
+```sh
+make hooks   # install the pre-commit hook — do this once after cloning
+make check   # documentation discipline; also runs in CI
+```
+
+`make build`, `make test`, `make fmt` and `make lint` arrive with the package.
+
+## Working method
+
+One prompt per branch (`prompt-NN-slug`), one PR, squash-merged once CI is green.
+Never commit to `main` — the pre-commit hook refuses it, since a free private repo
+gets no branch protection.
+
+Every rule that can be checked by a machine is checked by `Scripts/check-docs.sh`
+rather than trusted. See `CLAUDE.md` for the rest.
