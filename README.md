@@ -26,8 +26,9 @@ make check   # documentation discipline; also runs in CI
 ## Working method
 
 One prompt per branch (`prompt-NN-slug`), one PR, squash-merged once CI is green.
-Never commit to `main` — the pre-commit hook refuses it, since a free private repo
-gets no branch protection.
+`main` is protected server-side: `discipline` and `secrets` are required checks,
+force-pushes and deletions are blocked, and admins are not exempt. The pre-commit
+hook refuses `main` too, so you find out before pushing rather than after.
 
 Every rule that can be checked by a machine is checked by `Scripts/check-docs.sh`
 rather than trusted. See `CLAUDE.md` for the rest.

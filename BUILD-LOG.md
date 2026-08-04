@@ -205,3 +205,26 @@ prompt 10 was going to create, is likewise gone — BUILD-LOG.md already does th
 **Cost accepted:** a private repo means no GitHub secret scanning, so CI runs gitleaks
 explicitly. This project handles live IRC credentials; that gap could not be left
 open.
+
+---
+
+## Decision — Correction: branch protection IS available
+
+**Date:** 2026-08-04  **Affects:** main branch, README.md, .githooks/pre-commit
+
+The entry above asserts that a free private repo gets no branch protection. **That is
+wrong.** It was asserted from memory rather than tested. Testing it took one API call
+and it succeeded.
+
+`main` is now protected server-side: `discipline` and `secrets` are required status
+checks, branches must be up to date before merging, force-pushes and deletions are
+blocked, and `enforce_admins` is on — the repo owner is not exempt either. Disable
+with `gh api -X DELETE repos/superphly/irc-client/branches/main/protection/enforce_admins`
+if it ever gets in the way.
+
+The pre-commit hook's main-branch guard is kept. It is no longer the only line of
+defence, but it fails locally in a second rather than after a rejected push.
+
+**Lesson, recorded because it will recur:** a limitation asserted from memory is a
+guess. Test the limit before designing a workaround for it — the workaround here
+would have been strictly worse than the thing I assumed was unavailable.

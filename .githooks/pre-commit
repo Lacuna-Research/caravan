@@ -5,7 +5,7 @@ set -euo pipefail
 branch=$(git rev-parse --abbrev-ref HEAD)
 if [ "$branch" = "main" ]; then
 	echo "pre-commit: refusing to commit directly to main." >&2
-	echo "            Free private repos get no branch protection, so this hook is it." >&2
+	echo "            main is also protected server-side; this catches it earlier." >&2
 	echo "            Branch, then open a PR." >&2
 	exit 1
 fi
