@@ -428,3 +428,41 @@ permanently.
 838491d) keep `superphly@gmail.com`. Correcting them would mean disabling branch
 protection, force-pushing `main`, and re-enabling it — destructive ceremony for
 cosmetic consistency, on commits that are honestly attributed to the same person.
+
+---
+
+## Correction — reauthoring the branch did not change the merged author
+
+**Date:** 2026-08-04  **Affects:** the merge-ownership entry above
+
+That entry states the branch commits were rewritten to `cody@lacunaresearch.com`
+"since ... the squash would otherwise have landed the wrong author permanently."
+The rewrite happened. It did not work.
+
+GitHub's server-side squash-merge sets the resulting commit's author to the **GitHub
+account's primary email**, not to the author of the branch commits. `main`'s squashed
+commit `6acfd82` is authored `Cody Marx Bailey <superphly@gmail.com>` with committer
+`GitHub <noreply@github.com>`, despite every branch commit carrying the Lacuna
+address. A new branch was also created and PR #1 closed in favour of #2 purely to
+avoid force-pushing — that part was correct, but it bought nothing, because the
+attribution was never going to come from the commits.
+
+**What actually controls it:** the email on the GitHub account performing the merge.
+Local `git config user.email` governs local commits and is now correct for this repo,
+but it is invisible to a squash-merge.
+
+**Requires the user, and only the user:** add `cody@lacunaresearch.com` to the GitHub
+account, verify it, and set it as the commit email. Verification needs access to that
+mailbox, so it cannot be automated. Until then every squash-merge lands as
+`superphly@gmail.com`.
+
+**Alternative if that is unwanted:** merge with `--rebase` instead of `--squash`,
+which preserves per-commit authorship — at the cost of putting every commit of a
+prompt on `main` rather than one, which conflicts with the one-commit-per-prompt
+convention. Not recommended.
+
+**Lesson, and this is the third of its kind:** I asserted that an action would have
+an effect without checking how the mechanism actually works — the same shape as the
+branch-protection claim and the line count. Two of the three were caught only because
+something was verified afterwards. Verify the mechanism, not just the outcome you
+expect from it.
