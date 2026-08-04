@@ -1,0 +1,20 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved.bak
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Secrets and captured traffic — never commit these.
+# Debug traces are redacted on insert, but log files may still contain
+# private message content.
+*.log
+*.trace
+/logs/
+*.p12
+*.mobileprovision
+.env
