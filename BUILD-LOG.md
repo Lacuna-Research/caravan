@@ -487,3 +487,52 @@ which was the actual problem, not the specific address.
 force-push, nothing further to do. **This closes every question that was open at the
 end of the planning phase.** What remains open — the scripting engine, distribution,
 and the final name — belongs to stages 3 and 4 and is gated where it is needed.
+
+---
+
+## Prompt 1 — Scaffold (partial)
+
+**Commit:** see PR  **Date:** 2026-08-04
+
+**Shipped:** SwiftPM package `IRCClient` with four library targets and matching test
+targets, Swift 6 language mode with warnings-as-errors, `.swift-format`, Makefile
+targets, README, and `.github/workflows/ci.yml` with the Linux purity job and the
+macOS build/test/lint job.
+
+**Deviations:**
+- **Not complete.** Xcode is still not installed — `xcode-select -p` reports
+  `/Library/Developer/CommandLineTools`. The `.xcodeproj`, the app target and the
+  empty-window acceptance criterion are all outstanding, recorded as a carry-forward
+  note on prompt 1. Status stays 0/10; a partially-built prompt is not a built one.
+- Cache key is `hashFiles('Package.swift')` rather than `Package.resolved`. With zero
+  external dependencies there is no resolved file to hash.
+- The purity job builds `IRCProtocol` on Linux but does not run its tests there.
+  `swift test --filter` still builds every test target, and Diagnostics will import
+  `os.Logger` from prompt 2 and cannot compile on Linux. Carry-forward raised on
+  prompt 3.
+- Test targets declare `swiftSettings: strict` individually rather than via a
+  package-wide default; SwiftPM has no manifest-level default for this.
+
+**Learned:**
+- **`swift-testing` and `XCTest` ship with Xcode, not with Command Line Tools.**
+  Neither `Testing.swiftmodule` nor `XCTest.swiftmodule` exists anywhere under
+  `/Library/Developer/CommandLineTools`. So `make test` cannot run on this machine at
+  all, and the tests in this PR were verified by CI rather than locally. This was not
+  anticipated when Xcode was treated as needed only for bundling and signing — it
+  gates the test loop too.
+- SwiftUI, AppKit, Network and OSLog all *compile* fine under CLT; the macOS SDK is
+  present. Only testing and app bundling are gated. That is why prompts 2–6, which
+  are entirely library work, can proceed with CI as the test oracle.
+- `SwiftSetting.treatAllWarnings(as: .error)` requires swift-tools-version 6.2. It
+  works, so warnings-as-errors is a package setting rather than a flag callers must
+  remember to pass.
+- `swift format` rejected the generated test function names
+  (`IRCProtocolTargetLinks`) under `AlwaysUseLowerCamelCase`. Acronym-leading names
+  need care: the module is `IRCProtocol`, the function is `ircProtocolTargetLinks`.
+
+**Measured:** clean `swift build` of four targets, 12.96s cold.
+
+**Carry-forward consumed:** none — prompt 1 had none.
+
+**Carry-forward raised:** prompt 1 (the outstanding Xcode work, blocking its
+completion); prompt 3 (running `IRCProtocolTests` on Linux in the purity job).

@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  purity:
+    # IRCProtocol must stay free of AppKit, Network.framework and Darwin os.Logger.
+    # Linux has none of them, so this job fails the moment that rule is broken —
+    # a convention in CLAUDE.md turned into something a machine checks.
+    # Pinned to the same toolchain used locally.
+    runs-on: ubuntu-latest
+    container: swift:6.3.3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build IRCProtocol alone on Linux
+        run: swift build --target IRCProtocol
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache .build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          # Keyed on Package.swift rather than Package.resolved: with zero external
+          # dependencies there is no resolved file to hash.
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Format lint
+        run: swift format lint --strict --recursive Sources Tests Package.swift
