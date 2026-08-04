@@ -37,9 +37,10 @@ it, including any `### Carry-forward` block on that prompt.
 4. Push anything deferred into `PLAN.md` at the stage where it belongs.
 5. Bump the `**Status:**` line in `STAGE1-PROMPTS.md`.
 6. `make check` must pass. It also runs as a pre-commit hook and in CI.
+7. Merge the PR, then leave the worktree — `ExitWorktree` with `remove` once the
+   branch is merged. A prompt ends back at the repo root, not in its worktree.
 
-**Between prompts.** Decisions made in conversation are the ones most easily lost.
-Record them *at the moment they are made*, never deferred to the next wrap-up:
+**Between prompts.** Record decisions *at the moment they are made*, never deferred:
 
 - A choice with a rejected alternative → a decision entry in `BUILD-LOG.md`, with the
   reasoning and what would justify revisiting it.
@@ -47,8 +48,6 @@ Record them *at the moment they are made*, never deferred to the next wrap-up:
   turn. Never answer "good idea, we'll do that" without writing it down.
 - A question left open → the Open section of the latest decision entry, marked
   blocking or not. Unanswered questions are as easy to lose as answers.
-
-Bias toward over-recording; a redundant line costs nothing.
 
 ## Enforced mechanically
 
