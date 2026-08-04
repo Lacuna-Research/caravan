@@ -308,3 +308,64 @@ carry-forward note stating the gate. The note must be consumed — and the name
 settled, or `irc-client` accepted — before anything ships. That is the enforcement:
 a note that outlives its item is a process failure, and the carry-forward convention
 already says so.
+
+---
+
+## Decision — soju as a first-class target; MQTT rejected
+
+**Date:** 2026-08-04  **Affects:** PLAN.md, STAGE1-PROMPTS.md
+
+**Chose:** treat soju as a primary target rather than a stage-3 afterthought, and
+speak IRC to it directly.
+
+**Over:** putting MQTT (Mosquitto) between the bouncer and our clients.
+
+**Because — ordering, decisively.** IRC is a single totally-ordered stream and the
+state machine depends on that total order: a NICK must land before subsequent
+messages from that user, a QUIT removes someone from several channels atomically,
+NAMES arrives in batches that must not interleave. MQTT guarantees ordering within a
+topic, not across topics. That forces a dilemma with no good side — fan out to
+per-channel topics and lose global ordering, producing rare, subtle, unreproducible
+state corruption; or use a single topic to preserve ordering, at which point MQTT is
+a worse TCP with a broker in the middle.
+
+Three supporting reasons. It requires writing and hosting an IRC↔MQTT bridge that
+re-encodes IRC semantics into topics and payloads — reinventing IRC, worse. The
+client could then only talk to that bridge, so it could not connect to Libera
+directly, which is a different product from the mIRC-parity goal. And it guts the
+diagnostics designed two decisions ago: `TraceBuffer`, `/debug` and the raw `>>`/`<<`
+status window all assume raw IRC lines.
+
+Underneath all of it: everything MQTT was being considered for — multi-device
+fan-out, offline queueing, push — soju already provides over a protocol we must
+speak anyway (`bouncer-networks`, `chathistory`, `@<client>` per-client history,
+`webpush`). Verified against soju.im and the project's client support matrix rather
+than from memory.
+
+**Also considered and dropped:** MQTT as a one-way event-export sidecar (publishing
+highlights to a home automation bus). Legitimate and harmless, since nothing would
+depend on it, but it is not wanted now and adding it would be scope invented rather
+than requested. Recorded here so it is a known option, not a forgotten one.
+
+**Plan changes made:**
+- Multi-network gains two explicit modes — direct (one connection per network) and
+  bouncer (`soju.im/bouncer-networks` over one connection) — behind one sidebar model.
+- `soju.im/bouncer-networks` and `draft/chathistory` promoted from stage 3 into
+  stage 2's IRCv3 capabilities item. Both change how buffers are populated, and the
+  logging and multi-window work must not be built before that is settled.
+- Logging gains an explicit de-duplication requirement: against a bouncer,
+  `chathistory` backfills a period the local log already covers, so buffers must
+  merge by message id / `server-time` rather than concatenating both sources.
+- Stage 3's bouncer item slimmed to what remains: `filehost`, `metadata`, `search`,
+  `webpush`, and ZNC compatibility quirks.
+- Local soju added to the testing strategy as the everyday development target;
+  prompt 7's acceptance now names it. Stage 1 needs no change to reach it — the
+  optional PASS already in prompt 5 is sufficient, with `<user>/<network>` as the
+  username.
+
+**Process note:** an item was briefly added as a duplicate `30.` in stage 2 and then
+folded into the existing IRCv3 item instead, to avoid renumbering the roadmap.
+Related: `STAGE1-PROMPTS.md` referenced "stage 2, items 28–29" by number. PLAN.md is
+explicitly a living roadmap whose numbering is expected to shift, so numeric
+cross-references between documents are a latent breakage. That reference is now by
+name, and future ones should be too.

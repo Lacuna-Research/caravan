@@ -311,7 +311,9 @@ App structure:
 - Connection status and errors visible in the UI, not just the console.
 
 Acceptance: connect to irc.libera.chat:6697 over TLS, watch the full MOTD render in
-the status window, and confirm scroll-lock works while it is still streaming.
+the status window, and confirm scroll-lock works while it is still streaming. A local
+soju is the better target for repeated iteration — stage 1's optional PASS is enough
+to reach it, using `<user>/<network>` as the username.
 
 Do not: multiple servers, channel windows, nick lists, formatting codes, logging, or
 a preferences window.
@@ -480,7 +482,9 @@ Things deliberately placed where they are, in case you want to move them:
   bug that only appears on IRCv3 servers.
 - **CAP/SASL absent from all ten.** Libera accepts unauthenticated connections, and
   CAP reshapes the registration state machine enough that a half-implementation is
-  worse than none. Stage 2, items 28–29.
+  worse than none. It lands with stage 2's Authentication and IRCv3 capabilities
+  items. (Referenced by name, not number — `PLAN.md` is a living roadmap whose
+  numbering is expected to shift.)
 - **The CI purity job is a rule, not just a cost saving.** IRCProtocol builds on
   Linux, which has no AppKit, no Network.framework and no Darwin `os.Logger`. If that
   module ever stops being pure, CI fails on the cheap runner. Prefer this shape of
