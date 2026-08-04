@@ -390,3 +390,17 @@ occasion it did any work.
 
 Also folded in: reference `PLAN.md` items by name rather than number, promoted from
 the previous entry's process note into an actual rule.
+
+---
+
+## Correction — CLAUDE.md line count
+
+**Date:** 2026-08-04  **Affects:** the entry above
+
+That entry says the prune took `CLAUDE.md` from 95 lines to 87. It is 91. The number
+was written before the file was measured, which the prompt-entry template in this
+file explicitly forbids: "never estimate a number here." Stating a measurement you
+have not taken is the same failure as the branch-protection claim earlier — asserting
+from expectation rather than checking. Recorded rather than edited, because the log is
+append-only, and a small wrong number is exactly the kind of thing that quietly
+teaches you the log cannot be trusted.
