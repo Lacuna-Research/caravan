@@ -28,6 +28,9 @@ jobs:
     # We chose a private repo, which means no GitHub secret scanning and no push
     # protection. This project handles live IRC credentials, so scan explicitly.
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # gitleaks enumerates the PR's commits to scan the range
     steps:
       - uses: actions/checkout@v4
         with:
