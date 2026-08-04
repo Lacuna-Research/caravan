@@ -274,3 +274,37 @@ rule exists to catch.
 - **Author email in commit metadata is now public.** Not a secret, but a choice.
   Nothing is merged yet and only four commits exist, so switching to a GitHub
   noreply address is still cheap. Say the word.
+
+---
+
+## Decision — Working name is `irc-client`; rename gated to stage 4
+
+**Date:** 2026-08-04  **Affects:** CLAUDE.md, PLAN.md, README.md, STAGE1-PROMPTS.md
+
+**Chose:** `irc-client` as the working name, over `mirage` and over stopping to pick
+a final name now. `mirage` was mine, invented as a placeholder while drafting the
+prompts; it had no source and nobody was attached to it. It also carries an
+unflattering connotation for an app holding credentials, and has prior art in
+shipping software.
+
+Applied across the four live documents: target and product `IRCClient`, display name
+"IRC Client", bundle id `com.lacuna-research.irc-client`, config at
+`~/.config/irc-client/`, data at `~/.local/share/irc-client/`, caches at
+`~/.cache/irc-client/`. The `mirage` references remaining in this file are history
+and stay; the log is append-only.
+
+**Because:** renaming is find-and-replace right up until the first signed build
+leaves the machine, and that is stage 4. Deferring costs nothing now and buys time to
+find a name worth keeping. Two things harden at distribution and not before:
+
+- **Bundle id.** Keychain items are ACL'd to the bundle id and code signature.
+  Changing it after release strands every stored server password and orphans
+  `~/Library/Preferences/<bundle-id>.plist`. Sparkle's feed breaks too.
+- **Config paths.** Once a user has `~/.config/irc-client/`, a rename needs a
+  detect-and-migrate path that is then carried forever.
+
+**Revisit by:** PLAN.md item 46 (release engineering), which now carries a
+carry-forward note stating the gate. The note must be consumed — and the name
+settled, or `irc-client` accepted — before anything ships. That is the enforcement:
+a note that outlives its item is a process failure, and the carry-forward convention
+already says so.

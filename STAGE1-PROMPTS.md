@@ -47,9 +47,13 @@ Create:
 - A SwiftPM package `IRCClient` with library targets: Diagnostics, IRCProtocol,
   IRCTransport, IRCSession, plus matching test targets. Targets get a single stub
   type each; do not implement them. Do not create modules we don't use yet.
-- An Xcode project `mirage.xcodeproj` with a macOS app target depending on the local
-  package: SwiftUI lifecycle, macOS 15 minimum, hardened runtime, network client
-  entitlement. Not sandboxed — DCC and identd need incoming connections later.
+- An Xcode project `irc-client.xcodeproj` with a macOS app target depending on the
+  local package: SwiftUI lifecycle, macOS 15 minimum, hardened runtime, network
+  client entitlement. Not sandboxed — DCC and identd need incoming connections later.
+  Naming, so this is not re-litigated: target and product `IRCClient` (no library
+  product shares that name, so there is no clash with the package), display name
+  "IRC Client", bundle id `com.lacuna-research.irc-client`. All of it is a working
+  name — see the rename gate in PLAN.md stage 4.
 - Swift 6 language mode, StrictConcurrency=complete, and warnings-as-errors ON.
   Zero-warnings is a rule, so make the compiler enforce it rather than trusting us.
 - Formatting via the toolchain's built-in `swift format` (6.3.0 ships with it) plus a
@@ -71,7 +75,7 @@ rather than rationing it:
 - Cache `.build` keyed on Package.resolved.
 
 Acceptance: `make build test lint check` all clean, the app launches to a single
-empty window titled "mirage" containing a NavigationSplitView placeholder (empty
+empty window titled "IRC Client" containing a NavigationSplitView placeholder (empty
 sidebar, empty detail), and every CI job passes on the PR.
 
 Do not: write any IRC logic, networking, diagnostics, or UI beyond the empty split

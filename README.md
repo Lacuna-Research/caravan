@@ -1,4 +1,4 @@
-# mirage
+# irc-client
 
 A native macOS IRC client modeled on mIRC. Swift 6, SwiftUI shell with AppKit where
 it counts, no external dependencies.
@@ -11,9 +11,9 @@ Nothing is ever written inside the source tree.
 
 | What | Where |
 |---|---|
-| Settings | `$XDG_CONFIG_HOME/mirage/`, default `~/.config/mirage/` |
-| Logs, scrollback | `$XDG_DATA_HOME/mirage/`, default `~/.local/share/mirage/` |
-| Caches | `$XDG_CACHE_HOME/mirage/`, default `~/.cache/mirage/` |
+| Settings | `$XDG_CONFIG_HOME/irc-client/`, default `~/.config/irc-client/` |
+| Logs, scrollback | `$XDG_DATA_HOME/irc-client/`, default `~/.local/share/irc-client/` |
+| Caches | `$XDG_CACHE_HOME/irc-client/`, default `~/.cache/irc-client/` |
 | Passwords, client certs | macOS Keychain — never a file |
 
 ## Layout

@@ -74,9 +74,9 @@ corrections and prunes need no permission.
 The app writes nothing to its own source tree. No settings, no logs, no captured
 traffic, no credentials — not even under a gitignored path.
 
-- Settings → `$XDG_CONFIG_HOME/mirage/`, defaulting to `~/.config/mirage/`.
-- Logs, scrollback DB → `$XDG_DATA_HOME/mirage/`, defaulting to `~/.local/share/mirage/`.
-- Caches → `$XDG_CACHE_HOME/mirage/`, defaulting to `~/.cache/mirage/`.
+- Settings → `$XDG_CONFIG_HOME/irc-client/`, defaulting to `~/.config/irc-client/`.
+- Logs, scrollback DB → `$XDG_DATA_HOME/irc-client/`, defaulting to `~/.local/share/irc-client/`.
+- Caches → `$XDG_CACHE_HOME/irc-client/`, defaulting to `~/.cache/irc-client/`.
 - **Credentials → the macOS Keychain, never a file.** A password in a config file is
   readable by every process running as that user and lands unencrypted in backups.
   CertFP also needs a `SecIdentity` for `NWProtocolTLS`, which is a Keychain item by
