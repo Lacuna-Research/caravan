@@ -917,3 +917,36 @@ any frame, where a stray column costs nothing.
 **Lesson:** I checked this art by looking at it, which is the one method guaranteed to
 miss an off-by-one in a 40-line figure. The same instinct that made every other rule
 here mechanical should have applied to the art the first time.
+
+---
+
+## Correction — the wordmark staircased because centred `<pre>` centres each line
+
+**Date:** 2026-08-04  **Affects:** Scripts/render-readme-art.py, README.md
+
+The user reported the top two rows of the banner shifted left by one character. They
+were right, and the previous entry's fix caused it.
+
+The generator returned `[r.rstrip() for r in rows]`. That left the six rows at 74, 74,
+71, 71, 71, 71 columns — the lower rows are shorter because `T` and `C` have narrower
+tails. Trailing whitespace is invisible, so this looked harmless.
+
+It is not, because of *where* the block sits. The wordmark is inside
+`<div align="center">`, which GitHub renders as `text-align: center`, and a `<pre>`
+**inherits that and centres each line independently**. Six lines of unequal length
+therefore centre at six different offsets: the two full-width rows sit about one
+character left of the four short ones. Exactly the symptom reported.
+
+**Fixed** by not stripping the wordmark's trailing spaces, so all six rows are 74
+columns and centre identically. `rstrip` is still correct for the mockup and the
+architecture diagram, which are left-aligned and where trailing spaces are pure noise.
+
+**Twice now on the same figure.** The first pass got the glyph columns right and the
+line lengths wrong; this pass fixes the line lengths. The generator's assertions
+covered *internal* alignment — glyph blocks equal height, cells padded to width,
+connectors sharing a column — and said nothing about how the block would be laid out
+by the thing rendering it. Correct-in-isolation is not the same as correct-in-context,
+and only one of those is what the reader sees.
+
+The generator's `--check` failure message now names stripped trailing whitespace as
+the likely cause, since that is what an editor or linter would silently do to it.
