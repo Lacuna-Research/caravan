@@ -21,7 +21,7 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
-[![stage 1: 7/10](https://img.shields.io/badge/stage%201-7%2F10%20prompts-blue)](STAGE1-PROMPTS.md)
+[![stage 1: 7/11](https://img.shields.io/badge/stage%201-7%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
 
 </div>
 
@@ -70,7 +70,7 @@ protocols. It is an IRC client.
 
 ## The shape of it
 
-Where this is going — a mIRC-style layout with a network tree, topic bar, nick list,
+Where this is going — a mIRC-style layout with a network tree, header bar, nick list,
 and a scrollback view that holds a hundred thousand lines without complaint.
 
 <!-- art:mockup -->
@@ -140,7 +140,7 @@ comment in a file.
 
 ## Progress
 
-Stage 1 is ten prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authoritative.
+Stage 1 is eleven prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authoritative.
 
 | # | Prompt | Status |
 |---|--------|--------|
@@ -154,6 +154,7 @@ Stage 1 is ten prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authoritativ
 | 8 | Channel and user state | ⬜ next |
 | 9 | Command line | ⬜ |
 | 10 | Status window, timestamps, line rendering | ⬜ |
+| 11 | Debug & Settings canvas | ⬜ |
 
 **Stage 1 is done when** you can idle in a channel on Libera and hold a conversation.
 
@@ -170,6 +171,7 @@ Full detail in [`PLAN.md`](PLAN.md).
 - Channel and user state, nick list ordered by `PREFIX` rank
 - `/join /part /msg /me /nick /quit /raw`, unknown commands passed straight through
 - Status window with raw traffic, timestamps, mIRC-style event lines
+- Debug & Settings canvas — `/debug` and the live wire trace, not shaped like a chat window
 
 </details>
 
@@ -178,8 +180,9 @@ Full detail in [`PLAN.md`](PLAN.md).
 
 - **Formatting** — bold, italic, underline, strikethrough, monospace, reverse, and the
   full 99-colour `^C` palette including the extended 16–98 range
-- **Multi-window** — mIRC treebar/switchbar, per-window activity and highlight
-  colouring, ⌘1–9 and Ctrl+Tab, detachable windows
+- **Multi-window** — four activity states and highlight badges in the tree,
+  next-unread and next-highlight keys, MRU Ctrl+Tab, a ⌘K quick-switcher, ⌘1–9
+  bindings, detachable windows
 - **Multi-network** — direct connections *and* soju's `bouncer-networks`, behind one
   sidebar model that does not care which is in play
 - **Bouncer support** — `chathistory` backfill, de-duplicated against local logs
@@ -213,7 +216,7 @@ Full detail in [`PLAN.md`](PLAN.md).
   `require`, `fetch` or filesystem at all, so capabilities are granted rather than
   restricted — and Safari Web Inspector attaches for actual breakpoints.
 - Identd, SOCKS5 and HTTP proxies, Tor
-- Themes with per-event colour mapping, toolbar editor, F-key bindings
+- Themes over stage 1's one format-table seam, F-key bindings, arbitrary shortcuts
 - User levels and access lists, paste protection, spell check
 - soju extras — `filehost`, `metadata`, `search`, `webpush`; ZNC compatibility quirks
 - Full-text search across all logged history

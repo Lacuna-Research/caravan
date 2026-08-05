@@ -1716,3 +1716,155 @@ of who made it.
 **Generalising:** a document that is corrected in place accretes a second document inside
 itself, addressed to a different reader. Corrections belong in the log; the instruction
 should read as though it had been right the first time.
+
+---
+
+## Prompt 7.5 — GUI design integration
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Docs only — no `Sources/` change.** The twenty sections of `GUI-DESIGN-NOTES.md` are
+folded into the queue and the plan: prompts 8, 9 and 10 rewritten in place, a new
+prompt 11 appended, twelve `PLAN.md` items reshaped and one added, the brief
+(`PROMPT-7.5-GUI-DESIGN.md`) and its pointer section deleted. The app's behaviour is
+unchanged, and one consequence deserves stating before anything else: **the app still
+renders in SF Mono.** §15 settles Menlo, on measurement; `LineRenderer.font` keeps
+returning `monospacedSystemFont` until prompt 10 runs. A carry-forward on prompt 10
+names the call sites, so a reader of the merged fold cannot assume the font changed here.
+
+**The notes land on `main`, as the standing reasoning record.** Rejected alternative:
+distribute the content into the prompts and leave the file on its branch as history. The
+notes carry reasoning the prompts deliberately do not, and a branch is where documents go
+to stop being found. The drift hazard of a second copy is real — this plan's own words
+are "the copy nobody edits is the one that gets read" — so the file's preamble now says
+what it is: folded on 2026-08-05, `STAGE1-PROMPTS.md` and `PLAN.md` authoritative for
+what gets built and when, this file the reasoning they cite by section. Copied across
+with `git show` — the branch forks from pre-prompt-6 `main` and must never be merged.
+`Scripts/font-coverage.swift` came across the same way, because §15 says "rerun it
+before revisiting" and a measurement you cannot rerun is a number, not an argument.
+
+**The eleven rulings:**
+
+1. **A paste never sends (§7) — prompt 9 rewritten.** Replaces "pasting multiple lines
+   sends them as separate messages" immediately — which is mIRC's own behaviour, and is
+   rejected because the content a paste puts on the wire can be a password or a key in a
+   `PRIVMSG` body, where the `Redactor` by design cannot see it. Pre-send visibility is
+   the only guard for that case. Both hard-won details survive in the prompt text rather
+   than being left to the implementer: a trailing-newline paste is never Enter, and
+   stage 3's paste-protection dialog (`PLAN.md` reworded) is a warning on an
+   already-visible payload, not the last line of defence.
+
+2. **One formatting seam, not two (§4) — prompt 10's colour table becomes the format
+   table.** `LineKind`, shipped in prompt 7 as the colour table, grows into the
+   declarative tier: a template string plus a colour per line kind, no JavaScript on the
+   render path. Theming (`PLAN.md`, Themes — stage 3, where the Colors dialog lives)
+   edits that one table; stage 2 builds no second colour surface over the same seam; the
+   opt-in JS hook lands in stage 3 beside scripting. The old "stage 2 theming" phrase in
+   prompt 10 mislabelled the stage and is corrected in the same breath. Rejected:
+   keeping "colours in one table" and
+   growing a separate format-string mechanism later — two seams for one job, which is
+   exactly what the note warned against.
+
+3. **The Debug & Settings canvas is a new prompt 11, not a prompt 10 absorption (§10).**
+   Prompt 10 is already the largest prompt in the queue, and the canvas introduces a new
+   kind of surface plus a pinned tree row — a concept, not a bullet. `/debug` moves to
+   prompt 11 whole; splitting one command's semantics across two prompts was rejected.
+   Prompt 10 keeps the status window (a buffer), its raw-traffic toggle and "Copy
+   diagnostics". The stage closeout moves to prompt 11, which is now last. Ejection to a
+   standalone window is deferred to stage 2's Multi-window item so it ships as the same
+   affordance that detaches a buffer — a scheduling call on a settled design, not a
+   reopening of it.
+
+4. **Sidebar (§3, §9, §12): the tree's *shape* is stage 1, moving through it at scale is
+   stage 2.** Prompt 8 builds what the tree is — buffers nested under their network,
+   the network row doubling as the status buffer's entry (prompt 7's separate status row
+   folds away), every row an ordinary selectable row, monospaced, `#` sigil, join order,
+   and the §16/§17 greyed not-joined state. Stage 2's Multi-window item gets the four
+   activity states with highlight badges, collapsed-group rollup, next-unread and
+   next-highlight keys, MRU Ctrl-Tab and drag-to-reorder. Rejected: activity states in
+   stage 1 — they need unread tracking prompt 8 otherwise has no reason to build, and
+   with one network and a handful of buffers they would be decoration. Prompt 8's "Do
+   not" fence now names all of it. (Also settled while here, because the fence made it
+   visible: `/query` predates the fold and stage 1 has no query buffers, so prompt 9 now
+   defines it as behaving like `/msg` until stage 2's Queries item gives it its window,
+   and prompt 10's acceptance says PMs render in the network's status window until then.
+   Rejected: dropping `/query` from stage 1 — it would fall through the raw passthrough
+   and reach the server as an unknown QUERY command, which is worse than a useful alias.)
+
+5. **Bindings (§11) and the quick-switcher (§9) are stage 2, said in `PLAN.md` rather
+   than left in a notes file.** The Multi-window item now carries the full settled
+   model — nothing bound by default, `Bind to ▸ 1…9` in the context menu, digits shown
+   in the tree, nine global slots, buffer-identity attachment, plain-text persistence,
+   ⌘0 reserved, closed targets opened with the connected-network guard.
+
+6. **Fonts (§15) — prompt 10 text plus a carry-forward, and the script joins the repo.**
+   Menlo over SF Mono (eleven of forty-four CP437 art glyphs missing, substitution up to
+   1.80x cell width), the explicit monospaced-only cascade, ligatures off,
+   ambiguous-width narrow, line height clamped, VS16-only emoji presentation: all now in
+   prompt 10's text. Density, zoom and the force-grid toggle are settings, so they land
+   in stage 2's Options item; per-buffer fonts in stage 3 Themes; the VoiceOver floor in
+   stage 4 Accessibility. Restated: **the code contradicts this decision until prompt 10
+   runs.**
+
+7. **The Dashboard (§13) is a `PLAN.md` reshape, not a stage 1 retrofit.** The Server
+   list item becomes "Server list — the Dashboard": a canvas, peer row above the
+   networks, the splash screen and empty state, first run lands there, and it replaces
+   prompt 7's Connect sheet — named in the item as shipped code to retire
+   (`ConnectSheet` in `CaravanUI`), because a plan that says "replaces" without saying
+   "there is code" invites a second sheet. Rejected: replacing the sheet in stage 1 —
+   it works, stage 1 has one network, and the front door earns its keep when the server
+   list exists. Statistics stay deferred, as a new stage 4 item.
+
+8. **The header band (§14) generalises prompt 8's topic bar.** Channel/topic case in
+   prompt 8, network/MOTD case in prompt 10 — where the shrink behaviour is called
+   load-bearing, since the MOTD is the long one — and the query/context case in stage
+   2's Queries & CTCP item, which cites §14 and takes its wording when built. Rejected:
+   a channel-only topic bar, and any dismissible band — a header that can be dismissed
+   is one people dismiss once and then forget exists. The never-hidden, never-closable
+   rule is stated in both prompts' text.
+
+9. **Buffer lifecycle (§16): the invariant lands in prompt 8 and prompt 9 both.**
+   Membership never outlives its buffer; a buffer may outlive membership. Prompt 8:
+   closing a channel buffer (⌘W, named so the rule is testable) parts the channel, and a
+   parted or kicked channel keeps its buffer in the greyed state. Prompt 9: `/part` is
+   not a close. One new test named in prompt 8: a KICK of ourselves leaves the buffer
+   open. Rejected, both symmetric alternatives: `/part` closing the buffer throws away
+   scrollback you may want to read back or rejoin from, and close leaving membership
+   creates a joined channel with no window — the invisible "ghost" §16 exists to forbid.
+
+10. **Disconnect greying (§17) — prompt 8.** A disconnected network keeps its buffers in
+    the tree, in the *same* not-joined visual state as a parted channel. One "you are
+    not in here right now" appearance, not two.
+
+11. **The §19 defaults, checked and placed.** Into prompt 10: timestamps `[HH:mm:ss]`
+    dim in a fixed-width column, and the unread marker persisting until the buffer is
+    next left — moved out of stage 2's Buffer utilities, which shrank accordingly. The
+    rest audited against what exists: the nick list (prompt 8) gains collapsible and an
+    app-wide persisted width; jump-to-latest and scroll-lock match what prompt 7 already
+    shipped, no change; first run lands on the Dashboard, stage 2.
+
+**Carry-forward accounting.** All ten pre-existing notes preserved verbatim — five on
+prompt 8, two on prompt 9, three on prompt 10 — and the three on `PLAN.md` items
+(Queries & CTCP, Flood protection, Authentication) untouched. None superseded: the §4
+ruling *extends* prompt 10's "LineKind is the one-table seam" note rather than replacing
+it. One raised: prompt 10, the SF Mono call sites.
+
+**Adding prompt 11 took the four mechanical edits** — `TOTAL_PROMPTS=11`, the status
+line at 7/11, the README badge and an eleventh table row — plus the prose that restated
+the count: the queue's title ("The Ten Prompts" → "The Prompts"), and "ten prompts" in
+`PLAN.md` and the README. A count restated in prose is a count that goes stale.
+
+**Pruned, since the fold touched the lines anyway:** stage 2 Buffer utilities loses
+scroll-lock and jump-to-latest (shipped in prompt 7) and the unread marker (prompt 10);
+stage 4 Diagnostics loses the raw-traffic debug window (stage 1 now ships it twice
+over); stage 3 Customization loses the toolbar editor (`NSToolbar`'s palette is that
+feature, §8). Left alone: the README mockup, which predates the notes and is owned by
+the art generator; it gets redrawn when the real UI exists to draw.
+
+**Still open: nothing.** §20 answers every question its conversation raised, and this
+fold raised none — the six that look open (palette toggle, hash seed, scroll-vs-grow,
+toolbar default, binding capacity, tree ordering) all carry their answers in the notes,
+and `PLAN.md`'s list stays empty. The five deferred-not-undecided items landed as plan
+entries: switchbar (Customization), Dashboard statistics (new stage 4 item),
+notifications interface (Highlights & notifications), per-buffer fonts (Themes),
+VoiceOver over the scrollback (Accessibility).

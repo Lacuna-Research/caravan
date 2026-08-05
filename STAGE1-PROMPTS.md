@@ -1,6 +1,6 @@
-# Stage 1 — The Ten Prompts
+# Stage 1 — The Prompts
 
-**Status:** 7/10 complete. Next: prompt 7.5, then prompt 8.
+**Status:** 7/11 complete. Next: prompt 8.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -313,21 +313,6 @@ a preferences window.
 
 ---
 
-## Prompt 7.5 — GUI design integration
-
-Docs only, and **it runs before prompt 8**: the design notes change the sidebar, and
-prompt 8 builds the sidebar. The prompt itself is in `PROMPT-7.5-GUI-DESIGN.md` — it
-rewrites this file, so keeping its instructions inside this file would have it editing
-its own brief. Both this section and that file are deleted when the work merges.
-
-Not one of the ten, so it does not move the **Status** count or the README table.
-
-*No `### Carry-forward` block belongs under this heading:* the staleness check matches
-`## Prompt <digits> `, which `7.5` does not, so a note here would be attributed to
-prompt 7 and reported as outliving it.
-
----
-
 ## Prompt 8 — Channel and user state
 
 ```
@@ -339,7 +324,7 @@ Model (inside the session actor, exposed as immutable snapshots):
 - All nick and channel keys use the casemapping from ISUPPORT — a server saying
   CASEMAPPING=rfc1459 must treat "Foo[]" and "foo{}" as the same nick.
 
-Transitions: JOIN (self vs. other — self-join creates the window), PART, KICK, QUIT
+Transitions: JOIN (self vs. other — self-join creates the buffer), PART, KICK, QUIT
 (remove the user from every channel shared with us, reported per-channel), NICK
 (rename across all channels), 353/366 NAMES (parse ALL leading prefix characters per
 nick, not just the first — multi-prefix is stage 2 but the parser should already be
@@ -349,17 +334,40 @@ numerics (471/473/474/475/476/477) surfaced as usable errors.
 Nick list ordering: by prefix rank as declared by ISUPPORT PREFIX (not a hardcoded
 @%+ list), then casemapped alphabetical.
 
-UI:
-- Sidebar gains channels nested under their network.
-- Channel window: topic bar across the top, scrollback, nick list pane on the right
-  with a member count, input field below.
+Sidebar — the tree takes its settled shape (GUI-DESIGN-NOTES.md §12, §16, §17):
+- Channels nest under their network, in join order. The network row itself opens the
+  network's status buffer — fold prompt 7's separate status row into it. Every row is
+  an ordinary selectable row: networks are the same text size as channels,
+  differentiated by decoration only, and the network row carries connection state.
+- The tree is set in a monospaced font, and channels keep their `#` sigil, which
+  forms a clean column. (Queries take a bullet when stage 2 adds them; they sort
+  after channels in the same list.)
+- Buffer lifecycle invariant: membership never outlives its buffer, but a buffer may
+  outlive membership. Closing a channel buffer (⌘W) parts the channel; a channel we
+  were parted or kicked from keeps its buffer, scrollback and tree row, rendered in
+  a single greyed "not in here right now" state. A disconnected network keeps all
+  its buffers in the tree in that same state — nothing vanishes because wifi
+  dropped.
+
+Channel window:
+- Header band across the top showing the topic. Every buffer type gets this band —
+  the status window's, showing the MOTD, is prompt 10's — and it is never hidden and
+  never closable: multi-line content shrinks rather than growing without bound, and
+  the expanded state scrolls.
+- Scrollback, input field below, nick list pane on the right with a member count.
+  The nick list is collapsible, and its width is user-draggable and persisted
+  app-wide — one setting, not per buffer.
 - Joins/parts/quits/kicks/nick changes/mode changes render as distinct event lines.
 
 Tests: state-transition tests driven by scripted server output, including the awkward
 ones — QUIT removing a user from three channels at once, a nick change colliding with
-casemapping, NAMES arriving in several batches.
+casemapping, NAMES arriving in several batches, and a KICK of ourselves leaving the
+buffer open in the not-joined state.
 
-Do not: context menus, mode dialogs, ban lists, or user-facing mode editing.
+Do not: context menus, mode dialogs, ban lists, or user-facing mode editing. No
+tree activity states or badges, no tree drag-to-reorder, no ⌘1–9 bindings,
+quick-switcher or Ctrl-Tab MRU, no detaching buffers into windows, no query
+buffers — all stage 2 (PLAN.md, Multi-window model and Queries & CTCP).
 ```
 
 ### Carry-forward
@@ -404,21 +412,45 @@ behaves, and it makes the client immediately useful for anything not yet wired u
 Semantics that matter:
 - /msg and /me resolve their target from the active window when omitted.
 - /join accepts a comma-separated channel list and an optional key.
-- /part with no argument parts the current channel.
+- /part with no argument parts the current channel. Parting does NOT close the
+  buffer — it stays in the tree in prompt 8's greyed not-joined state. Closing the
+  buffer is what parts a channel; /part is not a close. (The invariant:
+  membership never outlives its buffer, but a buffer may outlive membership.)
+- /query: stage 1 has no query buffers (stage 2's Queries & CTCP item builds them),
+  so it behaves as /msg — sends when given a message, prints usage otherwise. Listed
+  rather than dropped so it does not fall through the unknown-command passthrough
+  and reach the server as QUERY.
 - Typing in a status window with no target produces a clear error line, not silence.
 - Argument errors print a usage line into the current window. Never crash, never
   silently drop input.
 
-Input field behaviour:
+Input field behaviour (GUI-DESIGN-NOTES.md §7 — the paste rule is a security rule,
+not a UX preference):
+- A single line that grows as Shift+Enter adds lines, stopping at roughly six and
+  scrolling beyond that. Enter sends; Shift+Enter inserts a newline. When the box
+  holds several lines, Enter sends them as separate messages, in order.
+- A paste NEVER sends. Not a multi-line paste, not a single-line paste, not a paste
+  whose content ends in a newline. Pasted text lands in the input box for the user
+  to see, and Enter is the only thing that sends. The failure this prevents is a
+  password, API key or private key pasted into a channel by accident: that content
+  is a PRIVMSG body, so the Redactor cannot help — it only knows the
+  credential-bearing commands. Pre-send visibility is the only guard that exists
+  for this case.
+- The trap to test for: a paste with a TRAILING NEWLINE, which copying a whole line
+  from a terminal or an editor produces routinely. Trailing newlines in pasted
+  content are stripped or ignored, never interpreted as Enter.
 - Per-window command history on Up/Down, capped, with the in-progress line preserved
   when you arrow away and back.
-- Pasting multiple lines sends them as separate messages, in order.
 - Enter on an empty line does nothing.
 
 Tests: a table of input string + active window -> expected outbound IRC line(s) or
-expected error. Pure logic, so it should be fast and exhaustive.
+expected error. Pure logic, so it should be fast and exhaustive. Paste tests
+explicitly: multi-line paste, paste with trailing newline, paste into existing
+text — none may put anything on the wire without Enter.
 
-Do not: tab completion, aliases, scripting, or the paste-protection dialog.
+Do not: tab completion, aliases, scripting, or the paste-protection dialog — that is
+stage 3, where it becomes a warning on an already-visible payload rather than the
+only thing between a paste and the wire.
 ```
 
 ### Carry-forward
@@ -436,43 +468,64 @@ Do not: tab completion, aliases, scripting, or the paste-protection dialog.
 ## Prompt 10 — Status window, timestamps, and line rendering
 
 ```
-Make the output actually look like mIRC, and close out stage 1.
+Make the output actually look like mIRC.
 
 - Per-network status window showing the connection log, MOTD, unhandled numerics,
   and — behind a toggle — raw wire traffic both directions with >>/<< markers. Every
   .raw event has somewhere to land.
-- `/debug` following mIRC's semantics: `/debug <window>` streams the wire trace to a
-  debug window, `/debug <file>` writes it to a file, `/debug off` stops it, and
-  `/debug -i` includes the trace already sitting in the TraceBuffer ring, so you can
-  turn it on *after* something has gone wrong and still see it. File output is
-  redacted and the UI must say so — a user pasting a debug log into a bug report must
-  not leak their NickServ password.
+- The status window gets its header band, showing the MOTD (GUI-DESIGN-NOTES.md §14
+  — every buffer type carries the band; prompt 8 built the channel/topic case). The
+  MOTD is long and multi-line, so the shrink behaviour is load-bearing here rather
+  than an edge case: never hidden, shrinks to a line or two, and the expanded state
+  scrolls rather than growing without bound.
 - A "Copy diagnostics" menu item putting the redacted ring buffer plus app/OS version
   on the clipboard.
-- Timestamps: configurable strftime-style format, default [HH:mm:ss], dim, aligned so
-  message text forms a clean left edge.
+- Timestamps: configurable strftime-style format, default [HH:mm:ss], dim, in a
+  fixed-width column so message text forms a clean left edge. Wrapped lines continue
+  flush-left back at column 0 — mIRC's shape (GUI-DESIGN-NOTES.md §4) — never
+  hanging-indented to the message column.
+- An unread marker: a horizontal rule at the last-read position, persisting until
+  the buffer is next left — not cleared the instant it scrolls into view.
 - Echo our own PRIVMSG/NOTICE/ACTION locally, since we have no echo-message yet. Mark
   self-echoed lines internally so stage 2 can suppress them when the capability is
   negotiated — a one-line enum case now saves an ugly bug later.
 - Line kinds with distinct styling: normal message, own message, action, notice,
-  join/part/quit, kick, mode, topic, nick change, server numeric, client error. Put
-  the colors in one table so stage 2 theming has a single seam to replace. mIRC
-  conventions: "*** Joins: nick (user@host)", "* nick does something" for actions,
-  "-nick-" for notices.
+  join/part/quit, kick, mode, topic, nick change, server numeric, client error.
+  Grow LineKind's table into the declarative format table of GUI-DESIGN-NOTES.md §4:
+  a template string per line kind ("[$timestamp] <$nick> $text") plus a colour —
+  ONE seam holding both, for later theming to make user-editable (PLAN.md, Themes,
+  stage 3 — where the Colors dialog lives). No JavaScript
+  on the render path; the opt-in JS formatting hook is stage 3, beside scripting.
+  mIRC conventions: "*** Joins: nick (user@host)", "* nick does something" for
+  actions, "-nick-" for notices.
+- Fonts become correct, not merely monospaced (GUI-DESIGN-NOTES.md §15, decided by
+  measurement — Scripts/font-coverage.swift; rerun it before revisiting):
+  - Default chat font Menlo, NOT SF Mono/monospacedSystemFont: SF Mono lacks eleven
+    of the forty-four CP437 art characters, and CoreText substitutes them from
+    proportional fonts at up to 1.80x cell width, breaking exactly the art it
+    should render. SF Mono stays available as a user-selectable option.
+  - An explicit monospaced-only fallback cascade (Menlo → Andale Mono → Courier
+    New); anything still missing renders as a placeholder box rather than being
+    allowed to break the grid.
+  - Unconditionally: ligatures forced off, ambiguous-width characters treated as
+    narrow, line height clamped so combining marks and Zalgo text cannot blow a
+    line to hundreds of points.
+  - Honour default text presentation: bare ☺ ♠ ♥ render as one-cell text glyphs
+    from the chat font; only VS16 (U+FE0F) makes them colour emoji, which may then
+    be wider than a cell. One chat font governs scrollback, input box, header band
+    and nick list together.
 - Nick column: sender rendered as <nick>, including the highest-ranking prefix char.
 - Window titles and the sidebar reflect the active channel/network.
 
-Acceptance — the stage 1 exit criteria, run end to end against Libera: connect over
-TLS, join two channels, hold a conversation in both, send an action, send a PM, get
-PMed, watch someone join and quit, use an unimplemented command via the raw
-passthrough, disconnect cleanly, reconnect. Every one of those should look right and
-leave the state consistent.
+Acceptance — run end to end against Libera: connect over TLS, join two channels,
+hold a conversation in both, send an action, send a PM, get PMed (both render in the
+network's status window until stage 2's query buffers exist), watch someone join
+and quit, use an unimplemented command via the raw passthrough, disconnect cleanly,
+reconnect. Every one of those should look right and leave the state consistent.
 
-Then close out the stage: write a stage 1 retrospective as a decision entry in
-BUILD-LOG.md, revise PLAN.md's stage 2 in light of what we learned, and prune
-CLAUDE.md of anything the build proved unnecessary.
-
-Do not: start stage 2 items. Formatting codes, multi-network, and logging are next.
+Do not: start stage 2 items — formatting codes, multi-network, logging, the palette
+toggle, nick colours and density presets are all next. No /debug and no settings
+UI: prompt 11 owns both, and closes out the stage.
 ```
 
 ### Carry-forward
@@ -487,6 +540,50 @@ Do not: start stage 2 items. Formatting codes, multi-network, and logging are ne
   not `Sendable`). `MessageLogController` fills the default font into runs that lack one,
   which is what leaves room for bold and italic runs here — set the font on the
   `NSAttributedString` side or the run will simply be overridden.
+- From prompt 7.5, the GUI-design fold (its record is the BUILD-LOG.md entry of that
+  name): `LineRenderer.font` still returns `NSFont.monospacedSystemFont` — SF
+  Mono, the font GUI-DESIGN-NOTES.md §15 rejects on measurement. The fold was docs-only,
+  so the app renders in SF Mono until this prompt replaces that call with Menlo plus the
+  explicit cascade. The default-font fill in `MessageLogController` is the other call
+  site to check.
+
+---
+
+## Prompt 11 — Debug & Settings canvas
+
+```
+Build the Debug & Settings canvas, and close out stage 1.
+
+The app gains a second kind of surface (GUI-DESIGN-NOTES.md §10): chat buffers
+(channels, queries, per-network status) and canvases. A canvas is not shaped like a
+chat window, has no activity state, and takes no part in buffer navigation.
+
+- The canvas replaces the chat area in the main window while the tree stays visible.
+  Opened by ⌘0 and by ⌘, — forty years of muscle memory makes a dead ⌘, conspicuous —
+  and from a "Settings & Debug" row pinned at the bottom of the tree: in the tree
+  without being a buffer, because the tree is a navigation list, not strictly a list
+  of buffers. Selecting any buffer returns the chat area.
+- Settings half: the handful of real settings that exist by now — timestamp format,
+  scrollback line cap, chat font — as a plain form, persisted to the plain-text
+  config in $XDG_CONFIG_HOME/caravan/. Not a tabbed mIRC options dialog; that is
+  stage 2's Options item, and it builds on this surface.
+- Debug half: the wire trace, live, both directions with >>/<< markers, and /debug
+  following mIRC's semantics: /debug <window> streams the trace to the canvas's
+  debug view, /debug <file> writes it to a file, /debug off stops it, and /debug -i
+  includes the trace already sitting in the TraceBuffer ring, so you can turn it on
+  *after* something has gone wrong and still see it. File output is redacted and the
+  UI must say so — a user pasting a debug log into a bug report must not leak their
+  NickServ password.
+
+Then close out the stage: run prompt 10's acceptance once more end to end, write a
+stage 1 retrospective as a decision entry in BUILD-LOG.md, revise PLAN.md's stage 2
+in light of what we learned, and prune CLAUDE.md of anything the build proved
+unnecessary.
+
+Do not: eject the canvas into its own standalone window — ejection is the same
+affordance as detaching a buffer, and both land with stage 2's Multi-window model.
+No Dashboard (stage 2, Server list item), no tabbed options dialog, no theming UI.
+```
 
 ---
 
