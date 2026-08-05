@@ -1,3 +1,4 @@
+import CaravanTestSupport
 import Diagnostics
 import Foundation
 import IRCProtocol
@@ -12,7 +13,7 @@ import Testing
 struct IRCConnectionTests {
     /// Server, connection, and drained streams, wired together and connected.
     private struct Harness {
-        let server: LocalTCPServer
+        let server: ScriptedIRCServer
         let connection: IRCConnection
         let trace: TraceBuffer
         let states: StreamLog<TransportState>
@@ -20,7 +21,7 @@ struct IRCConnectionTests {
     }
 
     private func connectedHarness() async throws -> Harness {
-        let server = try LocalTCPServer()
+        let server = try ScriptedIRCServer()
         let port = try await server.start()
 
         let trace = TraceBuffer(capacity: 256)
@@ -148,7 +149,7 @@ struct IRCConnectionTests {
 
     @Test("the streams finish once the connection is done")
     func streamsFinish() async throws {
-        let server = try LocalTCPServer()
+        let server = try ScriptedIRCServer()
         let port = try await server.start()
         let connection = IRCConnection(trace: TraceBuffer(capacity: 8))
         // One consumer per stream: `AsyncStream` is single-shot, which is why prompt 6

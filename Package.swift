@@ -43,9 +43,26 @@ let darwinOnly: [Target] = [
         dependencies: ["Diagnostics", "IRCProtocol", "IRCTransport"],
         swiftSettings: strict
     ),
+    // A loopback IRC server the transport and session suites both drive. A plain target
+    // rather than a test target, because SwiftPM has no way for one test target to
+    // depend on another; it is in no product, so it never reaches a consumer.
+    .target(
+        name: "CaravanTestSupport",
+        dependencies: ["IRCProtocol", "IRCTransport"],
+        path: "Tests/Support",
+        swiftSettings: strict
+    ),
     .testTarget(name: "DiagnosticsTests", dependencies: ["Diagnostics"], swiftSettings: strict),
-    .testTarget(name: "IRCTransportTests", dependencies: ["IRCTransport"], swiftSettings: strict),
-    .testTarget(name: "IRCSessionTests", dependencies: ["IRCSession"], swiftSettings: strict),
+    .testTarget(
+        name: "IRCTransportTests",
+        dependencies: ["IRCTransport", "CaravanTestSupport"],
+        swiftSettings: strict
+    ),
+    .testTarget(
+        name: "IRCSessionTests",
+        dependencies: ["IRCSession", "CaravanTestSupport"],
+        swiftSettings: strict
+    ),
 ]
 
 let darwinProducts: [Product] = [

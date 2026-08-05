@@ -1277,3 +1277,101 @@ records the certificate as system-trusted. CI never runs it and an ordinary
 the scriptable fake). One on `PLAN.md`'s Authentication item: self-signed acceptance
 needs a trust-on-first-use prompt, and the transport already surfaces the subject and
 SHA-256 fingerprint such a prompt would show.
+
+---
+
+## Prompt 5 — Registration and connection state machine
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `IRCSession` — `ServerCapabilities` (ISUPPORT), `ServerInfo`,
+`SessionState`/`DisconnectReason`, `SessionConfiguration`, `BackoffPolicy`, and the
+`IRCSession` actor: registration, nick fallback, PING/PONG, ERROR, idle detection,
+connect deadline and reconnect. 130 tests across 19 suites; `make all` clean.
+
+**Deviations:**
+- **A shared test-support target, `Tests/Support`.** Prompt 4's carry-forward preferred
+  this over copying the loopback server, and the scripted server needed the same bones.
+  It is a plain target, not a test target, because SwiftPM has no way for one test
+  target to depend on another; it is in no product, so it cannot reach a consumer.
+  `LocalTCPServer` was replaced outright by `ScriptedIRCServer` rather than left
+  alongside it, and the transport suite now drives the new one.
+- **432 is handled, though the prompt only names 433.** An erroneous nickname cannot be
+  fixed by appending an underscore — the server is rejecting the shape of the name, not
+  its availability — so retrying asks the same question again. It fails immediately
+  with a clear reason instead of grinding through candidates until the deadline.
+- **A failure emits `.disconnected(reason:)` *and then* `.reconnecting`.** Two
+  transitions where the prompt's state list implies one. `.reconnecting` carries an
+  attempt and a delay but no reason, so without the pair a consumer could watch the
+  client reconnect and never learn what went wrong.
+
+**Decisions:**
+- **`ISUPPORT` is stored raw and derived on write.** `rawTokens` keeps every token,
+  including ones with no typed accessor, so the status window can show what the server
+  actually said; the typed properties are recomputed on each change. Negation is then
+  just a removal followed by a refresh back to the protocol default. Derived on write
+  rather than read because `caseMapping` is consulted on every nick comparison in the
+  app, and reparsing a string there would be absurd.
+- **`ERROR` schedules a reconnect.** Most are transient — "Closing link: ping timeout" —
+  and a client that goes quiet after one is worse than one that retries. Rejected:
+  treating `ERROR` as terminal, which loses the common case to protect the rare one. The
+  backoff ceiling bounds the damage, and a carry-forward on `PLAN.md`'s flood-protection
+  item records the better fix: an `ERROR` *before* 001 is far more likely to be a ban or
+  a throttle than a dropped link.
+- **One deadline covers connecting and registering.** They fail the same way and neither
+  has a timeout anywhere below this layer, so splitting them would be two knobs for one
+  question.
+- **Nick candidates truncate rather than give up.** `alice` grows to `alice____` at the
+  9-character default; a nick already at the limit still yields one variant because the
+  base is truncated to make room for the underscore, where plain appending would produce
+  an over-long nick and no candidate at all. The sequence terminates when truncation
+  stops producing a new name, which needs no arbitrary attempt cap.
+
+**Learned:**
+- **Prompt 4's carry-forward was right about the hang and wrong about the cause.** It
+  claimed a *refused* connection sits in `.waiting` forever. Measured, on loopback: a
+  refused port fails in milliseconds, as `.failed(.receiveFailed("Connection refused"))`
+  — through the *read*, not through a connection state. What really hangs is an
+  unroutable address: `192.0.2.1:6667` stayed in `.connecting` for as long as it was
+  watched, with no failure ever reported. The deadline is still necessary and is still
+  the only thing that ends *that*, plus the case the note did not mention — a server
+  that accepts TCP and then says nothing.
+- **Which is why the deadline test now uses a silent server, not a dead port.** The
+  first version raced NWConnection's refusal against a 200 ms deadline and passed only
+  under load, which is the worst kind of test: green on the machine that wrote it. A
+  scripted server with no rules accepts the connection and never answers, so the
+  deadline is the only thing that can end the attempt. Deterministic, and it dropped the
+  integration suites from 5.0s to 0.35s because nothing waits out a doomed timeout.
+- **`NICKLEN` is unknowable during registration.** `ISUPPORT` arrives after 001 and 433
+  arrives before it, so the fallback necessarily works from the RFC default of 9. The
+  configured nick's own length is taken as a floor — the server answered "in use", not
+  "erroneous", so a nick that long is evidently legal.
+- **`dictionary[key] = nil` removes the key.** A valueless ISUPPORT token has to be
+  stored as a present key with a `nil` value, which needs `updateValue(nil, forKey:)`.
+  The subscript silently did the opposite, and `SAFELIST` would have read as absent.
+- **`Mutex` being non-copyable bit again**, indirectly: the session keeps its
+  cancellation state in actor properties rather than a shared box, which is simpler
+  anyway once every callback path already hops to the actor.
+
+**Measured:** 130 tests in 0.35s. The integration suites were run 8 times consecutively
+after the deadline-test rewrite without a flake, and the full suite 3 times.
+
+**Live check.** `CARAVAN_LIVE_TESTS=1 swift test --filter LiveRegistrationTests` connects
+to `irc.libera.chat:6697` over TLS and registers for real: 001–004 captured, ISUPPORT
+read back as `NETWORK=Libera.Chat`, `CASEMAPPING=rfc1459`, `NICKLEN` 16 or more, `@` in
+`PREFIX`, non-empty `CHANMODES` group A. Passed in 6.7s. CI never runs it. A scripted
+server proves the state machine does what the script says; only a real ircd proves the
+script resembles an ircd.
+
+**Carry-forward consumed:** all four notes on prompt 5, from prompt 4. The connect
+deadline exists (and the note's claim is corrected above); one `IRCConnection` per
+attempt is what reconnect does; `.failed` reconnects and `.cancelled` does not, tested
+both ways; and the loopback server became a shared target rather than a copy. Notes
+deleted.
+
+**Carry-forward raised:** three on prompt 6 (the two streams it replaces, the
+`.disconnected`-then-`.reconnecting` pairing, and when `.registered` should fire given
+that 002–004 trail 001), two on prompt 7 (the Connect sheet maps to
+`SessionConfiguration`; show the disconnect reason), one on prompt 8 (the
+`ServerCapabilities` accessors it needs), and one on `PLAN.md`'s flood-protection item
+(recognising a permanent `ERROR` instead of reconnecting into a ban).
