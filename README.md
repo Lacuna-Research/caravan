@@ -1,5 +1,7 @@
 <div align="center">
 
+<!-- art:wordmark -->
+
 ```
    ██╗██████╗  ██████╗       ██████╗██╗     ██╗███████╗███╗   ██╗████████╗
    ██║██╔══██╗██╔════╝      ██╔════╝██║     ██║██╔════╝████╗  ██║╚══██╔══╝
@@ -8,6 +10,8 @@
    ██║██║  ██║╚██████╗      ╚██████╗███████╗██║███████╗██║ ╚████║   ██║
    ╚═╝╚═╝  ╚═╝ ╚═════╝       ╚═════╝╚══════╝╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝
 ```
+
+<!-- /art:wordmark -->
 
 **A native macOS IRC client, modeled on mIRC.**
 
@@ -63,22 +67,27 @@ protocols. It is an IRC client.
 Where this is going — a mIRC-style layout with a network tree, topic bar, nick list,
 and a scrollback view that holds a hundred thousand lines without complaint.
 
+<!-- art:mockup -->
+
 ```
-┌─ IRC Client ─────────────────────────────────────────────────────────────────┐
-│ ⌂ Libera.Chat           │ #irc-client · a native macOS IRC client            │
-│   ├ #irc-client      ●  ├──────────────────────────────────────────────┬─────┤
-│   ├ #swift              │ [12:04:17] *** Joins: alice (~a@example.net)  │ @ops│
-│   └ ✉ NickServ          │ [12:04:22] <bob>   parser passes the corpus   │ @bob│
-│                         │ [12:04:31] <alice> all 66 cases?              │ +eve│
-│ ⌂ soju (bouncer)        │ [12:04:36] * bob nods                         │  ann│
-│   ├ #ops             ○  │ [12:04:41] -NickServ- You are now identified  │  joe│
-│   └ #dev                │ [12:05:02] *** eve is now known as evelyn     │     │
-│                         │                                              │     │
-├─────────────────────────┴──────────────────────────────────────────────┴─────┤
-│ [#irc-client] > /msg alice thanks!                                           │
-└──────────────────────────────────────────────────────────────────────────────┘
-    ● highlight    ○ activity
+┌─ IRC Client ──────────────────────────────────────────────────────────────────┐
+│                         │ #irc-client - a native macOS IRC client             │
+│                         ├──────────────────────────────────────────────┬──────┤
+│ * Libera.Chat           │ [12:04:17] *** Joins: alice (~a@example.net) │ @ops │
+│   |- #irc-client      * │ [12:04:22] <bob>   parser passes the corpus  │ @bob │
+│   |- #swift             │ [12:04:31] <alice> all 66 cases?             │ +eve │
+│   `- >NickServ          │ [12:04:36] * bob nods                        │  ann │
+│                         │ [12:04:41] -NickServ- You are now identified │  joe │
+│ * soju (bouncer)        │ [12:05:02] *** eve is now known as evelyn    │      │
+│   |- #ops             o │                                              │      │
+│   `- #dev               │                                              │      │
+├─────────────────────────┴──────────────────────────────────────────────┴──────┤
+│ [#irc-client] > /msg alice thanks!                                            │
+└───────────────────────────────────────────────────────────────────────────────┘
+    * highlight    o activity
 ```
+
+<!-- /art:mockup -->
 
 *A mockup, not a screenshot. The window is currently empty — see Progress.*
 
@@ -86,31 +95,37 @@ and a scrollback view that holds a hundred thousand lines without complaint.
 
 Four modules, one app. Dependencies point one way only.
 
+<!-- art:architecture -->
+
 ```
-                       ┌───────────────────────────┐
-                       │            App            │  SwiftUI shell
-                       │   NSTextView scrollback    │  AppKit where it counts
-                       └─────────────┬─────────────┘
-                                     │
-                       ┌─────────────▼─────────────┐
-                       │        IRCSession         │  registration, ISUPPORT,
-                       │    actor · event stream    │  state machine, events
-                       └─────────────┬─────────────┘
-                                     │
-                       ┌─────────────▼─────────────┐
-                       │       IRCTransport        │  NWConnection, TLS,
-                       │    actor · line framing    │  send queue, reconnect
-                       └──────┬─────────────┬──────┘
-                              │             │
-              ┌───────────────▼───┐   ┌─────▼─────────────────┐
-              │    Diagnostics    │   │      IRCProtocol      │
-              │  os.Logger        │   │  parse · serialize    │
-              │  Redactor         │   │  IRCv3 tags · masks   │
-              │  TraceBuffer      │   │  casemapping          │
-              │  Signposts        │   │                       │
-              └───────────────────┘   └───────────────────────┘
-                    Darwin-only          pure · builds on Linux
+                      ┌───────────────────────────┐
+                      │            App            │  SwiftUI shell
+                      │   NSTextView scrollback   │  AppKit where it counts
+                      └─────────────┬─────────────┘
+                                    │
+                      ┌─────────────▼─────────────┐
+                      │        IRCSession         │  registration, ISUPPORT,
+                      │   actor - event stream    │  state machine, events
+                      └─────────────┬─────────────┘
+                                    │
+                      ┌─────────────▼─────────────┐
+                      │       IRCTransport        │  NWConnection, TLS,
+                      │   actor - line framing    │  send queue, reconnect
+                      └─────────────┬─────────────┘
+                                    │
+                  ┌─────────────────┴───────────────────────┐
+                  │                                         │
+        ┌─────────▼─────────┐                   ┌───────────▼───────────┐
+        │    Diagnostics    │                   │      IRCProtocol      │
+        │ os.Logger         │                   │ parse - serialize     │
+        │ Redactor          │                   │ IRCv3 tags - masks    │
+        │ TraceBuffer       │                   │ casemapping           │
+        │ Signposts         │                   │                       │
+        └───────────────────┘                   └───────────────────────┘
+             Darwin-only                         pure · builds on Linux
 ```
+
+<!-- /art:architecture -->
 
 `IRCProtocol` has no I/O, no Foundation, no Darwin APIs — nothing but the standard
 library. **CI builds and runs its test suite on Linux**, so the moment someone reaches
