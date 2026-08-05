@@ -882,3 +882,38 @@ carry-forward), and `README.md` (progress).
   Picking one is the user's call: MIT and Apache-2.0 are the usual choices for a
   client like this, and the vendored parser-tests corpus is CC0 so it imposes no
   constraint. Not blocking.
+
+---
+
+## Correction — the README ASCII art was misaligned, and is now generated
+
+**Date:** 2026-08-04  **Affects:** README.md, Scripts/render-readme-art.py, check-docs.sh
+
+The user spotted that the art did not line up. Measuring rather than squinting found
+two genuine defects and cleared one false alarm:
+
+- **The UI mockup was one column wide on every content row** — 81 against a frame of
+  80. Invisible until you look along the right-hand border.
+- **Three rows of the architecture diagram had 28-column box interiors against a
+  27-column frame**, and the child boxes' `▼` connectors did not sit under the `┬`
+  they descended from.
+- **The wordmark was fine.** It only lacked trailing spaces, which are invisible.
+  Composing it from per-letter blocks reproduced the committed art byte for byte.
+
+**Chose:** generating the art from `Scripts/render-readme-art.py` rather than fixing
+it by hand. Hand-drawn box art is exactly the kind of thing that loses a column and
+nobody notices for months. The generator pads every cell to an exact width and asserts
+it, and paints the architecture diagram onto a character grid at explicit coordinates,
+then asserts that each connector shares a column with what it connects to. Alignment
+is a postcondition, not a hope. `check-docs.sh` now runs it with `--check`; verified by
+hand-editing one character and watching the check fail.
+
+**Also fixed: ambiguous-width glyphs inside frames.** `✉` (U+2709) is
+emoji-presented in many fonts and `·` (U+00B7) is East Asian *ambiguous* — both can
+render double-width and split a frame for readers whose font disagrees with mine.
+Frame interiors are now box-drawing plus ASCII only; `·` survives in captions outside
+any frame, where a stray column costs nothing.
+
+**Lesson:** I checked this art by looking at it, which is the one method guaranteed to
+miss an off-by-one in a 40-line figure. The same instinct that made every other rule
+here mechanical should have applied to the art the first time.

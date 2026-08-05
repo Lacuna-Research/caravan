@@ -100,7 +100,19 @@ else
 	fi
 fi
 
-# 7. No external SwiftPM dependencies without an explicit decision.
+# 7. README ASCII art must match its generator.
+# Hand-editing box-drawn art is how it silently loses a column. The generator pads
+# every cell to an exact width and places connectors by coordinate, so if the README
+# disagrees with it, the README is wrong.
+if command -v python3 >/dev/null 2>&1; then
+	if python3 Scripts/render-readme-art.py --check >/dev/null 2>&1; then
+		ok "README ASCII art matches its generator"
+	else
+		err "README ASCII art is out of date. Run: python3 Scripts/render-readme-art.py"
+	fi
+fi
+
+# 8. No external SwiftPM dependencies without an explicit decision.
 # Each dependency is attack surface and maintenance burden. Stage 1 needs none.
 # Adding one means a decision entry in BUILD-LOG.md and an edit to this check.
 if [ -f Package.swift ]; then
