@@ -1,0 +1,65 @@
+import IRCTransport
+
+/// Everything needed to reach a server and register on it.
+public struct SessionConfiguration: Sendable {
+    public var host: String
+    public var port: UInt16
+    public var tls: TLSMode
+
+    public var nick: String
+    /// Tried first when the nick is taken, before falling back to appending `_`.
+    public var altNick: String?
+    /// The `<user>` of `USER`. Against a bouncer this is where `<user>/<network>` goes.
+    public var ident: String
+    public var realName: String
+
+    /// Server password, sent as `PASS` before `NICK`.
+    ///
+    /// A live credential. It reaches the wire and nowhere else: `TraceBuffer` redacts
+    /// `PASS` on insert, and nothing here is ever logged. Its long-term home is the
+    /// Keychain, wired up when there is a UI to collect it.
+    public var password: String?
+
+    /// How long the whole of connecting *and* registering may take.
+    ///
+    /// One deadline for both because both fail the same way: `NWConnection` retries a
+    /// refused connection in `.waiting` indefinitely and never reports a failure, and a
+    /// server that accepts TCP but never sends 001 is just as stuck. Nothing below this
+    /// layer will ever time either of them out.
+    public var connectTimeout: Duration
+
+    /// Silence tolerated before we send our own `PING`.
+    public var idleInterval: Duration
+    /// How long that `PING` may go unanswered before the connection is treated as dead.
+    public var idleResponseTimeout: Duration
+
+    public var backoff: BackoffPolicy
+
+    public init(
+        host: String,
+        port: UInt16,
+        tls: TLSMode = .enabled(allowSelfSigned: false),
+        nick: String,
+        altNick: String? = nil,
+        ident: String? = nil,
+        realName: String? = nil,
+        password: String? = nil,
+        connectTimeout: Duration = .seconds(30),
+        idleInterval: Duration = .seconds(120),
+        idleResponseTimeout: Duration = .seconds(60),
+        backoff: BackoffPolicy = BackoffPolicy()
+    ) {
+        self.host = host
+        self.port = port
+        self.tls = tls
+        self.nick = nick
+        self.altNick = altNick
+        self.ident = ident ?? nick
+        self.realName = realName ?? nick
+        self.password = password
+        self.connectTimeout = connectTimeout
+        self.idleInterval = idleInterval
+        self.idleResponseTimeout = idleResponseTimeout
+        self.backoff = backoff
+    }
+}

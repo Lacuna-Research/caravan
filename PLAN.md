@@ -138,6 +138,17 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     messages received while away.
 27. **Flood protection.** Outbound send-rate throttling to avoid `Excess Flood`, inbound
     flood detection with auto-ignore.
+
+    ### Carry-forward
+
+    - From prompt 5: a server `ERROR` currently schedules a reconnect like any other
+      failure, on the grounds that most of them are transient ("Closing link: ping
+      timeout") and staying dead after one is worse. But a `K-line` or a throttle also
+      arrives as `ERROR`, and reconnecting into one is exactly the antisocial behaviour
+      this item exists to prevent. The backoff ceiling bounds it; recognising the
+      permanent cases and stopping would be better. The signal is available: an `ERROR`
+      arriving *before* 001 is far more likely to be a ban or a throttle than a dropped
+      link.
 28. **Authentication.** SASL PLAIN, EXTERNAL (CertFP), SCRAM-SHA-256; NickServ
     auto-identify fallback; all secrets in Keychain.
 

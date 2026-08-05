@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 4/10 complete. Next: prompt 5.
+**Status:** 5/10 complete. Next: prompt 6.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -235,27 +235,6 @@ Do not: track channels or users (prompt 8). No CAP negotiation, no SASL — stag
 No UI.
 ```
 
-### Carry-forward
-
-- From prompt 4: **a refused or unroutable connection never reports `.failed`.**
-  `NWConnection` sits in `.waiting(ECONNREFUSED)` retrying indefinitely, and the
-  transport deliberately does not treat that as terminal. So the session needs its own
-  connect deadline — without one, connecting to a wrong port hangs in `.connecting`
-  forever. This is why prompt 4 has no "connection refused" test: there is nothing to
-  observe until prompt 5 supplies the timeout.
-- From prompt 4: one `IRCConnection` is one connection attempt. `connect` may be called
-  once and both streams finish at the terminal state, so reconnect means constructing a
-  new instance — which is also what keeps a retry from inheriting half-torn-down state.
-- From prompt 4: reconnect on `.failed`, never on `.cancelled`. A server hanging up
-  after `ERROR` arrives as `.failed(.closedByPeer)`; a deliberate `disconnect()` is
-  `.cancelled`. The transport latches whichever comes first, so exactly one terminal
-  state is ever reported.
-- From prompt 4: `Tests/IRCTransportTests/Support/LocalTCPServer.swift` is a loopback
-  `NWListener` that frames what it receives and writes raw lines back — the bones of the
-  scriptable fake server this prompt needs. It lives in another test target, so sharing
-  it means either duplicating it or adding a shared test-support target; prefer the
-  latter if IRCSessionTests wants more than a copy.
-
 ---
 
 ## Prompt 6 — Typed event model
@@ -292,6 +271,24 @@ Include a test that an unrecognized command still yields .raw and nothing else.
 
 Do not: add channel/user state (prompt 8), and do not build UI.
 ```
+
+### Carry-forward
+
+- From prompt 5: `IRCSession` currently publishes two `AsyncStream`s, `state` and
+  `inbound`, both single-consumer and neither finishing while the session lives. Both
+  are what this prompt replaces. `inbound` deliberately carries *every* message,
+  including the ones the session handled itself (`PING`, 001–005), which is already the
+  `.raw` guarantee — keep it when the event model lands.
+- From prompt 5: a failure emits `.disconnected(reason:)` *and then* `.reconnecting`,
+  because `.reconnecting` carries an attempt number and no reason, and "why did it
+  drop?" is the question a user actually asks. Preserve that pairing when mapping states
+  onto events rather than collapsing it.
+- From prompt 5: `ServerInfo` keeps being refined after `.connected` is announced —
+  001 arrives first and 002/003/004 fill in the rest. Decide deliberately whether
+  `.registered(ServerInfo)` fires on 001 with partial data (as `.connected` does now) or
+  waits for 004; there is no line that marks the end of the burst.
+
+---
 
 ---
 
@@ -332,6 +329,16 @@ Do not: multiple servers, channel windows, nick lists, formatting codes, logging
 a preferences window.
 ```
 
+### Carry-forward
+
+- From prompt 5: the Connect sheet's fields are exactly `SessionConfiguration`'s first
+  seven — host, port, tls, nick, altNick, ident, realName — plus an optional password.
+  Timeouts and backoff have defaults and want no UI yet.
+- From prompt 5: show the disconnect reason. `.disconnected(reason:)` distinguishes a
+  server `ERROR` (with its text), a transport failure, a registration failure, an idle
+  timeout and a connect timeout, and a status line that says only "disconnected" throws
+  all of that away.
+
 ---
 
 ## Prompt 8 — Channel and user state
@@ -367,6 +374,14 @@ casemapping, NAMES arriving in several batches.
 
 Do not: context menus, mode dialogs, ban lists, or user-facing mode editing.
 ```
+
+### Carry-forward
+
+- From prompt 5: `ServerCapabilities` already has what this prompt needs —
+  `rank(ofPrefix:)` for nick-list ordering straight from `PREFIX`, `channelModes` in its
+  four groups, `isChannelName(_:)` from `CHANTYPES`, and `caseMapping` from
+  `CASEMAPPING`. Key every nick and channel dictionary with the last of those; it is
+  live on the session as `caseMapping` and reset per connection.
 
 ---
 

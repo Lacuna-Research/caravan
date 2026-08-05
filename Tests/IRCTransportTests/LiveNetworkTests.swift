@@ -1,3 +1,4 @@
+import CaravanTestSupport
 import Diagnostics
 import Foundation
 import IRCProtocol

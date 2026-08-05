@@ -1,0 +1,77 @@
+import IRCTransport
+
+/// What the server told us about itself during registration.
+///
+/// `ISUPPORT` is deliberately *not* here: 005 arrives after 001, so folding it in would
+/// mean either re-announcing `.connected` for every 005 line or publishing a half-filled
+/// struct. It lives on ``IRCSession/capabilities`` instead, which is a value that keeps
+/// being refined rather than an event.
+public struct ServerInfo: Sendable, Equatable {
+    /// The nick registration actually settled on, which may not be the configured one.
+    public var nick: String
+
+    /// Text of 001, the welcome line.
+    public var welcome: String?
+
+    /// Text of 002, which names the host and version as prose.
+    public var hostInfo: String?
+
+    /// Server name, from 004 or the source of 001.
+    public var serverName: String?
+    /// Server version, from 004 or 002.
+    public var version: String?
+    /// Text of 003, when the server was created.
+    public var created: String?
+    /// User mode letters this server knows, from 004.
+    public var userModes: String?
+    /// Channel mode letters this server knows, from 004.
+    public var channelModes: String?
+
+    public init(nick: String) {
+        self.nick = nick
+    }
+}
+
+/// Why the session is not connected.
+public enum DisconnectReason: Sendable, Equatable {
+    /// Never connected in the first place.
+    case notStarted
+    /// ``IRCSession/disconnect()`` was called.
+    case userInitiated
+    /// The server sent `ERROR`, with its reason.
+    case serverError(String)
+    /// The transport failed.
+    case transportFailed(TransportError)
+    /// Registration could not complete.
+    case registrationFailed(String)
+    /// Nothing arrived and our own `PING` went unanswered.
+    case timedOut
+    /// Neither the TCP connection nor registration finished in time.
+    ///
+    /// Its own case rather than a `timedOut`: a connection refused outright leaves
+    /// `NWConnection` retrying in `.waiting` forever, so this is the only thing that
+    /// ever reports it, and telling the two apart is the difference between "the server
+    /// is not there" and "the server stopped talking to us".
+    case connectTimedOut
+}
+
+/// Where the session is in its lifecycle.
+public enum SessionState: Sendable, Equatable {
+    case disconnected(reason: DisconnectReason)
+    /// TCP (and TLS) are being established.
+    case connecting
+    /// Connected; `NICK`/`USER` sent, waiting for 001.
+    case registering
+    case connected(ServerInfo)
+    /// Waiting out the backoff before attempt `attempt`.
+    case reconnecting(attempt: Int, nextAttemptIn: Duration)
+
+    /// Whether an attempt is in flight or established. A reconnect must never be
+    /// scheduled while this holds.
+    public var isActive: Bool {
+        switch self {
+        case .connecting, .registering, .connected: true
+        case .disconnected, .reconnecting: false
+        }
+    }
+}
