@@ -21,7 +21,7 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
-[![stage 1: 6/10](https://img.shields.io/badge/stage%201-6%2F10%20prompts-blue)](STAGE1-PROMPTS.md)
+[![stage 1: 7/10](https://img.shields.io/badge/stage%201-7%2F10%20prompts-blue)](STAGE1-PROMPTS.md)
 
 </div>
 
@@ -150,8 +150,8 @@ Stage 1 is ten prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authoritativ
 | 4 | Transport — line framing, TLS, `NWConnection` | ✅ done |
 | 5 | Registration and connection state machine | ✅ done |
 | 6 | Typed event model | ✅ done |
-| 7 | Minimal UI and the scrollback view | ⬜ next |
-| 8 | Channel and user state | ⬜ |
+| 7 | Minimal UI and the scrollback view | ✅ done |
+| 8 | Channel and user state | ⬜ next |
 | 9 | Command line | ⬜ |
 | 10 | Status window, timestamps, line rendering | ⬜ |
 

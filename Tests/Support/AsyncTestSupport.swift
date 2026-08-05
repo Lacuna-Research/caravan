@@ -3,7 +3,11 @@
 /// Work lands through dispatch queues and detached tasks, so tests wait on observable
 /// outcomes rather than on a fixed sleep. Polling keeps a passing test fast — the
 /// timeout only matters when something is already broken.
+/// Runs in the caller's isolation — `#isolation` rather than a `@Sendable` closure — so a
+/// `@MainActor` test can poll main-actor state without the condition having to cross an
+/// isolation boundary to get here.
 public func waitUntil(
+    isolation: isolated (any Actor)? = #isolation,
     timeout: Duration = .seconds(5),
     _ condition: () async -> Bool
 ) async -> Bool {

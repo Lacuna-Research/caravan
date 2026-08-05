@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 6/10 complete. Next: prompt 7.
+**Status:** 7/10 complete. Next: prompt 8.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -311,23 +311,6 @@ Do not: multiple servers, channel windows, nick lists, formatting codes, logging
 a preferences window.
 ```
 
-### Carry-forward
-
-- From prompt 5: the Connect sheet's fields are exactly `SessionConfiguration`'s first
-  seven — host, port, tls, nick, altNick, ident, realName — plus an optional password.
-  Timeouts and backoff have defaults and want no UI yet.
-- From prompt 5: show the disconnect reason. `.disconnected(reason:)` distinguishes a
-  server `ERROR` (with its text), a transport failure, a registration failure, an idle
-  timeout and a connect timeout, and a status line that says only "disconnected" throws
-  all of that away.
-- From prompt 6: `session.events()` is the only feed, and it does **not replay** —
-  subscribe before calling `connect()` or the connection's first events are missed. Each
-  view model gets its own stream; a stalled one loses its oldest events rather than
-  blocking the session or any other consumer.
-- From prompt 6: render `.numeric` generically. Every numeric without a more specific
-  event arrives there, MOTD included, so the status window needs no case per code — and
-  `session.state` gives the current lifecycle state without waiting for a transition.
-
 ---
 
 ## Prompt 8 — Channel and user state
@@ -378,6 +361,13 @@ Do not: context menus, mode dialogs, ban lists, or user-facing mode editing.
   plain `.numeric`; turning those into specific events is part of this prompt.
 - From prompt 6: `.modeChanged` carries its arguments **unparsed**. Splitting them needs
   `CHANMODES` to know which modes take a parameter, which is this prompt's job.
+- From prompt 7: a buffer is a `MessageLogController` plus a `BufferView`, and both are
+  already per-buffer rather than per-connection — a channel window is a second controller,
+  not a rework. `AppModel.SidebarItem` needs a `.channel` case beside `.status`, and
+  `Target` is already usable as its key.
+- From prompt 7: `LineRenderer` already renders joins, parts, quits, kicks, nick changes,
+  topics and modes in mIRC's shapes. What it does *not* have is anywhere to put a nick
+  list, and `.namesReply`/`.endOfNames` deliberately render nothing until there is one.
 
 ---
 
@@ -415,6 +405,16 @@ expected error. Pure logic, so it should be fast and exhaustive.
 
 Do not: tab completion, aliases, scripting, or the paste-protection dialog.
 ```
+
+### Carry-forward
+
+- From prompt 7: the input field is a **stopgap that this prompt replaces**. It currently
+  parses whatever is typed as a raw IRC line and sends it — enough to `JOIN` and `PRIVMSG`
+  by hand and prove the connection works, and nothing more. `ConnectionViewModel.send(rawLine:)`
+  is the seam; the command layer goes there.
+- From prompt 7: unparseable input already produces a `.clientError` event that renders as
+  a red line in the buffer, which is the "never silently drop input" requirement's
+  existing half. Reuse it for usage errors rather than inventing a second path.
 
 ---
 
@@ -459,6 +459,19 @@ CLAUDE.md of anything the build proved unnecessary.
 
 Do not: start stage 2 items. Formatting codes, multi-network, and logging are next.
 ```
+
+### Carry-forward
+
+- From prompt 7: `LineKind` is the one-table seam this prompt is meant to fill out — five
+  cases and a colour each today, in `LineRenderer`. The full set of line kinds and the
+  timestamp column go there, not into the event switch beside it.
+- From prompt 7: `.raw` deliberately renders nothing, so the raw-traffic toggle this
+  prompt builds is currently the *only* thing that would show wire traffic. Everything
+  needed is already flowing — the events arrive, they are simply dropped by the renderer.
+- From prompt 7: a font cannot go into an `AttributedString` under Swift 6 (`NSFont` is
+  not `Sendable`). `MessageLogController` fills the default font into runs that lack one,
+  which is what leaves room for bold and italic runs here — set the font on the
+  `NSAttributedString` side or the run will simply be overridden.
 
 ---
 
