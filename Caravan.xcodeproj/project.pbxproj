@@ -11,6 +11,7 @@
 		AA0000000000000000000016 /* IRCProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000012 /* IRCProtocol */; };
 		AA0000000000000000000017 /* IRCTransport in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000013 /* IRCTransport */; };
 		AA0000000000000000000018 /* IRCSession in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000014 /* IRCSession */; };
+		AA0000000000000000000019 /* CaravanUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000020 /* CaravanUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +31,7 @@
 				AA0000000000000000000016 /* IRCProtocol in Frameworks */,
 				AA0000000000000000000017 /* IRCTransport in Frameworks */,
 				AA0000000000000000000018 /* IRCSession in Frameworks */,
+				AA0000000000000000000019 /* CaravanUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -76,6 +78,7 @@
 				AA0000000000000000000012 /* IRCProtocol */,
 				AA0000000000000000000013 /* IRCTransport */,
 				AA0000000000000000000014 /* IRCSession */,
+				AA0000000000000000000020 /* CaravanUI */,
 			);
 			productName = Caravan;
 			productReference = AA0000000000000000000006 /* Caravan.app */;
@@ -286,6 +289,10 @@
 		AA0000000000000000000014 /* IRCSession */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = IRCSession;
+		};
+		AA0000000000000000000020 /* CaravanUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CaravanUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1468,3 +1468,112 @@ replay; render `.numeric` generically), two on prompt 8 (the membership events a
 exist, so what remains is 332/333/331/324 and the join-failure numerics; `.modeChanged`
 arguments are deliberately unparsed), and one on `PLAN.md`'s Queries & CTCP item
 (`ACTION` is unwrapped, every other CTCP still renders as control characters).
+
+---
+
+## Prompt 7 — Minimal UI and the scrollback view
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `CaravanUI` — `MessageLogController` and `MessageLogView` (the scrollback),
+`LineRenderer`, `ConnectionViewModel`, `AppModel`, `RootView`, `ConnectSheet`. The app
+target is now a `@main` and nothing else. 199 tests across 28 suites; `make all` clean.
+
+**Deviations:**
+- **A new target, `CaravanUI`.** Prompt 1 listed four library targets and this is a
+  fifth. It exists because nothing inside an `.xcodeproj` app target is reachable from
+  `swift test`, and this prompt's central requirement is a benchmark. The choice paid for
+  itself immediately: the scrollback has 14 unit tests driving real `NSTextView`s
+  headlessly, which would all have been impossible in `App/`.
+
+**The benchmark, and the engine decision.** 50,000 lines of ~80 characters, appended in
+bursts of 100, then scrolled top to bottom laying out each viewport. Apple M-series,
+release of the debug build, one engine per process:
+
+| | TextKit 2 | **TextKit 1** | TextKit 2 native |
+|---|---|---|---|
+| append | 1.00s (49.8k lines/s) | **0.93s (53.6k lines/s)** | 0.03s (1.59M lines/s) |
+| full layout | 0.22s | **0.00s** | 0.62s |
+| scroll, 876–1001 viewports | 1.54s | **0.00s** | 2.55s |
+| slowest viewport | 85.3ms | **0.01ms** | 6.89ms |
+| memory added | 589 MB | **25 MB** | 258 MB |
+
+**TextKit 1, then**, which is what the prompt anticipated and asked to have justified.
+The memory figure decides it on its own: 589 MB versus 25 MB for four megabytes of text
+is not a tuning problem. TextKit 2's worst viewport at 85 ms is five dropped frames, and
+its best case — appending natively through `NSTextContentStorage`, the third column —
+still costs ten times the memory and moves the cost into scrolling, where the user is
+watching. Append throughput was never the constraint: both are around 50k lines/second,
+and a busy channel is three.
+
+Revisit when: TextKit 2's memory per laid-out line comes down, or when something we want
+(bidirectional text, better selection) only exists there. `MessageLogView` keeps the
+engine as an init parameter and the benchmark measures both, so that is a one-line change.
+
+**Decisions:**
+- **The controller owns the text storage; SwiftUI never diffs it.** `updateNSView` does
+  nothing at all. A `List` of messages was never a candidate — selection across lines,
+  incremental append and honest scroll control are all things `NSTextView` does and
+  `List` does not.
+- **Trimming waits while the user is scrolled up.** Deleting from the top shifts
+  everything below it, which is invisible at the bottom and a yank in the face when
+  reading history. A ceiling of four times the cap keeps someone who scrolls up and walks
+  away from growing the buffer without bound, and the trim happens the moment they come
+  back down.
+- **The input field sends raw IRC lines, as a stopgap.** Prompt 9 owns commands; a field
+  that did nothing until then would have made the acceptance test impossible, and this is
+  the smallest thing that is not a no-op.
+- **Monospaced, `<nick> text`, no timestamps yet.** mIRC's line shape, which prompt 10
+  fills out. `LineKind` is the single colour table it will grow into.
+
+**Learned:**
+- **`NSTextView.layoutManager` silently downgrades a TextKit 2 view to TextKit 1.**
+  Merely *reading* the property does it. The first version of this benchmark printed a
+  diagnostic that touched `layoutManager` before checking `textLayoutManager`, and
+  therefore reported TextKit 1 for a view that had been TextKit 2 a microsecond earlier —
+  measuring one engine while believing it was the other. There is now a test asserting
+  exactly this behaviour, because it is the kind of thing that will otherwise be
+  rediscovered the hard way.
+- **`NSTextView(frame:textContainer:)` will happily build a view with no text system.**
+  The text network is rooted at the `NSTextStorage`; build it in a helper, return only
+  the container, and the storage deallocates on the way out. The view then has a nil
+  `textStorage` and every append silently does nothing — which is what the first TextKit
+  1 benchmark measured, at a very impressive 380,000 lines per second.
+  `NSTextView(usingTextLayoutManager:)` is the initializer that selects an engine *and*
+  leaves the view owning its own text system.
+- **A font cannot go into an `AttributedString` under Swift 6**, because `NSFont` is not
+  `Sendable`. `NSColor` is. The default font is applied on the AppKit side, filling only
+  the runs that lack one so prompt 10 can still set bold and italic per run.
+- **`waitUntil` needed `isolated (any Actor)? = #isolation`** to be callable from a
+  `@MainActor` test — otherwise the condition closure has to cross an isolation boundary
+  to reach a nonisolated helper, and main-actor state cannot come with it.
+
+**Acceptance, met.** Connected to `irc.libera.chat:6697` over TLS and watched the full
+MOTD render in the status window: monospaced, URLs auto-linked and clickable, the mode
+line in teal, "Connected as caravan389817" in the status bar. Scroll-lock confirmed while
+it streamed. The automated half of that is `LiveScrollbackTests`, which drives the real
+`NSTextView` through the real pipeline and asserts the MOTD arrived, that the view held
+its position while lines kept coming, and that the jump-to-latest affordance counts them
+— 41 lines rendered on the run recorded here.
+
+**Also learned, the embarrassing way:** the first three screenshots showed an empty
+window and I went looking for a SwiftUI bug that was not there. Each worktree gets its
+own DerivedData directory, and the path had been copied from a previous prompt's build —
+so the app being launched was prompt 4's, which genuinely had an empty `ContentView`. Ask
+`xcodebuild -showBuildSettings` for `BUILT_PRODUCTS_DIR` rather than remembering it.
+
+**Carry-forward consumed:** all four notes on prompt 7. The Connect sheet collects
+exactly the seven `SessionConfiguration` fields plus a password (not persisted — its home
+is the Keychain); every disconnect reason is rendered, with a table-driven test that each
+says *why*; the view model subscribes before connecting, and says so where it would
+otherwise look like a stray ordering; `.numeric` is rendered generically, which is what
+makes the MOTD appear without a case per code. Notes deleted.
+
+**Carry-forward raised:** two on prompt 8, two on prompt 9, three on prompt 10.
+
+**Noted, not acted on:** there is a parallel design conversation in another worktree
+(`GUI-DESIGN-NOTES.md`, uncommitted) with settled decisions that touch this prompt — the
+single-window sidebar model and the monospaced mIRC line shape, both of which this
+matches, and a growing multi-line input box, which conflicts with prompt 9's "a paste
+sends immediately" and is flagged there as a revision. That file is not a spec and is not
+mine to fold in; it wants weaving into the prompts deliberately, by whoever owns it.

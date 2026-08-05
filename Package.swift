@@ -43,6 +43,19 @@ let darwinOnly: [Target] = [
         dependencies: ["Diagnostics", "IRCProtocol", "IRCTransport"],
         swiftSettings: strict
     ),
+    // The AppKit and SwiftUI layer. A library rather than app-target source so the
+    // scrollback view — the load-bearing component — can be unit-tested and benchmarked;
+    // nothing in an `.xcodeproj` app target is reachable from `swift test`.
+    .target(
+        name: "CaravanUI",
+        dependencies: ["Diagnostics", "IRCProtocol", "IRCSession"],
+        swiftSettings: strict
+    ),
+    .testTarget(
+        name: "CaravanUITests",
+        dependencies: ["CaravanUI", "CaravanTestSupport"],
+        swiftSettings: strict
+    ),
     // A loopback IRC server the transport and session suites both drive. A plain target
     // rather than a test target, because SwiftPM has no way for one test target to
     // depend on another; it is in no product, so it never reaches a consumer.
@@ -69,6 +82,7 @@ let darwinProducts: [Product] = [
     .library(name: "Diagnostics", targets: ["Diagnostics"]),
     .library(name: "IRCTransport", targets: ["IRCTransport"]),
     .library(name: "IRCSession", targets: ["IRCSession"]),
+    .library(name: "CaravanUI", targets: ["CaravanUI"]),
 ]
 
 // On Linux the package is deliberately reduced to the pure module and its tests.
