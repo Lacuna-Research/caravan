@@ -11,13 +11,13 @@ struct ConnectSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @AppStorage("lastHost") private var host = "irc.libera.chat"
-    @AppStorage("lastPort") private var port = 6697
-    @AppStorage("lastUseTLS") private var useTLS = true
-    @AppStorage("lastNick") private var nick = ""
-    @AppStorage("lastAltNick") private var altNick = ""
-    @AppStorage("lastIdent") private var ident = ""
-    @AppStorage("lastRealName") private var realName = ""
+    @AppStorage(ConnectionSettings.Key.host) private var host = "irc.libera.chat"
+    @AppStorage(ConnectionSettings.Key.port) private var port = 6697
+    @AppStorage(ConnectionSettings.Key.useTLS) private var useTLS = true
+    @AppStorage(ConnectionSettings.Key.nick) private var nick = ""
+    @AppStorage(ConnectionSettings.Key.altNick) private var altNick = ""
+    @AppStorage(ConnectionSettings.Key.ident) private var ident = ""
+    @AppStorage(ConnectionSettings.Key.realName) private var realName = ""
 
     @State private var password = ""
 

@@ -38,9 +38,9 @@ public struct RootView: View {
     private var detail: some View {
         if let connection = model.connection {
             if let buffer = model.selectedChannel {
-                ChannelBufferView(connection: connection, buffer: buffer)
+                ChannelBufferView(model: model, buffer: buffer)
             } else {
-                StatusBufferView(connection: connection)
+                StatusBufferView(model: model, connection: connection)
             }
         } else {
             ContentUnavailableView {
@@ -71,8 +71,8 @@ public struct RootView: View {
 
 /// The network's status window: everything not addressed to a channel.
 struct StatusBufferView: View {
+    let model: AppModel
     let connection: ConnectionViewModel
-    @State private var input = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -106,17 +106,16 @@ struct StatusBufferView: View {
         .background(.bar)
     }
 
+    /// A status window has no target, so plain text has nowhere to go and says so.
+    /// Commands work here, which is what makes `/join` and `/server` reachable before
+    /// there is any channel to type in.
     private var inputField: some View {
-        TextField("Send a raw IRC line…", text: $input)
-            .textFieldStyle(.plain)
-            .font(.system(.body, design: .monospaced))
-            .padding(8)
-            .onSubmit(send)
-    }
-
-    private func send() {
-        let text = input
-        input = ""
-        Task { await connection.send(rawLine: text) }
+        InputBar(
+            state: connection.statusInput,
+            target: nil,
+            placeholder: "/command"
+        ) { text in
+            await model.submit(text, from: nil)
+        }
     }
 }

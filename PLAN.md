@@ -175,6 +175,13 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.
 15. **Tab completion.** mIRC-style cycling nick completion with configurable suffix
     (`: ` at line start, ` ` elsewhere), plus channel and command completion.
+
+    ### Carry-forward
+
+    - From prompt 9: the seam is `InputTextView.doCommand(by:)`, which already intercepts
+      Return and the arrow keys. Tab arrives there as `insertTab:`. The nick list to
+      complete against is on the buffer's `Channel` snapshot, ordered; the command names
+      are the `switch` in `CommandParser`, which is the one place that knows them.
 16. **Modes.** Render mode changes readably, track channel modes, ban/quiet/invex list
     dialogs (`367`/`368`, `346`–`349`), channel modes sheet.
 17. **Context menus.** Nick-list and channel right-click menus: whois, query, op/deop,
@@ -315,6 +322,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     sends and Enter is the only trigger (GUI-DESIGN-NOTES.md §7). The guard this
     adds is against fat-fingering Enter on a large or secret-bearing paste, not the
     only thing between a paste and the wire.
+
+    ### Carry-forward
+
+    - From prompt 9: `InputTextView.readSelection(from:)` is the single funnel every paste
+      and drop already goes through, and `sanitizePaste` is where line endings are
+      normalised. The warning hooks in there; do not add a second path around it.
 39. **Text niceties.** Spell check, emoji picker, macOS text replacement/services.
 40. **Bouncer extras.** The parts left after stage 2 takes `bouncer-networks` and
     `chathistory`: soju's `filehost` (file upload), `metadata`, `search`, and

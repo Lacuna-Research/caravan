@@ -3,7 +3,7 @@ import SwiftUI
 
 /// A channel window: topic band, scrollback, input field, and the nick list beside them.
 struct ChannelBufferView: View {
-    let connection: ConnectionViewModel
+    let model: AppModel
     let buffer: ChannelBuffer
 
     /// App-wide, not per buffer. One setting to find and one to change, per the
@@ -11,7 +11,6 @@ struct ChannelBufferView: View {
     @AppStorage("nickListWidth") private var nickListWidth = 180.0
     @AppStorage("nickListVisible") private var isNickListVisible = true
 
-    @State private var input = ""
     @State private var isTopicExpanded = false
 
     var body: some View {
@@ -54,17 +53,13 @@ struct ChannelBufferView: View {
     }
 
     private var inputField: some View {
-        TextField("Send a raw IRC line…", text: $input)
-            .textFieldStyle(.plain)
-            .font(.system(.body, design: .monospaced))
-            .padding(8)
-            .onSubmit(send)
-    }
-
-    private func send() {
-        let text = input
-        input = ""
-        Task { await connection.send(rawLine: text, from: buffer.name) }
+        InputBar(
+            state: buffer.input,
+            target: .channel(buffer.name),
+            placeholder: "Message \(buffer.name.raw), or /command"
+        ) { text in
+            await model.submit(text, from: .channel(buffer.name))
+        }
     }
 }
 

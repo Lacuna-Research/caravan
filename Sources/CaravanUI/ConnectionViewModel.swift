@@ -24,6 +24,9 @@ public final class ConnectionViewModel: Identifiable {
     /// Channel buffers in join order, which is the order the tree shows them in.
     public private(set) var channels: [ChannelBuffer] = []
 
+    /// The status window's input box and its history. Per buffer, like every other.
+    public let statusInput = InputState()
+
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
 
     /// The casemapping the session is folding names under, learned from the events that
@@ -88,24 +91,49 @@ public final class ConnectionViewModel: Identifiable {
         await session.closeChannel(name)
     }
 
-    /// Sends a line typed into the input field, echoing it into the buffer it came from.
+    // MARK: - The command layer
+
+    /// What a line of input asks for, parsed against the server's live capabilities.
     ///
-    /// A stopgap: for now the text is sent as a raw IRC line, which is enough to `JOIN`
-    /// and `PRIVMSG` by hand and prove the connection works end to end. Prompt 9 puts the
-    /// command layer here — `/join`, plain text going to the current window's target, and
-    /// the history and paste behaviour that go with it.
-    public func send(rawLine text: String, from channel: IRCChannelName? = nil) async {
-        let destination = channel.flatMap { buffersByName[$0]?.log } ?? log
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard let message = IRCMessage(line: trimmed) else {
-            destination.append(
-                [LineRenderer.line("*** could not parse: \(trimmed)", kind: .clientError)]
-            )
-            return
-        }
-        destination.append([LineRenderer.line(">> \(message.wireForm)", kind: .serverText)])
+    /// Read straight off the actor rather than cached: this is async anyway, so there is
+    /// no window in which the parser's idea of `CHANTYPES` can be stale.
+    public func actions(for text: String, activeTarget: Target?) async -> [CommandAction] {
+        CommandParser(capabilities: await session.capabilities)
+            .actions(for: text, activeTarget: activeTarget)
+    }
+
+    /// Sends a message and echoes its wire form into the window it came from.
+    ///
+    /// The `>>` echo is prompt 7's stopgap, still standing: prompt 10 replaces it with a
+    /// proper self-echo — `<nick> text` rather than `PRIVMSG #chan :text` — and moves the
+    /// raw form behind its raw-traffic toggle, which is where `>>` markers belong.
+    public func send(_ message: IRCMessage, from target: Target?) async {
+        log(for: target).append([LineRenderer.line(">> \(message.wireForm)", kind: .serverText)])
         await session.send(message)
+    }
+
+    /// Shows a usage or argument error in the window it came from.
+    ///
+    /// The same red line an unparseable message already produced, reused rather than
+    /// reinvented: input never disappears without an answer.
+    public func showError(_ text: String, in target: Target?) {
+        log(for: target).append([LineRenderer.line("*** \(text)", kind: .clientError)])
+    }
+
+    /// `/quit`: say goodbye, then drop the connection.
+    ///
+    /// The disconnect is not merely tidy. A server answers `QUIT` with `ERROR` and closes,
+    /// which the session would otherwise read as a failure worth reconnecting from — going
+    /// through `disconnect()` is what marks this one as ours.
+    public func quit(reason: String?) async {
+        await session.send(IRCMessage(verb: "QUIT", parameters: reason.map { [$0] } ?? []))
+        await session.disconnect()
+    }
+
+    /// The scrollback a window's input writes into.
+    private func log(for target: Target?) -> MessageLogController {
+        guard case .channel(let name)? = target else { return log }
+        return buffersByName[name]?.log ?? log
     }
 
     // MARK: - Events
