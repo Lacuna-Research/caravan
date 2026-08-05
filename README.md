@@ -3,22 +3,23 @@
 <!-- art:wordmark -->
 
 ```
-   ██╗██████╗  ██████╗       ██████╗██╗     ██╗███████╗███╗   ██╗████████╗
-   ██║██╔══██╗██╔════╝      ██╔════╝██║     ██║██╔════╝████╗  ██║╚══██╔══╝
-   ██║██████╔╝██║     █████╗██║     ██║     ██║█████╗  ██╔██╗ ██║   ██║   
-   ██║██╔══██╗██║     ╚════╝██║     ██║     ██║██╔══╝  ██║╚██╗██║   ██║   
-   ██║██║  ██║╚██████╗      ╚██████╗███████╗██║███████╗██║ ╚████║   ██║   
-   ╚═╝╚═╝  ╚═╝ ╚═════╝       ╚═════╝╚══════╝╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝   
+    ██████╗ █████╗ ██████╗  █████╗ ██╗   ██╗ █████╗ ███╗   ██╗
+   ██╔════╝██╔══██╗██╔══██╗██╔══██╗██║   ██║██╔══██╗████╗  ██║
+   ██║     ███████║██████╔╝███████║██║   ██║███████║██╔██╗ ██║
+   ██║     ██╔══██║██╔══██╗██╔══██║╚██╗ ██╔╝██╔══██║██║╚██╗██║
+   ╚██████╗██║  ██║██║  ██║██║  ██║ ╚████╔╝ ██║  ██║██║ ╚████║
+    ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝
 ```
 
 <!-- /art:wordmark -->
 
-**A native macOS IRC client, modeled on mIRC.**
+**A native macOS IRC client loosely inspired by the good ol' days of mIRC.**
 
-[![ci](https://github.com/Lacuna-Research/irc-client/actions/workflows/ci.yml/badge.svg)](https://github.com/Lacuna-Research/irc-client/actions/workflows/ci.yml)
-[![docs](https://github.com/Lacuna-Research/irc-client/actions/workflows/docs.yml/badge.svg)](https://github.com/Lacuna-Research/irc-client/actions/workflows/docs.yml)
+[![ci](https://github.com/Lacuna-Research/caravan/actions/workflows/ci.yml/badge.svg)](https://github.com/Lacuna-Research/caravan/actions/workflows/ci.yml)
+[![docs](https://github.com/Lacuna-Research/caravan/actions/workflows/docs.yml/badge.svg)](https://github.com/Lacuna-Research/caravan/actions/workflows/docs.yml)
 [![Swift 6.2](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
 [![stage 1: 3/10](https://img.shields.io/badge/stage%201-3%2F10%20prompts-blue)](STAGE1-PROMPTS.md)
 
@@ -57,6 +58,11 @@ dependencies**.
 - **No dependency chain.** One SwiftPM package, four modules, nothing vendored but test
   fixtures.
 
+### The name
+
+After *Planet Caravan*, Black Sabbath, 1970. The app is not themed after the band and
+will not be; the name simply fit. There may be an easter egg or two.
+
 ### Non-goals
 
 Not a Slack replacement, not a "modern reimagining" of chat, not a bridge to five other
@@ -70,11 +76,11 @@ and a scrollback view that holds a hundred thousand lines without complaint.
 <!-- art:mockup -->
 
 ```
-┌─ IRC Client ──────────────────────────────────────────────────────────────────┐
-│                         │ #irc-client - a native macOS IRC client             │
+┌─ Caravan ─────────────────────────────────────────────────────────────────────┐
+│                         │ #caravan - a native macOS IRC client                │
 │                         ├──────────────────────────────────────────────┬──────┤
 │ * Libera.Chat           │ [12:04:17] *** Joins: alice (~a@example.net) │ @ops │
-│   |- #irc-client      * │ [12:04:22] <bob>   parser passes the corpus  │ @bob │
+│   |- #caravan         * │ [12:04:22] <bob>   parser passes the corpus  │ @bob │
 │   |- #swift             │ [12:04:31] <alice> all 66 cases?             │ +eve │
 │   `- >NickServ          │ [12:04:36] * bob nods                        │  ann │
 │                         │ [12:04:41] -NickServ- You are now identified │  joe │
@@ -82,7 +88,7 @@ and a scrollback view that holds a hundred thousand lines without complaint.
 │   |- #ops             o │                                              │      │
 │   `- #dev               │                                              │      │
 ├─────────────────────────┴──────────────────────────────────────────────┴──────┤
-│ [#irc-client] > /msg alice thanks!                                            │
+│ [#caravan] > /msg alice thanks!                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
     * highlight    o activity
 ```
@@ -229,8 +235,8 @@ Full detail in [`PLAN.md`](PLAN.md).
 Requires **Xcode 26+** on macOS 15+.
 
 ```sh
-git clone https://github.com/Lacuna-Research/irc-client.git
-cd irc-client
+git clone https://github.com/Lacuna-Research/caravan.git
+cd caravan
 make hooks          # install the pre-commit hook — once, after cloning
 make all            # build, test, lint, docs check, app
 ```
@@ -255,9 +261,9 @@ Nothing is ever written inside the source tree — not even under a gitignored p
 
 | What | Where |
 |---|---|
-| Settings | `$XDG_CONFIG_HOME/irc-client/`, default `~/.config/irc-client/` |
-| Logs, scrollback | `$XDG_DATA_HOME/irc-client/`, default `~/.local/share/irc-client/` |
-| Caches | `$XDG_CACHE_HOME/irc-client/`, default `~/.cache/irc-client/` |
+| Settings | `$XDG_CONFIG_HOME/caravan/`, default `~/.config/caravan/` |
+| Logs, scrollback | `$XDG_DATA_HOME/caravan/`, default `~/.local/share/caravan/` |
+| Caches | `$XDG_CACHE_HOME/caravan/`, default `~/.cache/caravan/` |
 | Passwords, client certs | **macOS Keychain — never a file** |
 
 Config files are plain text and user-editable; treat their paths as public API.
@@ -294,8 +300,9 @@ corrections rather than being quietly edited away.
 
 ## Licence
 
-Not yet chosen. Until one is added, default copyright applies and all rights are
-reserved.
+[BSD 3-Clause](LICENSE). Copyright (c) 2026, Lacuna Research.
+
+The vendored `ircdocs/parser-tests` corpus is CC0-1.0 and imposes no conditions.
 
 ---
 

@@ -1,6 +1,6 @@
-# IRC Client — Project Instructions
+# Caravan — Project Instructions
 
-A native macOS IRC client modeled on mIRC.
+A native macOS IRC client loosely inspired by the good ol' days of mIRC.
 `PLAN.md` roadmap · `STAGE1-PROMPTS.md` work queue · `BUILD-LOG.md` history.
 
 ## Build standards
@@ -82,7 +82,7 @@ Propose structural changes here rather than making them silently; prunes need no
 The app writes nothing to its own source tree. No settings, no logs, no captured
 traffic, no credentials — not even under a gitignored path.
 
-- Settings, data and caches → `$XDG_{CONFIG,DATA,CACHE}_HOME/irc-client/`, defaulting
+- Settings, data and caches → `$XDG_{CONFIG,DATA,CACHE}_HOME/caravan/`, defaulting
   to `~/.config`, `~/.local/share` and `~/.cache` respectively.
 - **Credentials → the macOS Keychain, never a file.** Reasoning in `BUILD-LOG.md`.
 

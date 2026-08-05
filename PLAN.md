@@ -1,6 +1,7 @@
-# mIRC-style IRC Client for macOS — Build Plan
+# mIRC-style Caravan for macOS — Build Plan
 
-A layered plan for building a native macOS IRC client modeled on mIRC. Each numbered
+A layered plan for Caravan, a native macOS IRC client loosely inspired by the good
+ol' days of mIRC. Each numbered
 item is sized to be roughly one prompt / one focused work session, and each stage ends
 at a point where the app is genuinely usable.
 
@@ -34,13 +35,13 @@ at a point where the app is genuinely usable.
   settings) is plain SwiftUI.
 - **Persistence:** SQLite for scrollback + full-text search; plain-text mIRC-style
   logs in parallel for user-facing logs. Nothing is written inside the source tree:
-  settings in `~/.config/irc-client/`, data in `~/.local/share/irc-client/`, caches in
-  `~/.cache/irc-client/` (all honouring the matching `XDG_*` variables), and every
+  settings in `~/.config/caravan/`, data in `~/.local/share/caravan/`, caches in
+  `~/.cache/caravan/` (all honouring the matching `XDG_*` variables), and every
   credential in the macOS Keychain rather than any file.
 
 ### Settled
 
-Full Xcode with a standard app target; public repo at `Lacuna-Research/irc-client`;
+Full Xcode with a standard app target; public repo at `Lacuna-Research/caravan`;
 one branch and PR per prompt, squash-merged behind green CI. Zero external SwiftPM
 dependencies — which rules out GRDB, so the persistence layer wraps the system
 SQLite directly, and settles scripting on JavaScriptCore since it ships with macOS.
@@ -54,16 +55,7 @@ approaching a thousand lines, so questions buried in it are questions nobody fin
 Delete an item from this list when it is answered, and record the answer as a
 decision entry.
 
-1. **Licence.** There is no `LICENSE` file, so default copyright applies: all rights
-   reserved, despite the repo being public. MIT and Apache-2.0 are the usual choices
-   for a client like this; the vendored parser-tests corpus is CC0 and constrains
-   nothing. The README states the position plainly meanwhile. *Nothing blocks on it,
-   but it is the only open item that misrepresents the project until answered.*
-2. **Final product name.** `irc-client` is a working name. Renaming is a
-   find-and-replace until the first signed build; after that the bundle id is frozen
-   by Keychain ACLs and the config paths need a migration. Gated by a carry-forward
-   note on the release-engineering item in stage 4. Not blocking.
-3. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
+1. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
    connections, arbitrary file writes) and identd (port 113) are
    painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
    Not blocking; the app target is already configured un-sandboxed.
@@ -230,18 +222,6 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     debug window.
 46. **Release engineering.** Notarization, DMG, Sparkle auto-update, release notes.
 
-    ### Carry-forward
-
-    - **Naming gate — the last cheap moment to rename is here, before the first
-      signed build leaves the machine.** `irc-client` is a working name. Renaming is
-      find-and-replace until distribution, after which two things are permanent:
-      the bundle id (`com.lacuna-research.irc-client`), because Keychain items are
-      ACL'd to the bundle id and code signature, so changing it strands every stored
-      credential and orphans `~/Library/Preferences/<bundle-id>.plist`; and the
-      config paths (`~/.config/irc-client/` and friends), which would need a
-      detect-and-migrate path carried forever. Decide the final name before shipping
-      anything, or accept `irc-client` permanently. Do not ship while this note is
-      still here.
 47. **mIRC import.** Read `mirc.ini`, `servers.ini`, `aliases.ini`, `popups.ini`,
     `remote.ini` — a genuine differentiator for anyone migrating.
 48. **Sync.** Optional iCloud settings/server-list sync.

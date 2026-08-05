@@ -34,4 +34,4 @@ lint:
 # Build the macOS app. Requires Xcode; the package targets alone build with
 # Command Line Tools.
 app:
-	xcodebuild -project irc-client.xcodeproj -scheme IRCClient -configuration Debug build
+	xcodebuild -project Caravan.xcodeproj -scheme Caravan -configuration Debug build

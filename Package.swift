@@ -70,7 +70,7 @@ let darwinProducts: [Product] = [
 #endif
 
 let package = Package(
-    name: "IRCClient",
+    name: "Caravan",
     platforms: [.macOS(.v15)],
     products: allProducts,
     targets: allTargets

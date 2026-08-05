@@ -10,7 +10,7 @@ import OSLog
 public enum Log {
     /// Falls back to a literal when there is no bundle identifier, which is the case
     /// under `swift test`.
-    static let subsystem = Bundle.main.bundleIdentifier ?? "com.lacuna-research.irc-client"
+    static let subsystem = Bundle.main.bundleIdentifier ?? "com.lacuna-research.caravan"
 
     /// Connection lifecycle, TLS, framing.
     public static let transport = Logger(subsystem: subsystem, category: "transport")

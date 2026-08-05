@@ -2,11 +2,11 @@ import SwiftUI
 
 /// Application entry point.
 ///
-/// The window title comes from `CFBundleDisplayName` ("IRC Client") rather than
+/// The window title comes from `CFBundleDisplayName` ("Caravan") rather than
 /// being hard-coded here, so the rename gated in PLAN.md touches one build setting
 /// instead of source.
 @main
-struct IRCClientApp: App {
+struct CaravanApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
