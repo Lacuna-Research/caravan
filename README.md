@@ -202,9 +202,10 @@ Full detail in [`PLAN.md`](PLAN.md).
 
 - **DCC** — CHAT, SEND, GET with resume, passive/reverse DCC for NAT, a transfer
   manager, drag-and-drop onto a nick to send
-- **Scripting** — the big one. Aliases, `$identifiers`, `%variables`, `on TEXT`-style
-  remote events, `/if` `/while` `/timer`, popups, and a script editor. With a
-  permission model, because mIRC scripts were historically a malware vector.
+- **Scripting in JavaScript**, not mIRC's language. Declarative aliases and popups for
+  the one-liner cases, JavaScriptCore for real logic. A bare `JSContext` has no
+  `require`, `fetch` or filesystem at all, so capabilities are granted rather than
+  restricted — and Safari Web Inspector attaches for actual breakpoints.
 - Identd, SOCKS5 and HTTP proxies, Tor
 - Themes with per-event colour mapping, toolbar editor, F-key bindings
 - User levels and access lists, paste protection, spell check
