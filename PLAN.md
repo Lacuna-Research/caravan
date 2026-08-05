@@ -18,7 +18,7 @@ at a point where the app is genuinely usable.
 | `IRCFormat` | mIRC control codes (`^B ^C ^I ^U ^R ^O ^K`) ⇄ `AttributedString`, 99-color palette | none |
 | `ChatModel` | `@MainActor @Observable` app state: networks, windows, buffers, unread/activity | none |
 | `Persistence` | Settings, server list, logs (system SQLite), Keychain | yes |
-| `Scripting` | Aliases, identifiers, events, popups, timers (stage 3) | yes |
+| `Scripting` | JavaScriptCore host, aliases, popups, timers (stage 3) | yes |
 | `App` | SwiftUI + AppKit bridges, windows, dialogs | yes |
 
 ### Key technical choices
@@ -43,7 +43,8 @@ at a point where the app is genuinely usable.
 Full Xcode with a standard app target; public repo at `Lacuna-Research/irc-client`;
 one branch and PR per prompt, squash-merged behind green CI. Zero external SwiftPM
 dependencies — which rules out GRDB, so the persistence layer wraps the system
-SQLite directly. See the decision entries in `BUILD-LOG.md` for the reasoning.
+SQLite directly, and settles scripting on JavaScriptCore since it ships with macOS.
+See the decision entries in `BUILD-LOG.md` for the reasoning.
 
 ### Still open
 
@@ -62,10 +63,7 @@ decision entry.
    find-and-replace until the first signed build; after that the bundle id is frozen
    by Keychain ACLs and the config paths need a migration. Gated by a carry-forward
    note on the release-engineering item in stage 4. Not blocking.
-3. **Scripting engine (stage 3).** Reimplement a subset of the mIRC scripting language
-   (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Leaning
-   mIRC-subset, since script compatibility is much of the point. Not blocking.
-4. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
+3. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
    connections, arbitrary file writes) and identd (port 113) are
    painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
    Not blocking; the app target is already configured un-sandboxed.
@@ -177,18 +175,34 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 32. **Identd.** mIRC's built-in ident server on port 113 — requires a privileged port;
     either a small privileged helper or a documented `pfctl` redirect.
 33. **Proxies.** SOCKS5 / HTTP CONNECT, Tor.
-34. **Scripting engine** (the largest subsystem — plan several prompts for it alone):
-    - Aliases: `/j /join $1-`
-    - Identifiers: `$nick $chan $me $1- $time $rand $read $readini $len $iif` …
-    - Variables: `%var`, `/set /unset /inc /dec`, `/var` locals
-    - Remote events: `on 1:TEXT:*:#:{ }`, `on JOIN`, `ON ACTION`, `ON NOTICE`, `ON KICK`,
-      `ON MODE`, `ON CONNECT`, `ON DISCONNECT`, `ON QUIT`, `ON INPUT`
-    - Control flow: `/if /elseif /else /while /goto /return /halt /haltdef`
-    - Timers: `/timer[N] <reps> <interval> <command>`
+34. **Scripting** (the largest subsystem — plan several prompts for it alone).
+    **JavaScript via JavaScriptCore, not the mIRC scripting language.** Two layers,
+    mirroring mIRC's own aliases/popups/remote split — the spirit, not the syntax:
+
+    *Declarative layer, no programming required.* This is the 80% case and it must
+    stay a one-liner, because "three lines to auto-op a friend" is most of why mIRC
+    scripting caught on.
+    - Aliases: `j = /join $1-` in a plain text file
     - Popups: menu definitions for nicklist / channel / query / status / menubar
-    - Script editor window with Aliases / Popups / Remote / Users / Variables tabs
-    - A sandbox/permission model — mIRC scripts historically were a malware vector, so
-      file and exec access must be gated.
+    - Simple event → command bindings for the cases that need no logic
+
+    *JavaScript layer, for everything else.*
+    - Event handlers over the same `IRCEvent` stream the UI consumes
+    - A capability-scoped `irc` object: send, join, part, query client state, timers
+    - No ambient authority. A bare `JSContext` has no `require`, `process`, `fetch`,
+      `XMLHttpRequest`, `WebSocket` or `localStorage` — verified, see `BUILD-LOG.md`.
+      Filesystem and network access are injected deliberately or not at all, and are
+      gated by a per-script permission prompt. mIRC scripts were historically a
+      malware vector precisely because the language had ambient authority; starting
+      from zero and opting in is a structurally better position than restricting.
+    - `JSContext.isInspectable` lets Safari Web Inspector attach: real breakpoints and
+      a console, which mIRC never had.
+    - Script editor window, and a `.d.ts` shipped for editor autocomplete.
+
+    **Open:** runaway-script preemption. `JSContextGroupSetExecutionTimeLimit` exists
+    in the framework but is private API. Either declare the prototype and accept an
+    unsupported dependency, or run scripts in an XPC helper that can be killed —
+    heavier, but also a real OS sandbox. Decide when building this, not before.
 35. **Themes.** Per-event color mapping (mIRC's Colors dialog), per-window fonts,
     importable/exportable theme files, light/dark aware.
 36. **Customization.** Toolbar editor, F-key bindings, arbitrary keyboard shortcuts.

@@ -1006,3 +1006,66 @@ carry-forward notes waiting.
   testing it — branch protection availability, the merged-commit author, a line count,
   the ASCII art. Every one was caught by checking afterwards, and every one would have
   been cheaper to check first.
+
+---
+
+## Decision — scripting is JavaScript via JavaScriptCore, not the mIRC language
+
+**Date:** 2026-08-04  **Affects:** PLAN.md, README.md; closes the stage-3 scripting question
+
+**Chose:** JavaScript hosted in `JavaScriptCore`, with a small declarative layer above
+it for aliases and popups.
+
+**Over:** reimplementing a subset of the mIRC scripting language, which the previous
+entries had been leaning toward. The user's call, and the right one. mIRC-script is an
+idiosyncratic language — `$identifiers`, `%variables`, `/commands` as control flow —
+that nobody knows outside mIRC, and writing an interpreter for it is a large,
+open-ended subsystem to build and then maintain forever. "In the spirit of mIRC" does
+not oblige us to inherit its syntax.
+
+**What that forfeits, stated plainly:** compatibility with the existing corpus of mIRC
+scripts, which was the whole argument for the subset. The stage-4 mIRC importer can
+still bring across settings, server lists and aliases; `remote.ini` scripts will not
+run. That is a real loss and it is being accepted deliberately.
+
+**Over Lua**, which was the strongest technical alternative — designed for embedding,
+tiny, natural sandboxing, and precedent in WeeChat and HexChat. Rejected because it
+means vendoring C source into the package, and the zero-external-dependency rule is
+the constraint this project has bent least. JavaScriptCore ships with macOS, so it
+costs nothing and does not require amending `Scripts/check-docs.sh` — a system
+framework is not a SwiftPM dependency.
+
+**Over Python** (excluded by the user; also nothing embeddable ships with macOS) and
+over compiled Swift plugins (a build step is the wrong ergonomics for someone writing
+three lines to auto-op a friend).
+
+**Verified before choosing, rather than assumed:**
+- A bare `JSContext` exposes **no ambient authority**: `require`, `process`, `fetch`,
+  `XMLHttpRequest`, `WebSocket`, `localStorage` and `open` are all `undefined`. Only
+  pure-compute globals exist — `Function`, `eval`, `JSON`, `Math`, `Date`. The sandbox
+  is the *default state*, and capabilities are injected deliberately. That is a
+  structurally stronger position than restricting a language that starts with ambient
+  authority, which is exactly how mIRC scripts became a malware vector.
+- Swift closures inject cleanly and are callable from script; exceptions surface
+  through `exceptionHandler` rather than vanishing.
+- `JSContext.isInspectable` is **public** API from macOS 13.3: Safari Web Inspector
+  attaches to a live context, giving breakpoints and a console. Better debugging than
+  mIRC ever offered.
+
+**Two layers, mirroring mIRC's own aliases / popups / remote split** — the spirit
+rather than the syntax. Aliases and popups stay declarative one-liners in a text file,
+because "three lines to auto-op a friend" is most of why mIRC scripting caught on and
+making people write JavaScript for that would be a regression. JavaScript handles
+anything with logic in it.
+
+### Open
+
+- **Runaway-script preemption is unsolved.**
+  `JSContextGroupSetExecutionTimeLimit` is present in the framework binary — confirmed
+  by `dlsym` — but is not exposed in the public headers; it lives in
+  `JSContextRefPrivate.h`. Either declare the prototype and accept an unsupported
+  dependency on private API, or run scripts in an XPC helper that can simply be
+  killed, which is heavier but also buys a real OS sandbox. Decide while building
+  stage 3, with the DCC and identd sandboxing questions in view, since they push the
+  same way. Recorded here rather than in `PLAN.md`'s open list because it is a
+  sub-question of an item that is otherwise settled.
