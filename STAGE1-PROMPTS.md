@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 2/10 complete. Next: prompt 3.
+**Status:** 3/10 complete. Next: prompt 4.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -156,17 +156,6 @@ the trailing param.
 
 Do not: implement ISUPPORT, CTCP, formatting codes, or anything touching a socket.
 ```
-
-### Carry-forward
-
-- From prompt 1: the CI `purity` job currently runs only `swift build --target
-  IRCProtocol` on Linux. It does **not** run this module's tests there, because
-  `swift test --filter` still builds every test target, and Diagnostics will import
-  `os.Logger` from prompt 2 onward and cannot compile on Linux. Once there are real
-  parser tests worth running cross-platform, find a way to build and run
-  `IRCProtocolTests` alone — a separate Linux-only package manifest, or a
-  `--filter` combined with excluding the Darwin targets. Portability of the parser
-  is worth actually testing, not just asserting.
 
 ---
 

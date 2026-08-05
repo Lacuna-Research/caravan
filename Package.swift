@@ -16,45 +16,62 @@ let strict: [SwiftSetting] = [
     .swiftLanguageMode(.v6)
 ]
 
+// Message parsing and serialization. Pure: no I/O, no Foundation networking, no
+// Darwin APIs. This is the only target that builds on Linux, and CI runs its tests
+// there — so an accidental `import AppKit` or `os.Logger` fails a build rather than
+// slipping past review.
+let ircProtocol: [Target] = [
+    .target(name: "IRCProtocol", swiftSettings: strict),
+    .testTarget(
+        name: "IRCProtocolTests",
+        dependencies: ["IRCProtocol"],
+        resources: [.copy("Fixtures")],
+        swiftSettings: strict
+    ),
+]
+
+// Everything else needs Darwin: os.Logger, Network.framework, AppKit.
+let darwinOnly: [Target] = [
+    .target(name: "Diagnostics", swiftSettings: strict),
+    .target(
+        name: "IRCTransport",
+        dependencies: ["Diagnostics", "IRCProtocol"],
+        swiftSettings: strict
+    ),
+    .target(
+        name: "IRCSession",
+        dependencies: ["Diagnostics", "IRCProtocol", "IRCTransport"],
+        swiftSettings: strict
+    ),
+    .testTarget(name: "DiagnosticsTests", dependencies: ["Diagnostics"], swiftSettings: strict),
+    .testTarget(name: "IRCTransportTests", dependencies: ["IRCTransport"], swiftSettings: strict),
+    .testTarget(name: "IRCSessionTests", dependencies: ["IRCSession"], swiftSettings: strict),
+]
+
+let darwinProducts: [Product] = [
+    .library(name: "Diagnostics", targets: ["Diagnostics"]),
+    .library(name: "IRCTransport", targets: ["IRCTransport"]),
+    .library(name: "IRCSession", targets: ["IRCSession"]),
+]
+
+// On Linux the package is deliberately reduced to the pure module and its tests.
+//
+// Without this, `swift test` on the purity runner would try to build Diagnostics —
+// which imports os.Logger — and fail for a reason that has nothing to do with
+// purity. Shrinking the manifest instead lets that job actually *run* the parser
+// tests cross-platform rather than merely compiling the module.
+#if os(Linux)
+    let allTargets = ircProtocol
+    let allProducts: [Product] = [.library(name: "IRCProtocol", targets: ["IRCProtocol"])]
+#else
+    let allTargets = ircProtocol + darwinOnly
+    let allProducts: [Product] =
+        [.library(name: "IRCProtocol", targets: ["IRCProtocol"])] + darwinProducts
+#endif
+
 let package = Package(
     name: "IRCClient",
     platforms: [.macOS(.v15)],
-    products: [
-        .library(name: "Diagnostics", targets: ["Diagnostics"]),
-        .library(name: "IRCProtocol", targets: ["IRCProtocol"]),
-        .library(name: "IRCTransport", targets: ["IRCTransport"]),
-        .library(name: "IRCSession", targets: ["IRCSession"]),
-    ],
-    targets: [
-        // Logging, redaction, wire tracing. Darwin-only (os.Logger).
-        .target(name: "Diagnostics", swiftSettings: strict),
-
-        // Message parsing and serialization. Pure: no I/O, no Foundation
-        // networking, no Darwin APIs. CI builds this target alone on Linux, so a
-        // platform import here fails the build rather than a review.
-        .target(name: "IRCProtocol", swiftSettings: strict),
-
-        // Sockets, TLS, line framing.
-        .target(
-            name: "IRCTransport",
-            dependencies: ["Diagnostics", "IRCProtocol"],
-            swiftSettings: strict
-        ),
-
-        // Registration, connection state machine, event stream.
-        .target(
-            name: "IRCSession",
-            dependencies: ["Diagnostics", "IRCProtocol", "IRCTransport"],
-            swiftSettings: strict
-        ),
-
-        .testTarget(name: "DiagnosticsTests", dependencies: ["Diagnostics"], swiftSettings: strict),
-        .testTarget(name: "IRCProtocolTests", dependencies: ["IRCProtocol"], swiftSettings: strict),
-        .testTarget(
-            name: "IRCTransportTests",
-            dependencies: ["IRCTransport"],
-            swiftSettings: strict
-        ),
-        .testTarget(name: "IRCSessionTests", dependencies: ["IRCSession"], swiftSettings: strict),
-    ]
+    products: allProducts,
+    targets: allTargets
 )
