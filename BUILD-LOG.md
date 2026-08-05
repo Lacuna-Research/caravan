@@ -1117,3 +1117,28 @@ the bulk rename missed `IRC-CLIENT` — a third spelling alongside `IRCClient` a
 `irc-client` — because it only appeared as the generator's default argument. Caught by
 regenerating and looking at the output, which is the check that exists precisely
 because looking at it is unreliable.
+
+---
+
+## Correction — the SwiftPM build cache is not relocatable
+
+**Date:** 2026-08-04  **Affects:** .github/workflows/ci.yml
+
+The macOS job failed on the rename PR with `missing required module 'SwiftShims'` and,
+more usefully, `precompiled file ... was compiled with module cache path
+/Users/runner/work/irc-client/irc-client/... but the path is currently
+/Users/runner/work/caravan/caravan/...`.
+
+Nothing to do with the rename being wrong. SwiftPM's `.build` directory stores
+**absolute paths** in its module cache, so a cache restored into a different checkout
+path is unusable. The cache key was `${{ runner.os }}-spm-${{ hashFiles('Package.swift') }}`,
+which captures the manifest but not the path — so the runner happily restored a cache
+built under the old repository name into the new one.
+
+Fixed by putting the repository name in the key. A rename changes the path and the
+name together, so the key now invalidates exactly when the cache becomes invalid.
+
+**Latent, not new.** This would have fired on any change to the checkout path and been
+far more confusing without a rename to point at. Renaming the repo was the one action
+guaranteed to surface it, which is a small argument for doing disruptive things early
+while the diff is still readable.
