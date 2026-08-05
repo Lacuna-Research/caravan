@@ -950,3 +950,59 @@ and only one of those is what the reader sees.
 
 The generator's `--check` failure message now names stripped trailing whitespace as
 the likely cause, since that is what an editor or linter would silently do to it.
+
+---
+
+## Decision — handoff hardening before a context reset
+
+**Date:** 2026-08-04  **Affects:** PLAN.md, CLAUDE.md, .githooks/pre-push, README.md
+
+Audited what was true only in the working session rather than on disk, ahead of
+clearing context. Three gaps, all now closed.
+
+**1. Open questions were scattered.** They sat in four separate `### Open` sections
+across a 950-line append-only log plus one list in `PLAN.md`. A cold session would
+have had to trawl `BUILD-LOG.md` front to back to find them, which is exactly what
+nobody does. `PLAN.md`'s **Still open** list is now the single home for open
+questions, and `CLAUDE.md` says so and says not to read the log front to back. The
+licence and the final-name questions have been lifted out of the log into it.
+
+**2. The branch-rename mistake had no guard.** `EnterWorktree` creates
+`worktree-<name>`; forgetting to rename before pushing produced `src refspec does not
+match any`, and working around it with `git push origin HEAD:<name>` left the branch
+with no upstream — which then blinded the stale-worktree Stop hook, because that is
+one of the two signals it reads. I made both mistakes, the second one twice.
+`.githooks/pre-push` now refuses to push a `worktree-*` branch and says how to fix it.
+Verified firing and passing either side of a rename.
+
+**3. `CLAUDE.md` had one line of headroom.** Now 98, after compressing three
+paragraphs that restated things said elsewhere. Worth noting that adding the two
+orientation lines a cold session needs pushed the file over the cap and forced this —
+the cap working as designed rather than as an obstacle.
+
+### State at handoff
+
+`main` at 3/10 prompts, clean, no open PRs, no worktrees, all eight checks green.
+`IRCProtocol` and `Diagnostics` are implemented and tested; `IRCTransport` and
+`IRCSession` are still stub placeholders. Next is prompt 4, transport, which has no
+carry-forward notes waiting.
+
+### Things learned that are worth not relearning
+
+- **`swift-testing` and `XCTest` ship with Xcode, not Command Line Tools.** Without
+  full Xcode there is no test loop at all.
+- **Swift treats `CR LF` as one `Character`.** Anything inspecting protocol data
+  character by character should iterate `unicodeScalars` instead.
+- **A centred `<pre>` centres each line independently.** Ragged line lengths inside
+  `<div align="center">` visibly staircase, which is why the wordmark keeps its
+  trailing spaces.
+- **`treatAllWarnings(as: .error)` in `Package.swift` breaks Xcode app builds**, since
+  Xcode injects `-suppress-warnings` for package dependencies. It lives at the build
+  invocation instead.
+- **After a squash merge, re-branch from `main`.** Committing onto the old branch
+  produces a conflicted PR that runs *no* checks at all, because GitHub cannot compute
+  a merge ref.
+- **My own recurring failure mode:** asserting how a mechanism behaves instead of
+  testing it — branch protection availability, the merged-commit author, a line count,
+  the ASCII art. Every one was caught by checking afterwards, and every one would have
+  been cheaper to check first.

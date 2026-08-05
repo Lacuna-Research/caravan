@@ -276,8 +276,9 @@ The interesting part is that the project's own rules are **machine-checked**.
 - carry-forward notes that outlived the prompt they were addressed to
 - undeclared SwiftPM dependencies
 
-`Scripts/check-worktree.sh` runs as a Stop hook and catches a worktree left behind
-after its PR merged.
+Two git hooks and a Stop hook cover what a diff can't see: no commits to `main`, no
+pushing a `worktree-*` branch before renaming it, and no worktree left behind after
+its PR merged.
 
 | File | Purpose |
 |---|---|
