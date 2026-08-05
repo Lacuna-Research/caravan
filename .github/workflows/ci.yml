@@ -13,14 +13,21 @@ jobs:
     # IRCProtocol must stay free of AppKit, Network.framework and Darwin os.Logger.
     # Linux has none of them, so this job fails the moment that rule is broken —
     # a convention in CLAUDE.md turned into something a machine checks.
+    #
+    # Package.swift reduces itself to IRCProtocol and its tests when os(Linux), so
+    # plain `swift test` here builds and *runs* the parser suite cross-platform
+    # rather than merely compiling the module. Portability tested, not asserted.
     # Pinned to the same toolchain used locally.
     runs-on: ubuntu-latest
     container: swift:6.3.3
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build IRCProtocol alone on Linux
-        run: swift build --target IRCProtocol -Xswiftc -warnings-as-errors
+      - name: Build IRCProtocol on Linux
+        run: swift build -Xswiftc -warnings-as-errors
+
+      - name: Run the parser tests on Linux
+        run: swift test -Xswiftc -warnings-as-errors
 
   macos:
     runs-on: macos-latest

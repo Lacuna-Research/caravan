@@ -784,3 +784,62 @@ obviously fake and neither shaped like a real token. Note deleted.
 on Linux still stands, and this module's arrival is what makes it matter: `Diagnostics`
 imports `OSLog` and `Synchronization`, so it cannot build on the Linux purity runner —
 which is exactly why that job builds `IRCProtocol` alone rather than running tests.
+
+---
+
+## Prompt 3 — Message parser
+
+**Commit:** see PR  **Date:** 2026-08-04
+
+**Shipped:** `IRCProtocol` — `IRCMessage` (parse and serialize), `IRCTags`,
+`IRCSource`, `IRCCommand`, `IRCCaseMapping`, `IRCNick`/`IRCChannelName`, `IRCMask`,
+`IRCProtocolLimits` and `String.truncated(to:)`. No `import Foundation` anywhere in
+the module — standard library only.
+
+**Corpus:** ircdocs/parser-tests at `6b417e666de20ba677b14e0189213b3706009df6`
+(2023-05-29), CC0-1.0. All four files pass: msg-split (35 cases), msg-join (18),
+userhost-split (7), mask-match (6). Details and the regeneration command are in
+`Tests/IRCProtocolTests/Fixtures/VENDOR.md`.
+
+**Deviations:**
+- **Corpus converted from YAML to JSON.** Zero external dependencies means no YAML
+  parser; `JSONDecoder` is in the standard library. The corpus uses only plain
+  scalars, sequences and maps, so the conversion is lossless, and VENDOR.md carries a
+  one-liner that reproduces it from the pinned SHA.
+- **Fixtures live in `Tests/IRCProtocolTests/Fixtures/`, not `Tests/Fixtures/`.**
+  SwiftPM only bundles resources declared inside a target's own directory, and
+  `Bundle.module` is more robust than deriving a path from `#filePath`.
+- **`Package.swift` reduces itself to `IRCProtocol` and its tests under `os(Linux)`.**
+  This is what consumes the prompt 3 carry-forward: the purity job now runs plain
+  `swift test`, which builds *and runs* the parser suite on Linux instead of merely
+  compiling the module. Without the reduction it would try to build Diagnostics,
+  which imports `os.Logger`, and fail for a reason unrelated to purity.
+
+**Learned:**
+- **Swift treats `CR LF` as a single `Character`.** Escaping tag values with
+  `for character in value` never matched `case "\r"` or `case "\n"` for a bare CRLF,
+  so it passed through unescaped and would have terminated the line early on the wire.
+  Both escape and unescape now iterate `unicodeScalars`. The corpus caught this; no
+  hand-written test I had written would have. Worth remembering anywhere this codebase
+  inspects individual characters of protocol data.
+- **The corpus contains two `msg-join` cases with identical atoms and different
+  accepted outputs** — `{"asd": ""}` with a space-filled trailing, where one accepts
+  `@asd` or `@asd=` and the other only `@asd`. No implementation can pass both by
+  choosing per case, so empty tag values serialize to the valueless form, which
+  appears in both lists. IRCv3 treats them as equivalent.
+- **Eight of my own test expectations were wrong, in the same way.** I had asserted
+  byte-identical round-trips, but serialization is *canonical*: `PING :12345`
+  correctly becomes `PING 12345`, since a colon is only needed when a parameter is
+  empty, contains a space, or begins with `:`. The property worth asserting is that
+  serializing and reparsing is a fixed point, plus byte-exact round-trip for lines
+  already in canonical form. Both are now tested separately. The raw bytes are not
+  lost — `TraceBuffer` keeps the line as it arrived.
+
+**Measured:** 60 tests across 12 suites, of which 66 are corpus cases. Full `make all`
+clean, including `xcodebuild`.
+
+**Carry-forward consumed:** the note on prompt 3 about running `IRCProtocolTests` on
+Linux. Done via the platform-conditional manifest; the purity job now runs the suite
+rather than only compiling. Note deleted.
+
+**Carry-forward raised:** none.
