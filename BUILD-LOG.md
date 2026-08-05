@@ -1636,3 +1636,43 @@ one-line change plus a rerun.
 harness rather than the shipping one — is part of the result and belongs next to it. A
 number without the conditions that produced it invites exactly the overstatement this
 entry is correcting.
+
+---
+
+## Correction — prompt 7.5's brief was written against a stale copy of the notes
+
+`PROMPT-7.5-GUI-DESIGN.md` was drafted while `GUI-DESIGN-NOTES.md` was still being
+written, and captured it at roughly twelve sections of an eventual twenty. Its structure
+was sound — the ordering before prompt 8, the separate file to avoid a brief that edits
+itself, the carry-forward preservation counts, and the observation that `make check`
+catches a note *outliving* its prompt but not one deleted *before* consumption. Those are
+kept as they were.
+
+Three things in it were wrong, and two would have caused real damage:
+
+**It listed six settled decisions as open** — the palette toggle, nick-colour hash seed,
+input box scroll-vs-grow, toolbar default, binding capacity and tree ordering — and
+instructed the fold to file them in `PLAN.md`'s **Still open** list. All six were answered
+after the draft was written. That instruction would have taken answered questions and
+un-answered them in the one place the project treats as authoritative for unanswered
+ones. Replaced with the opposite instruction, plus the distinction §20 draws between
+*deferred* (nobody has to decide it, somebody has to build it) and *open*.
+
+**Its input pointer was wrong.** It described the notes as uncommitted in a worktree; they
+are committed and pushed on `gui-design-notes`. A brief pointing at a worktree path is
+also fragile, since the worktree can be removed. Now reads from the branch via `git show`.
+
+**Its conflict list covered §3–§12 and stopped**, missing six that the later sections
+introduced. The largest is §15: the font choice was settled by measurement — Menlo over SF
+Mono, because SF Mono lacks eleven of the forty-four CP437 art characters and CoreText
+substitutes them from proportional fonts at up to 1.80x cell width. Also missing were the
+Dashboard superseding a Connect sheet prompt 7 already shipped, the header bar generalising
+prompt 8's topic bar, close-parts-the-channel, disconnect greying, and two prompt 10
+defaults.
+
+**Generalising:** a brief that summarises a document still being written will be wrong in
+proportion to how much of it was still unwritten, and the failure is silent — a stale
+summary reads exactly as confidently as a current one. The fix applied here is to make the
+brief point at the source and say so: it now instructs the fold to check against all twenty
+sections rather than against the brief. Prefer briefs that cite a stable ref over briefs
+that restate content.
