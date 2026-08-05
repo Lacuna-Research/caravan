@@ -70,7 +70,24 @@ if [ -z "$completed" ]; then
 else
 	ok "STAGE1-PROMPTS.md status $completed/$TOTAL_PROMPTS"
 
-	# 5. Carry-forward notes must not outlive the prompt they were addressed to.
+	# 5. The README must agree with the status line.
+	# A progress badge and a checklist are exactly the kind of thing that silently
+	# goes stale, and a stale badge is worse than none — it is confidently wrong.
+	badge="stage%201-${completed}%2F${TOTAL_PROMPTS}"
+	if grep -qF "$badge" README.md; then
+		ok "README progress badge matches ($completed/$TOTAL_PROMPTS)"
+	else
+		err "README progress badge disagrees with the status line; expected to contain '$badge'"
+	fi
+
+	done_rows=$(grep -cE '^\| *[0-9]+ *\|.*\| *✅ done *\|' README.md || true)
+	if [ "$done_rows" -eq "$completed" ]; then
+		ok "README progress table matches ($done_rows done)"
+	else
+		err "README progress table shows $done_rows done, status line says $completed"
+	fi
+
+	# 6. Carry-forward notes must not outlive the prompt they were addressed to.
 	# A note that survives its prompt means the note was never consumed.
 	stale=$(awk -v done="$completed" '
 		/^## Prompt [0-9]+ / { n = $3 + 0; next }
@@ -83,7 +100,7 @@ else
 	fi
 fi
 
-# 6. No external SwiftPM dependencies without an explicit decision.
+# 7. No external SwiftPM dependencies without an explicit decision.
 # Each dependency is attack surface and maintenance burden. Stage 1 needs none.
 # Adding one means a decision entry in BUILD-LOG.md and an edit to this check.
 if [ -f Package.swift ]; then

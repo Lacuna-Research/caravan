@@ -52,8 +52,9 @@ it, including any `### Carry-forward` block on that prompt.
 
 `Scripts/check-docs.sh` runs as a pre-commit hook and in CI. It fails on: `CLAUDE.md`
 over 100 lines, any edit to existing `BUILD-LOG.md` lines, a `Sources/` change with no
-build-log entry, a missing or malformed status line, carry-forward notes outliving
-their prompt, and undeclared SwiftPM dependencies.
+build-log entry, a missing or malformed status line, a `README.md` progress badge or
+table that disagrees with it, carry-forward notes outliving their prompt, and
+undeclared SwiftPM dependencies.
 
 `Scripts/check-worktree.sh` runs as a Stop hook and blocks the turn when a worktree
 outlives its prompt: pushed, merged, remote branch deleted, working tree clean.
