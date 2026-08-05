@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Installed by: make hooks
+set -euo pipefail
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+
+case "$branch" in
+worktree-*)
+	echo "pre-push: refusing to push '$branch'." >&2
+	echo >&2
+	echo "  EnterWorktree names its branch 'worktree-<name>'. Rename it first:" >&2
+	echo "      git branch -m <name>" >&2
+	echo >&2
+	echo "  Pushing to a different name instead (git push origin HEAD:<name>) leaves" >&2
+	echo "  the local branch with no upstream, which also blinds the stale-worktree" >&2
+	echo "  check in Scripts/check-worktree.sh." >&2
+	exit 1
+	;;
+esac

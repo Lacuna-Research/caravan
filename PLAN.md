@@ -47,13 +47,28 @@ SQLite directly. See the decision entries in `BUILD-LOG.md` for the reasoning.
 
 ### Still open
 
-1. **Scripting engine (stage 3):** reimplement a subset of the mIRC scripting language
+**This is the single list of open questions.** Anything awaiting a decision belongs
+here, whatever `BUILD-LOG.md` entry first raised it — that log is append-only and
+approaching a thousand lines, so questions buried in it are questions nobody finds.
+Delete an item from this list when it is answered, and record the answer as a
+decision entry.
+
+1. **Licence.** There is no `LICENSE` file, so default copyright applies: all rights
+   reserved, despite the repo being public. MIT and Apache-2.0 are the usual choices
+   for a client like this; the vendored parser-tests corpus is CC0 and constrains
+   nothing. The README states the position plainly meanwhile. *Nothing blocks on it,
+   but it is the only open item that misrepresents the project until answered.*
+2. **Final product name.** `irc-client` is a working name. Renaming is a
+   find-and-replace until the first signed build; after that the bundle id is frozen
+   by Keychain ACLs and the config paths need a migration. Gated by a carry-forward
+   note on the release-engineering item in stage 4. Not blocking.
+3. **Scripting engine (stage 3).** Reimplement a subset of the mIRC scripting language
    (authentic, big) vs. embed Lua/JavaScriptCore (fast, not mIRC). Leaning
    mIRC-subset, since script compatibility is much of the point. Not blocking.
-2. **Distribution:** App Store sandbox vs. direct/notarized. DCC (incoming
+4. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
    connections, arbitrary file writes) and identd (port 113) are
    painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
-   Not blocking, but note the app target is already configured un-sandboxed.
+   Not blocking; the app target is already configured un-sandboxed.
 
 ### Testing strategy
 

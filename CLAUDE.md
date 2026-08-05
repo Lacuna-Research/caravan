@@ -19,10 +19,9 @@ A native macOS IRC client modeled on mIRC.
 One prompt from `STAGE1-PROMPTS.md` per branch (`prompt-NN-slug`), per PR. Never
 commit to `main` directly.
 
-**You merge your own PRs.** Squash-merge and delete the branch as soon as CI is
-green — do not hand back a merge checklist. Required checks and `enforce_admins` are
-the gate; a green PR is authorisation to land it. Stop and ask only if CI is red, the
-work diverged from the prompt, or a decision surfaced that is genuinely the user's.
+**You merge your own PRs.** Squash-merge and delete the branch once CI is green; a
+green PR is authorisation to land it, not a checklist to hand back. Stop and ask only
+if CI is red, the work diverged from its prompt, or a decision is genuinely the user's.
 
 **Starting a prompt:** re-read `STAGE1-PROMPTS.md` rather than working from memory of
 it, including any `### Carry-forward` block on that prompt.
@@ -36,8 +35,8 @@ it, including any `### Carry-forward` block on that prompt.
 3. Consume notes addressed to this prompt: act on them, delete them, record that.
 4. Push anything deferred into `PLAN.md` at the stage where it belongs.
 5. Bump the `**Status:**` line in `STAGE1-PROMPTS.md`.
-6. `make check` must pass. It also runs as a pre-commit hook and in CI.
-7. Merge the PR, then `ExitWorktree` with `remove`. A prompt ends at the repo root.
+6. `make check` must pass, then merge the PR and `ExitWorktree` with `remove` — a
+   prompt ends at the repo root, not in its worktree.
 
 **Between prompts.** Record decisions *at the moment they are made*, never deferred:
 
@@ -45,20 +44,17 @@ it, including any `### Carry-forward` block on that prompt.
   reasoning and what would justify revisiting it.
 - A change to scope or approach → edit `PLAN.md` / `STAGE1-PROMPTS.md` in the same
   turn. Never answer "good idea, we'll do that" without writing it down.
-- A question left open → the Open section of the latest decision entry, marked
-  blocking or not. Unanswered questions are as easy to lose as answers.
+- A question left open → the **Still open** list in `PLAN.md`, marked blocking or
+  not. Unanswered questions are as easy to lose as answers.
 
 ## Enforced mechanically
 
-`Scripts/check-docs.sh` runs as a pre-commit hook and in CI. It fails on: `CLAUDE.md`
-over 100 lines, any edit to existing `BUILD-LOG.md` lines, a `Sources/` change with no
-build-log entry, a missing or malformed status line, a `README.md` progress badge or
-table that disagrees with it, README ASCII art that no longer matches
-`Scripts/render-readme-art.py`, carry-forward notes outliving their prompt, and
-undeclared SwiftPM dependencies.
-
-`Scripts/check-worktree.sh` runs as a Stop hook and blocks the turn when a worktree
-outlives its prompt: pushed, merged, remote branch deleted, working tree clean.
+`make check` (pre-commit + CI) enforces: the cap on this file, `BUILD-LOG.md`
+append-only, a build-log entry for every `Sources/` change, the status line, the
+`README.md` progress badge/table and ASCII art agreeing with their sources,
+carry-forward notes not outliving their prompt, and zero SwiftPM dependencies. Two
+git hooks and a Stop hook guard the rest: no commits to `main`, no pushing a
+`worktree-*` branch before renaming it, no worktree left behind after its PR merged.
 
 When a convention here proves important, make it mechanical rather than writing it
 more emphatically.
@@ -69,22 +65,25 @@ Keep docs current without being asked; fix a stale doc in the same commit as the
 that staled it. Reasoning belongs in `BUILD-LOG.md`, not here — this file holds
 operative rules, and that split is what keeps it under the cap.
 
+`BUILD-LOG.md` is long and append-only: read its last entries, or search it, rather
+than front to back. Open questions are **not** tracked there — they live in one list
+in `PLAN.md`, because a question buried in an append-only log is a question nobody
+finds.
+
 Revisit it at every stage boundary and **prune as readily as you add** — the 100-line
 cap is deliberate and is not to be raised. `PLAN.md` is a living roadmap: reorder,
 rescope and delete freely, since `BUILD-LOG.md` preserves the history. Reference
 `PLAN.md` items by name, never by number; the numbering shifts.
 
-Propose structural changes to this file rather than making them silently; routine
-corrections and prunes need no permission.
+Propose structural changes here rather than making them silently; prunes need none.
 
 ## Where things live
 
 The app writes nothing to its own source tree. No settings, no logs, no captured
 traffic, no credentials — not even under a gitignored path.
 
-- Settings → `$XDG_CONFIG_HOME/irc-client/`, defaulting to `~/.config/irc-client/`.
-- Logs, scrollback DB → `$XDG_DATA_HOME/irc-client/`, defaulting to `~/.local/share/irc-client/`.
-- Caches → `$XDG_CACHE_HOME/irc-client/`, defaulting to `~/.cache/irc-client/`.
+- Settings, data and caches → `$XDG_{CONFIG,DATA,CACHE}_HOME/irc-client/`, defaulting
+  to `~/.config`, `~/.local/share` and `~/.cache` respectively.
 - **Credentials → the macOS Keychain, never a file.** Reasoning in `BUILD-LOG.md`.
 
 Config files are plain text and user-editable; treat their paths as public API.
