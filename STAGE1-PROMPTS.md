@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 7/10 complete. Next: prompt 8.
+**Status:** 7/10 complete. Next: prompt 7.5, then prompt 8.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -310,6 +310,21 @@ to reach it, using `<user>/<network>` as the username.
 Do not: multiple servers, channel windows, nick lists, formatting codes, logging, or
 a preferences window.
 ```
+
+---
+
+## Prompt 7.5 — GUI design integration
+
+Docs only, and **it runs before prompt 8**: the design notes change the sidebar, and
+prompt 8 builds the sidebar. The prompt itself is in `PROMPT-7.5-GUI-DESIGN.md` — it
+rewrites this file, so keeping its instructions inside this file would have it editing
+its own brief. Both this section and that file are deleted when the work merges.
+
+Not one of the ten, so it does not move the **Status** count or the README table.
+
+*No `### Carry-forward` block belongs under this heading:* the staleness check matches
+`## Prompt <digits> `, which `7.5` does not, so a note here would be attributed to
+prompt 7 and reported as outliving it.
 
 ---
 
