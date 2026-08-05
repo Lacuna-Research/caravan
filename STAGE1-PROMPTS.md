@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 3/10 complete. Next: prompt 4.
+**Status:** 4/10 complete. Next: prompt 5.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -234,6 +234,27 @@ deliberate disconnect does not reconnect.
 Do not: track channels or users (prompt 8). No CAP negotiation, no SASL — stage 2.
 No UI.
 ```
+
+### Carry-forward
+
+- From prompt 4: **a refused or unroutable connection never reports `.failed`.**
+  `NWConnection` sits in `.waiting(ECONNREFUSED)` retrying indefinitely, and the
+  transport deliberately does not treat that as terminal. So the session needs its own
+  connect deadline — without one, connecting to a wrong port hangs in `.connecting`
+  forever. This is why prompt 4 has no "connection refused" test: there is nothing to
+  observe until prompt 5 supplies the timeout.
+- From prompt 4: one `IRCConnection` is one connection attempt. `connect` may be called
+  once and both streams finish at the terminal state, so reconnect means constructing a
+  new instance — which is also what keeps a retry from inheriting half-torn-down state.
+- From prompt 4: reconnect on `.failed`, never on `.cancelled`. A server hanging up
+  after `ERROR` arrives as `.failed(.closedByPeer)`; a deliberate `disconnect()` is
+  `.cancelled`. The transport latches whichever comes first, so exactly one terminal
+  state is ever reported.
+- From prompt 4: `Tests/IRCTransportTests/Support/LocalTCPServer.swift` is a loopback
+  `NWListener` that frames what it receives and writes raw lines back — the bones of the
+  scriptable fake server this prompt needs. It lives in another test target, so sharing
+  it means either duplicating it or adding a shared test-support target; prefer the
+  latter if IRCSessionTests wants more than a copy.
 
 ---
 
