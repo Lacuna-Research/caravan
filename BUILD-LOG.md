@@ -1142,3 +1142,50 @@ name together, so the key now invalidates exactly when the cache becomes invalid
 far more confusing without a rename to point at. Renaming the repo was the one action
 guaranteed to surface it, which is a small argument for doing disruptive things early
 while the diff is still readable.
+
+---
+
+## Decision — distribution is a Homebrew cask in our own tap
+
+**Date:** 2026-08-04  **Affects:** PLAN.md, README.md; closes the last open question
+
+**Chose:** a Homebrew cask published from `Lacuna-Research/homebrew-tap`.
+
+**Over the App Store**, which was the alternative half of this question and which the
+architecture had already been quietly betting against: DCC needs to accept incoming
+connections and write files the user chooses, and identd wants port 113. Both are
+painful to impossible sandboxed. The app target has been configured un-sandboxed since
+prompt 1 on that assumption; this makes the assumption a decision.
+
+**Over homebrew-cask core**, at least initially. Core has notability requirements a
+brand-new project will not meet, and a tap is one Ruby file we control outright.
+Submitting upstream later costs nothing that this forecloses.
+
+### What follows from it
+
+- **Developer ID signing and notarization are required, and that costs money.** A cask
+  installs into `/Applications`, so Gatekeeper quarantines it; an unsigned or
+  un-notarized app greets the user with "damaged and can't be opened". That means a
+  paid Apple Developer account, and it is the real price of this choice rather than a
+  detail. Worth knowing now rather than at release.
+- **The hardened runtime setting was right after all.** It has been set since prompt 1
+  and reported inert under ad-hoc signing. Notarization *requires* it, so it becomes
+  live the moment a Developer ID exists — no change needed.
+- **Sparkle is dropped.** `brew upgrade` is the update mechanism. Shipping a second
+  updater that rewrites an app Homebrew believes it manages produces exactly the drift
+  Homebrew exists to prevent. Reconsider only if direct download becomes a second
+  channel. This removes a planned dependency, which is the direction this project
+  prefers to move.
+- **The XDG decision pays off here.** A cask's `zap` stanza can remove
+  `~/.config/caravan`, `~/.local/share/caravan` and `~/.cache/caravan` in three lines.
+  Had settings been scattered across `~/Library` the way a typical Mac app does it,
+  clean uninstall would have been a scavenger hunt. That was chosen for tidiness and
+  turns out to have been chosen for uninstall too.
+
+**Nothing is built yet** — no tap repository, no release workflow. This is stage 4 and
+recording the decision is the whole of the work today.
+
+### Open
+
+*None.* Every question raised during planning and the first three prompts is now
+decided and written down. New ones go in `PLAN.md`'s **Still open** list.
