@@ -843,3 +843,42 @@ Linux. Done via the platform-conditional manifest; the purity job now runs the s
 rather than only compiling. Note deleted.
 
 **Carry-forward raised:** none.
+
+---
+
+## Decision — README as a front door, with its progress claims machine-checked
+
+**Date:** 2026-08-04  **Affects:** README.md, Scripts/check-docs.sh, CLAUDE.md
+
+Rewrote `README.md` as a real project front page: ASCII wordmark, CI and metadata
+badges, an ASCII mockup of the planned mIRC-style layout, an ASCII module diagram, a
+per-prompt progress table, the full four-stage feature roadmap in collapsible
+sections, build instructions, and the data-location table.
+
+**Chose:** marking clearly what exists versus what is planned, over writing the README
+in the aspirational present tense. The mockup is labelled "a mockup, not a screenshot"
+and a callout says the app currently launches to an empty window. A README that
+implies working features the project does not have is the fastest way to lose a
+reader's trust, and this one has to survive being read next to a repo that is three
+prompts old.
+
+**Chose:** two new checks in `check-docs.sh` rather than trusting the badge to be
+updated. A static progress badge and a hand-maintained checklist are exactly the kind
+of thing that goes stale, and a stale badge is worse than no badge because it is
+confidently wrong. The check derives `stage%201-N%2F10` from the status line and
+requires the README to contain it, and separately counts `✅ done` rows in the
+progress table and requires that to equal N. Both failure modes were verified by
+breaking each one and watching the check fail.
+
+That makes four documents whose agreement is now enforced rather than remembered:
+`CLAUDE.md` (length), `BUILD-LOG.md` (append-only), `STAGE1-PROMPTS.md` (status and
+carry-forward), and `README.md` (progress).
+
+### Open
+
+- **No licence.** The repository is public with no `LICENSE` file, which means default
+  copyright — all rights reserved — regardless of it being publicly readable. The
+  README says so plainly rather than implying openness the licence does not grant.
+  Picking one is the user's call: MIT and Apache-2.0 are the usual choices for a
+  client like this, and the vendored parser-tests corpus is CC0 so it imposes no
+  constraint. Not blocking.
