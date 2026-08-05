@@ -130,9 +130,11 @@ struct InputFieldTests {
     @Test("a paste with a trailing newline sends nothing and loses the newline")
     func pasteWithTrailingNewline() {
         let harness = Harness()
-        harness.paste("-----BEGIN PRIVATE KEY-----\n")
+        // Obviously fake, per CLAUDE.md: a fixture shaped like a real credential is one
+        // the secret scanner has to flag, and it is right to.
+        harness.paste("s3cr3t-not-real\n")
         #expect(harness.sent.isEmpty)
-        #expect(harness.text == "-----BEGIN PRIVATE KEY-----")
+        #expect(harness.text == "s3cr3t-not-real")
     }
 
     @Test("several trailing newlines are all stripped, and CRLF is normalized")

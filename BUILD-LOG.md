@@ -2054,3 +2054,28 @@ already threaded through; `/part` must not go through `closeChannel`; the in-pro
 needs the same per-buffer treatment as the history) were all acted on as written — the
 `/part` one in particular is now a test that asserts the buffer count is unchanged.
 Raised: two notes on prompt 10.
+
+## Correction — a test fixture shaped like a real credential
+
+**Date:** 2026-08-05
+
+The paste test in prompt 9 used `-----BEGIN PRIVATE KEY-----` as its payload: the header
+line alone, no key material. The secrets job flagged it as a private key, and it was
+right to — not because the string is dangerous, but because `CLAUDE.md` requires a fake
+credential in a fixture to be *recognisable* as fake, and that one is not. A scanner
+cannot tell the difference, and neither can a reader skimming a diff.
+
+The fixture is now `s3cr3t-not-real`. The test reads the same and the comment still names
+the scenario it guards against.
+
+**A new file: `.gitleaksignore`.** `gitleaks git .` scans full history, so the superseded
+commit keeps failing the check on this branch however the working tree looks. The
+alternatives were rewriting the branch — which the working method does not do — or
+abandoning the PR. One fingerprint, with the reason beside it and an instruction to delete
+it once this branch is squash-merged and the commit is gone. The file's header states the
+rule for anything added later: an entry is a claim about a specific finding, and it needs
+a reason.
+
+Worth saying plainly, since it is the second time this project has learned it: the
+mechanical check found what review did not. The fixture was written, read and committed by
+someone who knew the rule it broke.
