@@ -1971,3 +1971,111 @@ membership events) were both correct and made the UI half far smaller than it lo
 though "a channel window is a second controller, not a rework" turned out to be true only
 after the two view-lifecycle defects above were fixed. Raised: two notes on prompt 9 and
 two on prompt 10.
+
+## Prompt 9 — Command line
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `IRCSession` — `CommandParser`, `CommandAction`, `CommandError`. `CaravanUI`
+— `InputState` (per-buffer text and history), `InputField`/`InputTextView` (the real input
+box), `InputBar`, and `AppModel.submit`. Prompt 7's raw-line stopgap is gone. 301 tests
+across 34 suites; `make all` clean.
+
+**The defect the live run found, and the one only a live run could.** In an `NSTextView`
+that is not a field editor, **Shift+Return arrives as `insertNewline:` — the same selector
+as plain Return.** The override sent on both, so the multi-line box could never be built:
+typing `line one`, Shift+Enter, `line two` put two messages on the wire instead of one
+two-line box. Fixed by consulting the modifier, through an injectable
+`InputTextView.modifierFlags` seam so the regression has a test. The seam exists because
+`doCommand(by:)` does not carry the flags and `NSApp.currentEvent` is not something a test
+can set — a narrow test-shaped affordance, bought with a bug that shipped once.
+
+Two hours of the live run also went to launching the *wrong* binary: `DerivedData` is
+keyed on the project path, so each worktree gets its own, and the path memorised from
+prompt 8 was still there and still ran. `xcodebuild -showBuildSettings | grep
+BUILT_PRODUCTS_DIR` is the answer; the symptom was watching prompt 8's behaviour and
+believing it.
+
+**Decisions:**
+- **The parser is pure and lives in `IRCSession`.** It produces `[CommandAction]` and
+  neither sends, connects nor draws. That is what makes the command table a table —
+  twenty-six tests running in a millisecond with no socket — and it is the same shape
+  `EventTranslator` already took, for the same reason.
+- **One switch over the actions, on `AppModel`.** `/server` points the *app* at a new
+  host and a connection cannot replace itself, so splitting the switch across the two
+  would leave an unreachable case in each. Rejected: a delegate closure on the connection,
+  which is the same coupling with more indirection.
+- **Leading whitespace is never trimmed; trailing whitespace always is.** ASCII art is a
+  correctness constraint in this client (§15), and a leading run of spaces is load-bearing
+  in it. The consequence — a line starting with a space is a message rather than a command
+  — is the right way round.
+- **`/join swift` gains its `#`.** From `CHANTYPES`, not a hardcoded prefix. `JOIN swift`
+  is only ever an error, so there is nothing to lose by qualifying it.
+- **An undeclared `/command` is uppercased and sent verbatim**, mIRC's passthrough, which
+  is what makes the client useful for everything stage 1 has not wired up. A trailing
+  parameter with spaces needs its own `:`, exactly as in `/raw` — the same bargain mIRC
+  makes.
+- **`+port` means TLS on `/server`; a bare port says nothing.** Twenty years of mIRC for
+  the first half. The second half is deliberate: inferring TLS from the port number sends
+  a password in clear when the guess is wrong.
+- **`/quit` is one action, not `send` plus `disconnect`.** The order matters — a caller
+  that got it backwards would write `QUIT` into a closed socket — and the disconnect is
+  not merely tidy: a server answers `QUIT` with `ERROR` and closes, which the session
+  would otherwise read as a failure worth reconnecting from.
+- **The `>>` echo stays for now.** Prompt 10 owns local self-echo and the raw-traffic
+  toggle, and `>>` markers are where that toggle's output belongs. Replacing it here would
+  be doing prompt 10's work with none of its context.
+- **`InputState` is per buffer, both halves.** History and the in-progress line. A history
+  on the view would offer the wrong window's commands; a draft on the view would be lost
+  on every glance at another channel.
+
+**Learned:**
+- **`wireForm` marks a trailing parameter only when it must** — empty, containing a space,
+  or starting with `:`. `PRIVMSG #swift hello` and `PRIVMSG #swift :hello` are the same
+  message. Half the first draft of the command table asserted the wrong one.
+- **Every route into the text view funnels through `readSelection(from:)`.** ⌘V,
+  paste-and-match-style, drag, services. Making `paste(_:)` call it rather than duplicating
+  the sanitizer means the security rule has one implementation *and* can be tested without
+  touching the user's real clipboard.
+- **A `@MainActor` nested type in a test suite does not inherit the suite's isolation.**
+  Both new UI harnesses needed `@MainActor` of their own.
+
+**Live acceptance:** connected to Libera over TLS. `/join caravan-smoke` gained its `#`;
+plain text in the status window printed the no-target error and put nothing on the wire;
+`/msg` printed its usage line in the window it was typed in. In the channel, Shift+Enter
+grew the box to three lines, a paste ending in a newline landed inline and sent nothing,
+one Enter then sent three separate `PRIVMSG`s in order, and Up recalled the whole
+three-line entry. `/quit that is all` left the network disconnected and greyed, its
+channel buffer still in the tree, with no reconnect after fifteen seconds.
+
+**Carry-forward:** consumed all five notes on this prompt. Prompt 7's two (the stopgap is
+the seam; reuse `.clientError` for usage errors) and prompt 8's three (the target is
+already threaded through; `/part` must not go through `closeChannel`; the in-progress line
+needs the same per-buffer treatment as the history) were all acted on as written — the
+`/part` one in particular is now a test that asserts the buffer count is unchanged.
+Raised: two notes on prompt 10.
+
+## Correction — a test fixture shaped like a real credential
+
+**Date:** 2026-08-05
+
+The paste test in prompt 9 used `-----BEGIN PRIVATE KEY-----` as its payload: the header
+line alone, no key material. The secrets job flagged it as a private key, and it was
+right to — not because the string is dangerous, but because `CLAUDE.md` requires a fake
+credential in a fixture to be *recognisable* as fake, and that one is not. A scanner
+cannot tell the difference, and neither can a reader skimming a diff.
+
+The fixture is now `s3cr3t-not-real`. The test reads the same and the comment still names
+the scenario it guards against.
+
+**A new file: `.gitleaksignore`.** `gitleaks git .` scans full history, so the superseded
+commit keeps failing the check on this branch however the working tree looks. The
+alternatives were rewriting the branch — which the working method does not do — or
+abandoning the PR. One fingerprint, with the reason beside it and an instruction to delete
+it once this branch is squash-merged and the commit is gone. The file's header states the
+rule for anything added later: an entry is a claim about a specific finding, and it needs
+a reason.
+
+Worth saying plainly, since it is the second time this project has learned it: the
+mechanical check found what review did not. The fixture was written, read and committed by
+someone who knew the rule it broke.

@@ -17,6 +17,11 @@ public final class ChannelBuffer: Identifiable {
     /// second scrollback, not a rework of the first.
     public let log = MessageLogController()
 
+    /// This window's input box and command history. Both belong to the buffer rather
+    /// than to the view, or switching away and back would lose the line being written and
+    /// leave the history attached to the wrong window.
+    public let input = InputState()
+
     public private(set) var channel: Channel
 
     /// `nonisolated` because `Identifiable` is not: the identity is the immutable name,

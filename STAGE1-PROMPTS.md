@@ -1,6 +1,6 @@
 # Stage 1 — The Prompts
 
-**Status:** 8/11 complete. Next: prompt 9.
+**Status:** 9/11 complete. Next: prompt 10.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -431,27 +431,6 @@ stage 3, where it becomes a warning on an already-visible payload rather than th
 only thing between a paste and the wire.
 ```
 
-### Carry-forward
-
-- From prompt 7: the input field is a **stopgap that this prompt replaces**. It currently
-  parses whatever is typed as a raw IRC line and sends it — enough to `JOIN` and `PRIVMSG`
-  by hand and prove the connection works, and nothing more. `ConnectionViewModel.send(rawLine:)`
-  is the seam; the command layer goes there.
-- From prompt 7: unparseable input already produces a `.clientError` event that renders as
-  a red line in the buffer, which is the "never silently drop input" requirement's
-  existing half. Reuse it for usage errors rather than inventing a second path.
-- From prompt 8: the stopgap is now `send(rawLine:from:)`, which takes the originating
-  channel so the echo lands in the window it was typed in. The active window's target is
-  therefore already threaded through — `/msg` and `/me` resolving theirs is reading a
-  parameter that exists, not plumbing a new one.
-- From prompt 8: `/part` must send `PART` through `session.send`, **not** through
-  `closeChannel(_:)`. The latter is ⌘W's path and is the one thing that removes a channel
-  from the roster; routing `/part` into it would break the invariant this prompt's own
-  text states. Parting already leaves the buffer greyed with no work from here.
-- From prompt 8: the input field is per-`BufferView` `@State`, so switching buffers loses
-  what was typed. Per-window command history is on this prompt's list; the in-progress
-  line needs the same treatment, or the history will outlive the text it belongs to.
-
 ---
 
 ## Prompt 10 — Status window, timestamps, and line rendering
@@ -545,6 +524,14 @@ UI: prompt 11 owns both, and closes out the stage.
   modes, join failure, and the two silent ones). They are switch arms beside the others
   and belong in the `LineKind` table this prompt builds, along with everything already
   there — do not leave a second table behind.
+- From prompt 9: the `>>` echo on every sent line is still prompt 7's stopgap, and it is
+  now the *only* thing that shows what you said. `ConnectionViewModel.send(_:from:)` is
+  where it lives. This prompt's local self-echo replaces it and its raw-traffic toggle is
+  where `>>` markers belong — do not end up rendering both.
+- From prompt 9: the input box is an `NSTextView` (`InputField`), so the chat font applies
+  to it the same way it applies to the scrollback. `LineRenderer.font` is already its only
+  font source, which means the Menlo change reaches it for free — but the box measures its
+  own height from that font, so check that six lines still measure as six.
 
 ---
 

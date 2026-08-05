@@ -65,6 +65,40 @@ public struct ConnectionSettings: Sendable, Equatable {
             && !nick.trimmingCharacters(in: .whitespaces).isEmpty
             && port > 0
     }
+
+    /// `@AppStorage` keys, named once.
+    ///
+    /// Two readers now — the Connect sheet writes them and `/server` reads them — and a
+    /// key that is a string literal in two places is a key that eventually differs in one.
+    public enum Key {
+        public static let host = "lastHost"
+        public static let port = "lastPort"
+        public static let useTLS = "lastUseTLS"
+        public static let nick = "lastNick"
+        public static let altNick = "lastAltNick"
+        public static let ident = "lastIdent"
+        public static let realName = "lastRealName"
+    }
+
+    /// The last values the Connect sheet was used with.
+    ///
+    /// `/server` changes the host and nothing else — identity belongs to the client's
+    /// settings, and a command that silently changed your nick or real name would be a
+    /// surprise. The password is absent by design: its home is the Keychain, and until
+    /// that exists it is never written down.
+    public static var lastUsed: ConnectionSettings {
+        let defaults = UserDefaults.standard
+        let storedPort = defaults.integer(forKey: Key.port)
+        return ConnectionSettings(
+            host: defaults.string(forKey: Key.host) ?? "irc.libera.chat",
+            port: storedPort > 0 ? UInt16(clamping: storedPort) : 6697,
+            useTLS: defaults.object(forKey: Key.useTLS) as? Bool ?? true,
+            nick: defaults.string(forKey: Key.nick) ?? "",
+            altNick: defaults.string(forKey: Key.altNick) ?? "",
+            ident: defaults.string(forKey: Key.ident) ?? "",
+            realName: defaults.string(forKey: Key.realName) ?? ""
+        )
+    }
 }
 
 /// What is on screen: one connection at most, and whether the sheet is up.
@@ -113,6 +147,65 @@ public final class AppModel {
         guard let buffer = selectedChannel, let connection else { return }
         await connection.closeChannel(buffer.name)
         selection = .status(connection.id)
+    }
+
+    // MARK: - Input
+
+    /// Runs a box full of input through the command layer and carries out what it asks.
+    ///
+    /// One switch, here, rather than half of it on the connection: `/server` points the
+    /// *app* at a new host, and a connection cannot replace itself. Everything else is
+    /// the connection's, and this hands it straight over.
+    public func submit(_ text: String, from target: Target?) async {
+        guard let connection else { return }
+        for action in await connection.actions(for: text, activeTarget: target) {
+            switch action {
+            case .send(let message):
+                await connection.send(message, from: target)
+            case .error(let message):
+                connection.showError(message, in: target)
+            case .reconnect:
+                await connection.connect()
+            case .disconnect:
+                await connection.disconnect()
+            case .quit(let reason):
+                await connection.quit(reason: reason)
+            case .connect(let host, let port, let tls, let password):
+                await connect(
+                    toHost: host,
+                    port: port,
+                    tls: tls,
+                    password: password,
+                    reportingInto: target
+                )
+            }
+        }
+    }
+
+    /// `/server` and `/connect <host>`: the stored identity, pointed somewhere new.
+    private func connect(
+        toHost host: String,
+        port: UInt16?,
+        tls: Bool?,
+        password: String?,
+        reportingInto target: Target?
+    ) async {
+        var settings = ConnectionSettings.lastUsed
+        settings.host = host
+        if let port { settings.port = port }
+        if let tls { settings.useTLS = tls }
+        if let password { settings.password = password }
+
+        guard settings.isValid else {
+            // The one thing `/server` cannot supply. Said out loud rather than failing
+            // quietly, which is the same rule every other argument error follows.
+            connection?.showError(
+                "/server has no nickname to use — set one in the Connect sheet first",
+                in: target
+            )
+            return
+        }
+        await connect(using: settings)
     }
 
     public func connect(using settings: ConnectionSettings) async {

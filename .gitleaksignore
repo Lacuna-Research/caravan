@@ -1,0 +1,13 @@
+# Findings gitleaks should not fail on. One line per fingerprint, each with a reason.
+#
+# This file is an escape hatch, not a silencer: an entry here is a claim that a specific
+# finding at a specific commit is not a credential. Nothing goes in without a reason, and
+# an entry whose commit no longer exists should be deleted rather than left to rot.
+
+# A test fixture for the paste rule, written as `-----BEGIN PRIVATE KEY-----` — the header
+# line and nothing else, with no key material of any kind. It was still the wrong fixture:
+# CLAUDE.md requires a fake credential to be *recognisable* as fake, and that one is not.
+# The fixture is now `s3cr3t-not-real`; this entry covers the superseded commit, which
+# survives only in this branch's history and disappears when it is squash-merged. Delete
+# it then.
+30def32707e81699890827175a17b4c95a6ba81c:Tests/CaravanUITests/InputFieldTests.swift:private-key:133
