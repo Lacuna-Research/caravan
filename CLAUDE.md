@@ -1,6 +1,6 @@
 # Caravan — Project Instructions
 
-A native macOS IRC client modeled on mIRC.
+A native macOS IRC client loosely inspired by the good ol' days of mIRC.
 `PLAN.md` roadmap · `STAGE1-PROMPTS.md` work queue · `BUILD-LOG.md` history.
 
 ## Build standards

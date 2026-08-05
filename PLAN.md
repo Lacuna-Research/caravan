@@ -1,6 +1,7 @@
 # mIRC-style Caravan for macOS — Build Plan
 
-A layered plan for building a native macOS IRC client modeled on mIRC. Each numbered
+A layered plan for Caravan, a native macOS IRC client loosely inspired by the good
+ol' days of mIRC. Each numbered
 item is sized to be roughly one prompt / one focused work session, and each stage ends
 at a point where the app is genuinely usable.
 

@@ -13,7 +13,7 @@
 
 <!-- /art:wordmark -->
 
-**A native macOS IRC client, in the spirit of mIRC.**
+**A native macOS IRC client loosely inspired by the good ol' days of mIRC.**
 
 [![ci](https://github.com/Lacuna-Research/caravan/actions/workflows/ci.yml/badge.svg)](https://github.com/Lacuna-Research/caravan/actions/workflows/ci.yml)
 [![docs](https://github.com/Lacuna-Research/caravan/actions/workflows/docs.yml/badge.svg)](https://github.com/Lacuna-Research/caravan/actions/workflows/docs.yml)
