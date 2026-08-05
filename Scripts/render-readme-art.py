@@ -104,13 +104,20 @@ def wordmark(word: str = "IRC-CLIENT", indent: int = 3) -> list[str]:
 
     Concatenating per-letter blocks makes misalignment impossible, rather than
     something to eyeball afterwards.
+
+    Trailing spaces are deliberately **not** stripped. The wordmark lives inside
+    `<div align="center">`, which GitHub renders as `text-align: center` — and a
+    `<pre>` inherits that and centres *each line independently*. Ragged line lengths
+    therefore shift rows relative to one another: strip the trailing spaces and the
+    six-row block visibly staircases, because the letters `T` and `C` leave shorter
+    tails on the lower rows. Equal-length rows centre identically.
     """
     for letter in word:
         widths = {len(row) for row in GLYPHS[letter]}
         assert len(widths) == 1, f"glyph {letter!r} has ragged rows: {widths}"
     rows = [" " * indent + "".join(GLYPHS[l][i] for l in word) for i in range(6)]
     assert len({len(r) for r in rows}) == 1, "rendered wordmark is ragged"
-    return [r.rstrip() for r in rows]
+    return rows
 
 
 # ---------------------------------------------------------------- UI mockup
@@ -287,7 +294,13 @@ if __name__ == "__main__":
 
     if "--check" in sys.argv:
         if updated != original:
-            print("README ASCII art is out of date; run Scripts/render-readme-art.py", file=sys.stderr)
+            print(
+                "README ASCII art does not match the generator. Run:\n"
+                "    python3 Scripts/render-readme-art.py\n"
+                "If you did not touch the art, check for stripped trailing whitespace: the\n"
+                "wordmark rows must stay equal length or the centred <pre> staircases.",
+                file=sys.stderr,
+            )
             sys.exit(1)
         print("README ASCII art matches the generator")
     else:
