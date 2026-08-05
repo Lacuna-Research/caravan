@@ -19,7 +19,15 @@ struct IRCSessionTests {
         let server: ScriptedIRCServer
         let session: IRCSession
         let trace: TraceBuffer
-        let states: StreamLog<SessionState>
+        let events: StreamLog<IRCEvent>
+
+        /// Just the lifecycle transitions, in order. The event stream carries everything
+        /// now, so the state assertions filter it rather than reading a second stream.
+        func states() async -> [SessionState] {
+            await events.snapshot().compactMap {
+                if case .stateChanged(let state) = $0 { state } else { nil }
+            }
+        }
 
         func shutDown() async {
             await session.disconnect()
@@ -60,9 +68,11 @@ struct IRCSessionTests {
         )
         let trace = TraceBuffer(capacity: 512)
         let session = IRCSession(configuration: configuration, trace: trace)
-        let states = StreamLog<SessionState>()
-        states.drain(session.state)
-        return Harness(server: server, session: session, trace: trace, states: states)
+        let events = StreamLog<IRCEvent>()
+        // Subscribed before any connect: the multicast does not replay, so a subscriber
+        // that arrives late has genuinely missed what happened.
+        events.drain(session.events())
+        return Harness(server: server, session: session, trace: trace, events: events)
     }
 
     private func registeredHarness(nick: String = "alice", password: String? = nil) async throws
@@ -73,7 +83,7 @@ struct IRCSessionTests {
         await server.scriptWelcome(nick: nick)
         let harness = harness(port: port, server: server, nick: nick, password: password)
         await harness.session.connect()
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isConnected) })
+        #expect(await waitUntil { await harness.states().contains(where: isConnected) })
         return harness
     }
 
@@ -88,11 +98,7 @@ struct IRCSessionTests {
                 "PASS hunter2", "NICK alice", "USER alice 0 * :Alice Example",
             ]
         )
-        #expect(
-            await harness.states.snapshot().prefix(3) == [
-                .disconnected(reason: .notStarted), .connecting, .registering,
-            ]
-        )
+        #expect(await harness.states().prefix(2) == [.connecting, .registering])
 
         let info = try #require(await harness.session.serverInfo)
         #expect(info.nick == "alice")
@@ -142,7 +148,7 @@ struct IRCSessionTests {
 
         let harness = harness(port: port, server: server, altNick: "bob")
         await harness.session.connect()
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isConnected) })
+        #expect(await waitUntil { await harness.states().contains(where: isConnected) })
 
         #expect(await nickLines(harness.server) == ["NICK alice", "NICK bob"])
         #expect(await harness.session.currentNick == "bob")
@@ -160,7 +166,7 @@ struct IRCSessionTests {
 
         let harness = harness(port: port, server: server, altNick: "bob")
         await harness.session.connect()
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isConnected) })
+        #expect(await waitUntil { await harness.states().contains(where: isConnected) })
 
         #expect(await nickLines(harness.server) == ["NICK alice", "NICK bob", "NICK bob_"])
 
@@ -179,7 +185,7 @@ struct IRCSessionTests {
         await harness.session.connect()
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains {
+                await harness.states().contains {
                     if case .disconnected(.registrationFailed) = $0 { true } else { false }
                 }
             }
@@ -193,7 +199,7 @@ struct IRCSessionTests {
         )
         // And no reconnect: retrying would produce exactly the same collisions.
         try await Task.sleep(for: .milliseconds(200))
-        #expect(await !harness.states.snapshot().contains(where: isReconnecting))
+        #expect(await !harness.states().contains(where: isReconnecting))
 
         await harness.shutDown()
     }
@@ -213,7 +219,7 @@ struct IRCSessionTests {
         await harness.session.connect()
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains {
+                await harness.states().contains {
                     if case .disconnected(.registrationFailed) = $0 { true } else { false }
                 }
             }
@@ -244,7 +250,7 @@ struct IRCSessionTests {
         await harness.server.send("ERROR :Closing link: ping timeout")
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains(
+                await harness.states().contains(
                     .disconnected(reason: .serverError("Closing link: ping timeout"))
                 )
             }
@@ -267,7 +273,7 @@ struct IRCSessionTests {
             idleResponseTimeout: .milliseconds(100)
         )
         await harness.session.connect()
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isConnected) })
+        #expect(await waitUntil { await harness.states().contains(where: isConnected) })
 
         // The script answers USER and NICK only, so our PING goes unanswered.
         #expect(
@@ -277,7 +283,7 @@ struct IRCSessionTests {
         )
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains(.disconnected(reason: .timedOut))
+                await harness.states().contains(.disconnected(reason: .timedOut))
             }
         )
 
@@ -291,7 +297,7 @@ struct IRCSessionTests {
         let harness = try await registeredHarness()
 
         await harness.server.closeConnection()
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isReconnecting) })
+        #expect(await waitUntil { await harness.states().contains(where: isReconnecting) })
         #expect(await waitUntil { await harness.server.connectionCount() == 2 })
         #expect(await waitUntil { await nickLines(harness.server).count == 2 })
 
@@ -299,7 +305,7 @@ struct IRCSessionTests {
         // next outage starts from the initial delay rather than where this one left off.
         #expect(
             await waitUntil {
-                await harness.states.snapshot().filter(isConnected).count == 2
+                await harness.states().filter(isConnected).count == 2
             }
         )
 
@@ -313,14 +319,14 @@ struct IRCSessionTests {
         await harness.session.disconnect()
         #expect(
             await waitUntil {
-                await harness.states.snapshot().last == .disconnected(reason: .userInitiated)
+                await harness.states().last == .disconnected(reason: .userInitiated)
             }
         )
 
         // Several backoff delays' worth of nothing happening.
         try await Task.sleep(for: .milliseconds(300))
-        #expect(await harness.states.snapshot().last == .disconnected(reason: .userInitiated))
-        #expect(await !harness.states.snapshot().contains(where: isReconnecting))
+        #expect(await harness.states().last == .disconnected(reason: .userInitiated))
+        #expect(await !harness.states().contains(where: isReconnecting))
         #expect(await harness.server.connectionCount() == 1)
 
         await harness.server.stop()
@@ -345,10 +351,10 @@ struct IRCSessionTests {
 
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains(.disconnected(reason: .connectTimedOut))
+                await harness.states().contains(.disconnected(reason: .connectTimedOut))
             }
         )
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isReconnecting) })
+        #expect(await waitUntil { await harness.states().contains(where: isReconnecting) })
 
         await harness.shutDown()
     }
@@ -371,12 +377,12 @@ struct IRCSessionTests {
 
         #expect(
             await waitUntil {
-                await harness.states.snapshot().contains {
+                await harness.states().contains {
                     if case .disconnected(.transportFailed) = $0 { true } else { false }
                 }
             }
         )
-        #expect(await waitUntil { await harness.states.snapshot().contains(where: isReconnecting) })
+        #expect(await waitUntil { await harness.states().contains(where: isReconnecting) })
 
         await harness.session.disconnect()
     }

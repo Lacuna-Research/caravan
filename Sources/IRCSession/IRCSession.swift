@@ -15,26 +15,15 @@ public actor IRCSession {
     private let trace: TraceBuffer
     private let clock = ContinuousClock()
 
-    /// Lifecycle transitions. Never finishes: the session outlives any one connection,
-    /// so a consumer subscribes once and keeps seeing reconnects.
-    public nonisolated let state: AsyncStream<SessionState>
-    private let stateContinuation: AsyncStream<SessionState>.Continuation
-
-    /// Every inbound message, raw.
-    ///
-    /// Prompt 6 replaces this with the typed event model and its multicast; until then
-    /// it is the only way for anything above to see traffic, and it deliberately shows
-    /// everything, including messages this type handled itself.
-    public nonisolated let inbound: AsyncStream<IRCMessage>
-    private let inboundContinuation: AsyncStream<IRCMessage>.Continuation
+    private let multicaster = EventMulticaster()
 
     private var currentState: SessionState = .disconnected(reason: .notStarted)
 
     /// What the server said it supports. Reset per connection, refined by every 005.
     public private(set) var capabilities = ServerCapabilities()
 
-    /// Registration data from 001–004. Refined after `.connected` is announced, since
-    /// 002–004 arrive after 001; the state stream carries what was known at 001.
+    /// Registration data from 001–004. Refined after `.registered` is emitted, since
+    /// 002–004 arrive after 001 and nothing marks the end of that burst.
     public private(set) var serverInfo: ServerInfo?
 
     /// The nick currently in use, which may not be the configured one.
@@ -63,21 +52,25 @@ public actor IRCSession {
         self.trace = trace
         self.currentNick = configuration.nick
         self.lastActivity = ContinuousClock().now
-
-        let stateStream = AsyncStream<SessionState>.makeStream(bufferingPolicy: .unbounded)
-        self.state = stateStream.stream
-        self.stateContinuation = stateStream.continuation
-        let inboundStream = AsyncStream<IRCMessage>.makeStream(bufferingPolicy: .unbounded)
-        self.inbound = inboundStream.stream
-        self.inboundContinuation = inboundStream.continuation
-
-        stateContinuation.yield(currentState)
     }
 
     deinit {
-        stateContinuation.finish()
-        inboundContinuation.finish()
+        multicaster.finish()
     }
+
+    /// A stream of every event from now on. Each caller gets its own.
+    ///
+    /// Subscribe before calling ``connect()``: events are not replayed, so anything
+    /// emitted before the call is not seen. The stream lives as long as the session,
+    /// across any number of reconnects, and its buffering is described on
+    /// ``EventMulticaster``.
+    public nonisolated func events() -> AsyncStream<IRCEvent> {
+        multicaster.subscribe()
+    }
+
+    /// The current lifecycle state, for a caller that needs it without waiting for the
+    /// next transition.
+    public var state: SessionState { currentState }
 
     // MARK: - Public control
 
@@ -108,6 +101,11 @@ public actor IRCSession {
     public func send(_ message: IRCMessage) async {
         guard let connection else {
             Log.session.error("send with no connection; message dropped")
+            // Told to the user, not just to the log: typing into a window that is not
+            // connected must produce an answer rather than silence.
+            multicaster.broadcast(
+                .clientError("not connected: \(message.command.wireForm) was not sent")
+            )
             return
         }
         await connection.send(message)
@@ -140,8 +138,8 @@ public actor IRCSession {
             },
         ]
 
-        // The only deadline anywhere in the stack: a refused connection leaves
-        // NWConnection retrying in `.waiting` forever, and a server that accepts TCP and
+        // The only deadline anywhere in the stack: an unroutable address leaves
+        // NWConnection in `.connecting` indefinitely, and a server that accepts TCP and
         // then says nothing is equally stuck.
         connectDeadlineTask = Task { [weak self, clock, timeout = configuration.connectTimeout] in
             try? await Task.sleep(for: timeout, clock: clock)
@@ -312,7 +310,17 @@ public actor IRCSession {
         lastActivity = clock.now
         pingSentAt = nil
 
-        inboundContinuation.yield(message)
+        // 005 is applied before anything is translated, so the line that announces
+        // CHANTYPES or CASEMAPPING is not itself interpreted under the old values.
+        if message.command.numericCode == 5 {
+            capabilities.apply(tokens: ServerCapabilities.tokens(inISUPPORT: message))
+        }
+
+        // Emission comes before the session acts on the message, so `.raw` is first for
+        // every line — including the ones handled entirely down here, like PING.
+        for event in EventTranslator.events(for: message, capabilities: capabilities) {
+            multicaster.broadcast(event)
+        }
 
         if message.command.isVerb("PING") {
             await connection?.send(
@@ -332,7 +340,7 @@ public actor IRCSession {
         case 2: serverInfo?.hostInfo = message.parameters.last
         case 3: serverInfo?.created = message.parameters.last
         case 4: handleMyInfo(message)
-        case 5: capabilities.apply(tokens: ServerCapabilities.tokens(inISUPPORT: message))
+        case 5: break  // Already applied above.
         case 433: await handleNickInUse()
         case 432:
             // Erroneous nickname: retrying with an underscore cannot help, since the
@@ -360,6 +368,7 @@ public actor IRCSession {
         serverInfo = info
 
         Log.session.info("registered as \(self.currentNick, privacy: .public)")
+        multicaster.broadcast(.registered(info))
         setState(.connected(info))
     }
 
@@ -413,6 +422,6 @@ public actor IRCSession {
 
     private func setState(_ newState: SessionState) {
         currentState = newState
-        stateContinuation.yield(newState)
+        multicaster.broadcast(.stateChanged(newState))
     }
 }

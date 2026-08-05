@@ -48,10 +48,8 @@ public enum DisconnectReason: Sendable, Equatable {
     case timedOut
     /// Neither the TCP connection nor registration finished in time.
     ///
-    /// Its own case rather than a `timedOut`: a connection refused outright leaves
-    /// `NWConnection` retrying in `.waiting` forever, so this is the only thing that
-    /// ever reports it, and telling the two apart is the difference between "the server
-    /// is not there" and "the server stopped talking to us".
+    /// Its own case rather than a `timedOut`: telling the two apart is the difference
+    /// between "the server never started talking to us" and "the server stopped".
     case connectTimedOut
 }
 

@@ -106,6 +106,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     stage-1 client reaches soju before capabilities exist.
 13. **Queries & CTCP.** PM windows; `VERSION`, `PING`, `TIME`, `USERINFO`, `CLIENTINFO`,
     `FINGER`, `ACTION` handling and replies, with reply throttling.
+
+    ### Carry-forward
+
+    - From prompt 6: `ACTION` is already unwrapped — `IRCEvent.message` carries
+      `isAction` and text with the `\u{01}` wrapper stripped. Every *other* CTCP still
+      arrives as an ordinary message with its delimiters intact, so a `VERSION` request
+      currently renders as control characters in a channel window. That is the gap this
+      item closes; `EventTranslator.unwrapAction` is where the general version belongs.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
     /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.
