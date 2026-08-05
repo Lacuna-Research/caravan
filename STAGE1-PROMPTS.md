@@ -1,6 +1,6 @@
 # Stage 1 — The Prompts
 
-**Status:** 7/11 complete. Next: prompt 8.
+**Status:** 8/11 complete. Next: prompt 9.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -370,28 +370,6 @@ quick-switcher or Ctrl-Tab MRU, no detaching buffers into windows, no query
 buffers — all stage 2 (PLAN.md, Multi-window model and Queries & CTCP).
 ```
 
-### Carry-forward
-
-- From prompt 5: `ServerCapabilities` already has what this prompt needs —
-  `rank(ofPrefix:)` for nick-list ordering straight from `PREFIX`, `channelModes` in its
-  four groups, `isChannelName(_:)` from `CHANTYPES`, and `caseMapping` from
-  `CASEMAPPING`. Key every nick and channel dictionary with the last of those; it is
-  live on the session as `caseMapping` and reset per connection.
-- From prompt 6: the events this prompt consumes already exist — `.joined`, `.parted`,
-  `.quit`, `.kicked`, `.nickChanged`, `.topicChanged`, `.namesReply`, `.endOfNames` —
-  and `Target` is already casemapping-aware and safe as a dictionary key. What is
-  missing is 332/333/331/324 and the join-failure numerics, which currently arrive as
-  plain `.numeric`; turning those into specific events is part of this prompt.
-- From prompt 6: `.modeChanged` carries its arguments **unparsed**. Splitting them needs
-  `CHANMODES` to know which modes take a parameter, which is this prompt's job.
-- From prompt 7: a buffer is a `MessageLogController` plus a `BufferView`, and both are
-  already per-buffer rather than per-connection — a channel window is a second controller,
-  not a rework. `AppModel.SidebarItem` needs a `.channel` case beside `.status`, and
-  `Target` is already usable as its key.
-- From prompt 7: `LineRenderer` already renders joins, parts, quits, kicks, nick changes,
-  topics and modes in mIRC's shapes. What it does *not* have is anywhere to put a nick
-  list, and `.namesReply`/`.endOfNames` deliberately render nothing until there is one.
-
 ---
 
 ## Prompt 9 — Command line
@@ -462,6 +440,17 @@ only thing between a paste and the wire.
 - From prompt 7: unparseable input already produces a `.clientError` event that renders as
   a red line in the buffer, which is the "never silently drop input" requirement's
   existing half. Reuse it for usage errors rather than inventing a second path.
+- From prompt 8: the stopgap is now `send(rawLine:from:)`, which takes the originating
+  channel so the echo lands in the window it was typed in. The active window's target is
+  therefore already threaded through — `/msg` and `/me` resolving theirs is reading a
+  parameter that exists, not plumbing a new one.
+- From prompt 8: `/part` must send `PART` through `session.send`, **not** through
+  `closeChannel(_:)`. The latter is ⌘W's path and is the one thing that removes a channel
+  from the roster; routing `/part` into it would break the invariant this prompt's own
+  text states. Parting already leaves the buffer greyed with no work from here.
+- From prompt 8: the input field is per-`BufferView` `@State`, so switching buffers loses
+  what was typed. Per-window command history is on this prompt's list; the in-progress
+  line needs the same treatment, or the history will outlive the text it belongs to.
 
 ---
 
@@ -545,7 +534,17 @@ UI: prompt 11 owns both, and closes out the stage.
   Mono, the font GUI-DESIGN-NOTES.md §15 rejects on measurement. The fold was docs-only,
   so the app renders in SF Mono until this prompt replaces that call with Menlo plus the
   explicit cascade. The default-font fill in `MessageLogController` is the other call
-  site to check.
+  site to check. **Also** the four `.system(.body, design: .monospaced)` modifiers prompt
+  8 added — the tree, the header band, the nick list and the input field — which are the
+  "one chat font governs all four" requirement, currently four copies of SF Mono.
+- From prompt 8: the header band is built and general. `HeaderBand` in
+  `BufferChrome.swift` already does never-hidden, shrink-to-two-lines and
+  expand-into-a-scroller; the status window's MOTD case is passing it content and a
+  placeholder, not new behaviour.
+- From prompt 8: `LineRenderer` grew five more event cases (topic, topic author, channel
+  modes, join failure, and the two silent ones). They are switch arms beside the others
+  and belong in the `LineKind` table this prompt builds, along with everything already
+  there — do not leave a second table behind.
 
 ---
 

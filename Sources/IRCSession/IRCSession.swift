@@ -8,8 +8,10 @@ import IRCTransport
 /// transport instance is one connection attempt by design. Everything above this layer
 /// sees a session that survives a dropped socket.
 ///
-/// No IRC state beyond registration lives here — no channels, no users. That is prompt
-/// 8's, and keeping it out is what stops this type becoming the whole client.
+/// Channel and membership state lives here too, in a ``ChannelRoster``, and leaves only
+/// as immutable ``Channel`` snapshots on ``IRCEvent/channelChanged(_:)``. Keeping the
+/// transitions on one side of the actor is what stops every view that draws a nick list
+/// from reimplementing them.
 public actor IRCSession {
     public let configuration: SessionConfiguration
     private let trace: TraceBuffer
@@ -33,6 +35,15 @@ public actor IRCSession {
     /// this rather than `lowercased()`.
     public var caseMapping: IRCCaseMapping { capabilities.caseMapping }
 
+    /// Channels and their members. Snapshots leave here; the state does not.
+    private var roster: ChannelRoster
+
+    /// Every channel with a buffer, in join order.
+    public var channels: [Channel] { roster.snapshots }
+
+    /// One channel, or `nil` when we have no buffer for it.
+    public func channel(named name: IRCChannelName) -> Channel? { roster[name] }
+
     private var connection: IRCConnection?
     private var transportTasks: [Task<Void, Never>] = []
     private var connectDeadlineTask: Task<Void, Never>?
@@ -52,6 +63,7 @@ public actor IRCSession {
         self.trace = trace
         self.currentNick = configuration.nick
         self.lastActivity = ContinuousClock().now
+        self.roster = ChannelRoster(ownNick: configuration.nick)
     }
 
     deinit {
@@ -103,12 +115,25 @@ public actor IRCSession {
             Log.session.error("send with no connection; message dropped")
             // Told to the user, not just to the log: typing into a window that is not
             // connected must produce an answer rather than silence.
-            multicaster.broadcast(
-                .clientError("not connected: \(message.command.wireForm) was not sent")
-            )
+            emit(.clientError("not connected: \(message.command.wireForm) was not sent"))
             return
         }
         await connection.send(message)
+    }
+
+    /// Closes a channel buffer, parting the channel if we are still in it.
+    ///
+    /// The asymmetry with `PART` is deliberate and is the whole of the buffer-lifecycle
+    /// invariant: **membership never outlives its buffer, but a buffer may outlive
+    /// membership.** Closing is the only thing that removes a channel from the roster, so
+    /// there is never a channel we are joined to with nowhere to see it.
+    public func closeChannel(_ name: IRCChannelName) async {
+        guard let channel = roster[name] else { return }
+        if channel.isJoined, connection != nil {
+            await send(IRCMessage(verb: "PART", parameters: [channel.name.raw]))
+        }
+        roster.remove(name)
+        multicaster.broadcast(.channelClosed(name))
     }
 
     // MARK: - One attempt
@@ -117,7 +142,11 @@ public actor IRCSession {
         capabilities = ServerCapabilities()
         serverInfo = nil
         attemptedNicks = []
-        currentNick = configuration.nick
+        setCurrentNick(configuration.nick)
+        // Channels survive a reconnect — nothing vanishes because wifi dropped — but
+        // their keys do not: `ISUPPORT` has just been reset, and a name folded under the
+        // old server's casemapping would no longer match itself.
+        roster.updateCapabilities(capabilities)
         pingSentAt = nil
         lastActivity = clock.now
 
@@ -245,7 +274,7 @@ public actor IRCSession {
         if let password = configuration.password, !password.isEmpty {
             await connection.send(IRCMessage(verb: "PASS", parameters: [password]))
         }
-        currentNick = configuration.nick
+        setCurrentNick(configuration.nick)
         attemptedNicks = [currentNick]
         await connection.send(IRCMessage(verb: "NICK", parameters: [currentNick]))
         await connection.send(
@@ -295,7 +324,7 @@ public actor IRCSession {
             )
             return
         }
-        currentNick = candidate
+        setCurrentNick(candidate)
         attemptedNicks.append(candidate)
         await connection?.send(IRCMessage(verb: "NICK", parameters: [candidate]))
     }
@@ -314,12 +343,21 @@ public actor IRCSession {
         // CHANTYPES or CASEMAPPING is not itself interpreted under the old values.
         if message.command.numericCode == 5 {
             capabilities.apply(tokens: ServerCapabilities.tokens(inISUPPORT: message))
+            roster.updateCapabilities(capabilities)
         }
 
         // Emission comes before the session acts on the message, so `.raw` is first for
         // every line — including the ones handled entirely down here, like PING.
         for event in EventTranslator.events(for: message, capabilities: capabilities) {
-            multicaster.broadcast(event)
+            // Our own `NICK` moves the session's idea of who we are. The roster tracks it
+            // separately, since it is what tells a self-join from anyone else's.
+            if case .nickChanged(let who, let newNick) = event,
+                capabilities.caseMapping.equal(who.nick ?? "", currentNick)
+            {
+                currentNick = newNick
+                serverInfo?.nick = newNick
+            }
+            emit(event)
         }
 
         if message.command.isVerb("PING") {
@@ -367,8 +405,9 @@ public actor IRCSession {
         if case .server(let name)? = message.source { info.serverName = name }
         serverInfo = info
 
+        roster.setOwnNick(currentNick)
         Log.session.info("registered as \(self.currentNick, privacy: .public)")
-        multicaster.broadcast(.registered(info))
+        emit(.registered(info))
         setState(.connected(info))
     }
 
@@ -422,6 +461,25 @@ public actor IRCSession {
 
     private func setState(_ newState: SessionState) {
         currentState = newState
-        multicaster.broadcast(.stateChanged(newState))
+        emit(.stateChanged(newState))
+    }
+
+    private func setCurrentNick(_ nick: String) {
+        currentNick = nick
+        roster.setOwnNick(nick)
+    }
+
+    /// Broadcasts an event, then the snapshot of every channel it changed.
+    ///
+    /// The order matters and is the contract: a consumer sees the `JOIN` line before the
+    /// nick list that now includes them, so a buffer renders its own event and *then*
+    /// redraws. One `QUIT` can produce several snapshots — one per channel shared with
+    /// the user — which is exactly what "reported per-channel" means.
+    private func emit(_ event: IRCEvent) {
+        multicaster.broadcast(event)
+        for name in roster.apply(event) {
+            guard let channel = roster[name] else { continue }
+            multicaster.broadcast(.channelChanged(channel))
+        }
     }
 }

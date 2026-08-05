@@ -92,6 +92,87 @@ struct LineRendererTests {
         )
     }
 
+    @Test("topics distinguish a change, a standing topic and no topic at all")
+    func topics() {
+        let channel = IRCChannelName("#swift")
+        #expect(
+            text(.topicChanged(channel: channel, who: user("bob"), topic: "Swift talk"))
+                == "*** bob changed #swift: Swift talk"
+        )
+        #expect(
+            text(.topicChanged(channel: channel, who: nil, topic: "Swift talk"))
+                == "*** Topic for #swift: Swift talk"
+        )
+        // 331, and a `TOPIC` that cleared one. Rendering an empty string after a colon
+        // says "there is no topic" badly.
+        #expect(
+            text(.topicChanged(channel: channel, who: nil, topic: ""))
+                == "*** No topic is set for #swift"
+        )
+        #expect(
+            text(.topicChanged(channel: channel, who: user("bob"), topic: ""))
+                == "*** bob cleared the topic for #swift"
+        )
+    }
+
+    /// A mode line reads the way the server writes it: signs collapsed, arguments after.
+    @Test("mode changes render in their wire shape")
+    func modes() {
+        let changes = [
+            ModeChange(isSet: true, mode: "o", argument: "carol"),
+            ModeChange(isSet: true, mode: "n"),
+            ModeChange(isSet: false, mode: "v", argument: "dave"),
+        ]
+        #expect(
+            text(
+                .modeChanged(
+                    target: Target("#swift", capabilities: capabilities),
+                    who: user("bob"),
+                    changes: changes
+                )
+            ) == "*** bob sets mode: +on-v carol dave on #swift"
+        )
+        #expect(
+            text(
+                .channelModes(
+                    channel: IRCChannelName("#swift", mapping: .ascii),
+                    changes: [
+                        ModeChange(isSet: true, mode: "n"),
+                        ModeChange(isSet: true, mode: "t"),
+                    ]
+                )
+            ) == "*** Channel modes for #swift: +nt"
+        )
+    }
+
+    /// A join failure is something the user can act on, so it reads as our error rather
+    /// than as another server numeric.
+    @Test("a join failure names the channel and says why")
+    func joinFailure() {
+        #expect(
+            text(
+                .joinFailed(
+                    channel: IRCChannelName("#swift"),
+                    reason: .badKey,
+                    text: "Cannot join channel (+k)"
+                )
+            ) == "*** Cannot join #swift: Cannot join channel (+k)"
+        )
+        // A server that sent no text still gets a usable sentence.
+        #expect(
+            text(.joinFailed(channel: IRCChannelName("#swift"), reason: .inviteOnly, text: ""))
+                == "*** Cannot join #swift: the channel is invite only"
+        )
+    }
+
+    /// State, not a thing that happened. The nick list and the tree are where these land.
+    @Test("channel snapshots and closures render no line")
+    func snapshotsAreSilent() {
+        #expect(text(.channelChanged(Channel(name: IRCChannelName("#swift")))) == nil)
+        #expect(text(.channelClosed(IRCChannelName("#swift"))) == nil)
+        #expect(text(.namesReply(channel: IRCChannelName("#swift"), names: ["bob"])) == nil)
+    }
+
     /// The carry-forward from prompt 5: a status line saying only "disconnected" throws
     /// away the one thing the user wants to know.
     @Test(

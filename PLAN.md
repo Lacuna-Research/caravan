@@ -131,6 +131,17 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       mIRC's toolbar editor mostly not-work-we-do.
     The switchbar — mIRC's flat button strip — is deferred, not rejected (§2):
     revisit once the treebar is in real use.
+
+    ### Carry-forward
+
+    - From prompt 8: the tree is a `List` of one `DisclosureGroup` per connection, with
+      the network row's `.tag()` selecting the status buffer. Rolled-up activity on a
+      collapsed network needs the expansion state to move off `AppModel`'s single
+      `isNetworkExpanded` flag and onto the connection, which is the same change
+      multi-network needs anyway.
+    - From prompt 8: the nick-list toggle exists, as a button in the channel's header
+      band, over an app-wide `@AppStorage` pair (`nickListVisible`, `nickListWidth`).
+      When the `NSToolbar` lands it wants the toggle; do not end up with two.
 12. **Multi-network.** Two modes behind one sidebar model, because a bouncer changes
     the shape of this: *direct*, one TCP connection per network with independent
     state, nick and identity; and *bouncer*, a single connection to soju where
@@ -151,6 +162,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       arrives as an ordinary message with its delimiters intact, so a `VERSION` request
       currently renders as control characters in a channel window. That is the gap this
       item closes; `EventTranslator.unwrapAction` is where the general version belongs.
+    - From prompt 8: the tree, the buffer and the selection are all channel-shaped.
+      `ChannelBuffer` wraps a `Channel` snapshot, `AppModel.SidebarItem` has `.status`
+      and `.channel`, and `ConnectionViewModel.destinations(for:)` routes a `.message`
+      at a nick to the status window. A query buffer is a third case in each of those
+      three places, and the sort-after-channels rule is the ordering of one array.
+    - From prompt 8: `HeaderBand` is general and already built — never hidden,
+      shrink-to-two-lines, expand-into-a-scroller. The query case is content and a
+      placeholder, not new behaviour.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
     /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.

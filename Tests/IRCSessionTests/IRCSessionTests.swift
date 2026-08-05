@@ -402,6 +402,80 @@ struct IRCSessionTests {
         await harness.shutDown()
     }
 
+    // MARK: - Channels
+
+    /// The roster is exercised exhaustively and instantly in `ChannelRosterTests`. What
+    /// this proves is the wiring: real lines off a real socket reach it, and the snapshots
+    /// come back out of the event stream in the right order.
+    @Test("a join over the wire produces channel snapshots on the event stream")
+    func channelStateFromTheWire() async throws {
+        let harness = try await registeredHarness()
+        #expect(await waitUntil { await harness.session.capabilities.network == "ExampleNet" })
+
+        await harness.server.send(":alice!u@h JOIN #swift")
+        await harness.server.send(":irc.example.org 353 alice = #swift :@bob alice")
+        await harness.server.send(":irc.example.org 366 alice #swift :End of /NAMES list")
+        await harness.server.send(":irc.example.org 332 alice #swift :Swift talk")
+
+        #expect(await waitUntil { await harness.session.channels.first?.topic != nil })
+
+        let channel = try #require(await harness.session.channels.first)
+        #expect(channel.isJoined)
+        #expect(channel.orderedMembers.map(\.nick.raw) == ["bob", "alice"])
+        #expect(channel.topic?.text == "Swift talk")
+
+        // The snapshot follows the event that caused it, so a consumer renders the join
+        // line and only then redraws its nick list.
+        let events = await harness.events.snapshot()
+        let joinIndex = try #require(
+            events.firstIndex { if case .joined = $0 { true } else { false } }
+        )
+        let snapshotIndex = try #require(
+            events.firstIndex { if case .channelChanged = $0 { true } else { false } }
+        )
+        #expect(joinIndex < snapshotIndex)
+
+        await harness.shutDown()
+    }
+
+    /// Membership never outlives its buffer: closing is the only thing that parts, and
+    /// the only thing that removes.
+    @Test("closing a channel buffer parts the channel and drops it from the roster")
+    func closingAChannelParts() async throws {
+        let harness = try await registeredHarness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        #expect(await waitUntil { await harness.session.channels.count == 1 })
+
+        await harness.session.closeChannel(IRCChannelName("#swift", mapping: .ascii))
+
+        #expect(await waitUntil { await harness.server.receivedLines().contains("PART #swift") })
+        #expect(await harness.session.channels.isEmpty)
+        #expect(
+            await harness.events.snapshot().contains(
+                .channelClosed(IRCChannelName("#swift", mapping: .ascii))
+            )
+        )
+
+        await harness.shutDown()
+    }
+
+    /// Nothing vanishes because wifi dropped: the buffers stay, emptied and not joined.
+    @Test("a dropped connection empties the channels but keeps them")
+    func disconnectKeepsBuffers() async throws {
+        let harness = try await registeredHarness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        await harness.server.send(":bob!u@h JOIN #swift")
+        #expect(await waitUntil { await harness.session.channels.first?.memberCount == 2 })
+
+        await harness.session.disconnect()
+
+        #expect(await harness.session.channels.count == 1)
+        #expect(await harness.session.channels.first?.isJoined == false)
+        #expect(await harness.session.channels.first?.members.isEmpty == true)
+
+        await harness.shutDown()
+    }
+
     // MARK: - Helpers
 
     private func nickLines(_ server: ScriptedIRCServer) async -> [String] {

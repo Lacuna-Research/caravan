@@ -36,17 +36,14 @@ public struct MessageLogView: NSViewRepresentable {
         Coordinator(controller: controller)
     }
 
+    /// The controller's view, not a fresh one.
+    ///
+    /// SwiftUI rebuilds a representable's view every time it comes back on screen, and a
+    /// buffer's text lives in that view's storage — so building one here would blank
+    /// every buffer the moment the user selected another. The controller owns it and
+    /// hands the same one back.
     public func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
-        let textView = MessageLogView.makeTextView(usesTextKit2: usesTextKit2)
-
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = true
-
-        controller.attach(textView: textView, scrollView: scrollView)
+        let scrollView = controller.displayView(usesTextKit2: usesTextKit2)
         context.coordinator.observeScrolling(of: scrollView)
         return scrollView
     }

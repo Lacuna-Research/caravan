@@ -236,6 +236,52 @@ struct MessageLogControllerTests {
         #expect(harness.controller.lineCount <= ceiling + ceiling / 10)
     }
 
+    // MARK: - Owning the view
+
+    /// The bug this covers cost the first live run of the channel window: SwiftUI rebuilds
+    /// a representable's `NSView` each time it comes back on screen, and the text lives in
+    /// that view. Every buffer went blank the moment another was selected.
+    @Test("a buffer's scrollback survives being switched away from and back")
+    func viewIsOwnedByTheController() {
+        let controller = MessageLogController(coalesceInterval: .milliseconds(5))
+        let first = controller.displayView()
+        controller.append(lines(3))
+        controller.flush()
+
+        // What SwiftUI does on the way back: build the representable's view again.
+        let second = controller.displayView()
+
+        #expect(first === second)
+        #expect(controller.lineCount == 3)
+        #expect((second.documentView as? NSTextView)?.string.contains("line 2") == true)
+    }
+
+    /// A channel joined in the background collects lines before anyone looks at it.
+    @Test("lines appended before the view exists appear when it does")
+    func queuedLinesSurviveUntilDisplayed() {
+        let controller = MessageLogController(coalesceInterval: .milliseconds(5))
+        controller.append(lines(4))
+        controller.flush()
+        #expect(controller.lineCount == 0)
+
+        let scrollView = controller.displayView()
+
+        #expect(controller.lineCount == 4)
+        #expect((scrollView.documentView as? NSTextView)?.string.contains("line 3") == true)
+    }
+
+    /// Otherwise a busy channel you never click on grows without limit — the one thing
+    /// this type exists to prevent.
+    @Test("a buffer nobody has looked at is still capped")
+    func queuedLinesAreCapped() {
+        let controller = MessageLogController(lineCap: 100, coalesceInterval: .milliseconds(5))
+        controller.append(lines(5000, prefix: "flood"))
+        controller.flush()
+
+        _ = controller.displayView()
+        #expect(controller.lineCount <= 100)
+    }
+
     /// Text storage edits are what a flush is measured in.
     private final class EditCounter: NSObject, NSTextStorageDelegate {
         private(set) nonisolated(unsafe) var edits = 0

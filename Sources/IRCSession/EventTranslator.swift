@@ -34,7 +34,7 @@ public enum EventTranslator {
             return numericEvents(
                 code: code,
                 parameters: parameters,
-                mapping: mapping
+                capabilities: capabilities
             )
         }
 
@@ -98,12 +98,17 @@ public enum EventTranslator {
             ]
 
         case "MODE":
-            guard let target = parameters.first else { return [] }
+            guard let first = parameters.first else { return [] }
+            let target = Target(first, capabilities: capabilities)
             return [
                 .modeChanged(
-                    target: Target(target, capabilities: capabilities),
+                    target: target,
                     who: message.source,
-                    arguments: Array(parameters.dropFirst())
+                    changes: ModeParser.changes(
+                        in: Array(parameters.dropFirst()),
+                        isChannel: target.isChannel,
+                        capabilities: capabilities
+                    )
                 )
             ]
 
@@ -124,12 +129,73 @@ public enum EventTranslator {
     private static func numericEvents(
         code: UInt16,
         parameters: [String],
-        mapping: IRCCaseMapping
+        capabilities: ServerCapabilities
     ) -> [IRCEvent] {
+        let mapping = capabilities.caseMapping
         switch code {
         case 1:
             // The session emits `.registered` for this one, unconditionally.
             return []
+        case 331:
+            // `<client> <channel> :No topic is set`. An empty topic *is* the answer, and
+            // saying so keeps one representation of "no topic" rather than two.
+            if parameters.count >= 2 {
+                return [
+                    .topicChanged(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        who: nil,
+                        topic: ""
+                    )
+                ]
+            }
+        case 332:
+            // `<client> <channel> :<topic>`
+            if parameters.count >= 3 {
+                return [
+                    .topicChanged(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        who: nil,
+                        topic: parameters[2]
+                    )
+                ]
+            }
+        case 333:
+            // `<client> <channel> <nick> <setat>`. The timestamp is occasionally a
+            // full source rather than a bare nick, and occasionally missing entirely.
+            if parameters.count >= 3 {
+                return [
+                    .topicAuthor(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        nick: IRCSource(prefix: parameters[2]).nick ?? parameters[2],
+                        setAt: parameters.count > 3 ? Int(parameters[3]) : nil
+                    )
+                ]
+            }
+        case 324:
+            // `<client> <channel> <modestring> [<arguments>...]`
+            if parameters.count >= 3 {
+                return [
+                    .channelModes(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        changes: ModeParser.changes(
+                            in: Array(parameters.dropFirst(2)),
+                            isChannel: true,
+                            capabilities: capabilities
+                        )
+                    )
+                ]
+            }
+        case 471, 473, 474, 475, 476, 477:
+            // `<client> <channel> :<reason>`
+            if parameters.count >= 2, let reason = JoinFailure(numeric: code) {
+                return [
+                    .joinFailed(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        reason: reason,
+                        text: parameters.count > 2 ? parameters[2] : reason.summary
+                    )
+                ]
+            }
         case 353:
             // `<client> <symbol> <channel> :<names>`
             if parameters.count >= 4 {
