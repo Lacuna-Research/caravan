@@ -140,6 +140,16 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     flood detection with auto-ignore.
 28. **Authentication.** SASL PLAIN, EXTERNAL (CertFP), SCRAM-SHA-256; NickServ
     auto-identify fallback; all secrets in Keychain.
+
+    ### Carry-forward
+
+    - From prompt 4: TLS self-signed acceptance needs a user-facing trust decision.
+      `IRCConnection` evaluates the certificate in a verify block, records subject and
+      SHA-256 fingerprint in `acceptedCertificate`, and logs loudly when trust was not
+      established — but with no UI to ask, `allowSelfSigned: true` still accepts. Turn
+      that into trust-on-first-use: show the fingerprint, remember the decision per
+      host, and warn when a remembered fingerprint changes. The transport already
+      surfaces everything such a prompt needs.
 29. **IRCv3 capabilities.** `cap-notify`, `multi-prefix`, `away-notify`, `account-notify`,
     `extended-join`, `userhost-in-names`, `server-time`, `message-tags`, `echo-message`,
     `batch`, `chghost`, `invite-notify`, `setname`, `standard-replies`,

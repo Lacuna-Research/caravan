@@ -1189,3 +1189,91 @@ recording the decision is the whole of the work today.
 
 *None.* Every question raised during planning and the first three prompts is now
 decided and written down. New ones go in `PLAN.md`'s **Still open** list.
+
+---
+
+## Prompt 4 — Transport
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `IRCTransport` — `LineFramer`, `WireDecoding`, `TransportState` /
+`TransportError` / `TLSMode` / `TLSCertificate`, and the `IRCConnection` actor over
+`NWConnection`. 93 tests across 16 suites, `make all` clean including `xcodebuild`.
+
+**Deviations:**
+- **`TransportState.failed` carries a concrete `TransportError`, not `any Error`.** The
+  prompt says `.failed(Error)`, but `any Error` is not `Sendable`, so the state stream
+  would not be either. `any Error & Sendable` would work and would leak `NWError` — and
+  with it `import Network` — into every consumer. A closed enum keeps the state stream
+  `Sendable` *and* `Equatable`, which is why the state assertions in the tests are one
+  line each. `NWError`'s detail survives as the reason string, which is all a
+  diagnostic needs.
+- **No "connection refused" test.** There is nothing to assert: see below.
+
+**Decisions:**
+- **One `IRCConnection` is one connection attempt.** `connect` may be called once, and
+  both streams finish at the terminal state. Reconnect means a new instance. The
+  alternative — a reusable connection — needs the streams to survive across attempts,
+  which `AsyncStream` does not do, and it lets a retry inherit half-torn-down state.
+  Revisit only if per-attempt allocation ever shows up in a profile, which it will not.
+- **No outbound queue of our own.** `send` is actor-isolated, so call order is enqueue
+  order, and `NWConnection` writes each `send` contiguously and in order on a stream
+  connection. A second queue would only be a second thing to get wrong. The
+  fifty-messages-in-order test exists to catch this being untrue.
+- **An overlong outbound message is truncated, not dropped.** The server truncates it
+  anyway; doing it here keeps the trace agreeing with the wire. Tags are left alone —
+  their 8191-byte budget is separate and nothing stage 1 sends comes near it.
+- **The framer emits empty lines rather than swallowing them.** A stray `CRLF` becomes
+  an empty line, gets traced, and is dropped by `IRCConnection` because it parses to no
+  command. Keeping the policy out of the framer means the framer has no policy at all.
+- **Decoding falls back UTF-8 → Windows-1252 → Latin-1.** cp1252 before Latin-1 because
+  it maps the 0x80–0x9F range to smart quotes and dashes rather than C1 controls, which
+  is what an old Windows client actually sent. Latin-1 last because all 256 byte values
+  decode under it, so the function cannot fail and cannot half-replace a string.
+- **The TLS verify block is installed only on the `allowSelfSigned` path.** The ordinary
+  path keeps stock system validation rather than our reimplementation of it — the
+  smallest possible surface for getting certificate checking wrong.
+
+**Learned:**
+- **A refused connection never becomes `.failed`.** `NWConnection` sits in
+  `.waiting(ECONNREFUSED)` and retries indefinitely; there is no timeout unless someone
+  imposes one. The transport reports `.waiting` as non-terminal and stays in
+  `.connecting`, which is correct for this layer and useless on its own. Carried to
+  prompt 5, which owns the connect deadline. Worth knowing before writing a "connection
+  failed" test that would simply hang.
+- **The framer counted a terminating `CR` against the line limit**, so a line of exactly
+  the maximum length was dropped as overlong. A trailing `CR` is now excluded from the
+  count until the next byte proves it was data. Caught by the test that used the exact
+  limit rather than a number near it — the off-by-one only exists at the boundary, so
+  only a test at the boundary finds it.
+- **`Mutex` is non-copyable**, so the TLS verify block could not capture one out of the
+  actor (`'self.certificateBox' is borrowed and cannot be consumed`). It needed a small
+  reference-type box holding the `Mutex`. Anywhere a `Synchronization.Mutex` has to
+  reach an escaping closure, this will come up again.
+- **`NWEndpoint.Port(rawValue: 0)` succeeds.** Port 0 means "any port", which is
+  meaningful for a listener and meaningless for a client, so the guard that was supposed
+  to reject it did nothing. Rejected explicitly now.
+- **Actor `let` properties are isolated unless marked `nonisolated`.** `inbound` and
+  `state` are immutable and `Sendable`, and still needed the annotation before a
+  consumer could iterate them without `await`.
+
+**Measured:** 93 tests, 0.03s for the whole suite; the eleven loopback integration tests
+run in ~22ms and were repeated ten times consecutively without a flake.
+
+**TLS verification, and its deferral.** Standing up a TLS listener in-process needs a
+`SecIdentity`, which needs a keychain item or a hand-rolled self-signed certificate —
+a lot of machinery to end up testing Apple's TLS stack rather than our use of it. The
+alternative coverage was none, so instead there is a network-gated suite
+(`CARAVAN_LIVE_TESTS=1 swift test --filter LiveNetworkTests`) that connects to
+`irc.libera.chat:6697`. Run by hand on this branch: both cases pass in ~2.6s, the
+handshake completes, Libera's greeting notices arrive parsed, and the verify block
+records the certificate as system-trusted. CI never runs it and an ordinary
+`swift test` never touches the network.
+
+**Carry-forward consumed:** none — no note was addressed to prompt 4.
+
+**Carry-forward raised:** four on prompt 5 (connect deadline, one-attempt-per-instance,
+`.failed` versus `.cancelled` for reconnect, and the loopback server as the basis for
+the scriptable fake). One on `PLAN.md`'s Authentication item: self-signed acceptance
+needs a trust-on-first-use prompt, and the transport already surfaces the subject and
+SHA-256 fingerprint such a prompt would show.
