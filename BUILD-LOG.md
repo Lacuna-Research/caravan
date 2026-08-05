@@ -732,3 +732,55 @@ histories conflicted and GitHub could not compute a merge ref to run `pull_reque
 workflows against. The worktree rule being mechanised here would have prevented it:
 leaving the worktree forces the next piece of work to start from a fresh checkout of
 main. The rule earns its place.
+
+---
+
+## Prompt 2 — Diagnostics
+
+**Commit:** see PR  **Date:** 2026-08-04
+
+**Shipped:** `Log` (four namespaced `os.Logger` categories), `Redactor`, `TraceBuffer`,
+`Signposts`. Placeholder files for the module and its test target deleted.
+
+**Deviations:**
+- **The Redactor needed a tokenizer, which looks like the IRC parsing the prompt
+  forbids.** It is not: it finds a command and its parameter spans and nothing else —
+  no validation, no tag unescaping, no message construction — and it must keep working
+  on lines `IRCProtocol` would reject, since a trace is worth most when the wire is
+  malformed. Kept private to the file. The alternative, redacting a parsed message,
+  does not work: inbound redaction happens at framing, before parsing.
+- **`AUTHENTICATE` is redacted against an allowlist, not blanket.** `PLAIN`,
+  `EXTERNAL`, `SCRAM-SHA-256`, `+` and `*` are mechanism names and control tokens, not
+  secrets, and blanking them would hide which mechanism was negotiated — exactly the
+  thing you want to see when SASL fails. Everything else in that parameter is a
+  credential payload and goes.
+- **NickServ subcommands redact *every* argument after the keyword, not just the
+  last.** `SETPASS` carries a key as well as a new password, so last-token-only would
+  leak. The account name is lost with it, but that is recoverable from context and a
+  password is not. Asymmetric cost, asymmetric caution.
+- `OPER` keeps the operator name and redacts only the password — the name is useful
+  and is not a secret.
+
+**Learned:**
+- **Skipping the source prefix is a correctness requirement, not tidiness.** A user
+  whose nick is `pass` produces `:pass!pass@host PRIVMSG #dev :hello`, which a scan
+  that does not skip the prefix reads as a `PASS` command and redacts. That case is in
+  the table.
+- `Mutex` from `Synchronization` gives a `Sendable` final class with no actor hop,
+  which suits a buffer written from the transport's hot path. An actor would have made
+  every `record` call an await from a synchronous framing path.
+- `protocol` is a Swift keyword, so `Log.protocol` needs backticks at the declaration.
+  The category string is unaffected.
+
+**Measured:** 15 tests across 3 suites, of which 43 are parameterised Redactor cases —
+16 credential-bearing, 19 ordinary-traffic, 8 degenerate. Full `make all` (build, test,
+lint, docs check, `xcodebuild`) clean.
+
+**Carry-forward consumed:** the note on prompt 2 about credential-shaped test data.
+Applied — every fake credential in the tests is `hunter2` or `s3cr3t-not-real`, both
+obviously fake and neither shaped like a real token. Note deleted.
+
+**Carry-forward raised:** none. The note on prompt 3 about running `IRCProtocolTests`
+on Linux still stands, and this module's arrival is what makes it matter: `Diagnostics`
+imports `OSLog` and `Synchronization`, so it cannot build on the Linux purity runner —
+which is exactly why that job builds `IRCProtocol` alone rather than running tests.

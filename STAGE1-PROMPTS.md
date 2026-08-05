@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 1/10 complete. Next: prompt 2.
+**Status:** 2/10 complete. Next: prompt 3.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -113,14 +113,6 @@ Do not: build log routing, pluggable backends, custom level hierarchies, log
 rotation, remote shipping, or any log viewer UI. No IRC parsing — this module must
 not depend on IRCProtocol; it operates on raw line strings.
 ```
-
-### Carry-forward
-
-- The repo is public and CI runs gitleaks on every PR. The Redactor test table is
-  necessarily full of credential-shaped strings. Use obviously-fake values
-  (`hunter2`, `s3cr3t-not-real`) rather than anything resembling a real token, and if
-  gitleaks still trips, add a scoped `.gitleaksignore` entry rather than weakening
-  the scan. Same applies to the fake IRC server's `PASS` line in prompt 5.
 
 ---
 
