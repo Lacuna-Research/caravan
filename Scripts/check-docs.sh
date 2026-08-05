@@ -10,7 +10,7 @@
 set -euo pipefail
 
 CLAUDE_MAX_LINES=100
-TOTAL_PROMPTS=10
+TOTAL_PROMPTS=11
 
 cd "$(git rev-parse --show-toplevel)"
 
