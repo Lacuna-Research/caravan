@@ -1375,3 +1375,96 @@ that 002–004 trail 001), two on prompt 7 (the Connect sheet maps to
 `SessionConfiguration`; show the disconnect reason), one on prompt 8 (the
 `ServerCapabilities` accessors it needs), and one on `PLAN.md`'s flood-protection item
 (recognising a permanent `ERROR` instead of reconnecting into a ban).
+
+---
+
+## Prompt 6 — Typed event model
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `IRCEvent`, `Target`, `EventTranslator` and `EventMulticaster`.
+`IRCSession`'s two public `AsyncStream`s are gone, replaced by `events()`. 166 tests
+across 23 suites; `make all` clean.
+
+**Decisions:**
+- **The translator is a pure function, separate from the session.** Given a message and
+  the capabilities, it returns the events that message means. That is what makes the
+  table-driven test the prompt asked for possible without a socket: 30-odd cases running
+  in microseconds, where the same coverage through the session would need a scripted
+  server per row. Session-driven events — `.stateChanged`, `.registered`,
+  `.clientError` — stay in the session, because they do not come from a message.
+- **`.registered` fires on 001, carrying what is known then.** This consumes prompt 5's
+  open question. 001 *is* the protocol's definition of registered, and nothing marks the
+  end of the 002–005 burst, so waiting for "the rest" would mean guessing at a boundary
+  that does not exist. 002–004 refine `session.serverInfo` and surface as `.numeric`,
+  which is also how a real client displays them — as lines of server text.
+- **`.numeric` fires for every numeric without a more specific event.** So a status
+  window renders the MOTD, 002–005 and every error numeric with no case per code. Only
+  001, 353 and 366 are suppressed, and only because another event carries their whole
+  content.
+- **`bufferingNewest` per subscriber, so a stalled consumer loses its oldest events.**
+  Documented on the multicaster. A chat window that fell behind should skip to what is
+  happening now rather than replay history it can no longer act on; the `TraceBuffer` is
+  where a complete record lives. The broadcaster never blocks and never waits on a
+  subscriber, so one wedged consumer costs the others nothing.
+- **No replay on subscribe.** A late subscriber sees what follows, not what it missed.
+  Replay means an unbounded backlog or an arbitrary cut-off, and the session already has
+  `state`, `serverInfo` and `capabilities` as properties for anything that needs the
+  current picture rather than the history.
+- **`Target` strips `STATUSMSG` prefixes.** `@#swift` is a message to the operators of
+  `#swift` and belongs in that channel's window; without stripping, the leading `@` made
+  the whole thing parse as a nickname. The distinction is not lost — it is in `.raw`.
+
+**Learned:**
+- **Suppressing `.numeric` by code was wrong, and a test caught it.** A 353 too short to
+  name a channel produced no names event *and* no numeric, so it vanished — precisely
+  the invisibility the raw guarantee exists to prevent, one layer up. Suppression is now
+  conditional on a specific event actually being produced. The lesson generalises: a
+  denylist of codes describes intent, but the condition that matters is whether the work
+  actually got done.
+- **Two of my own fixtures used one-digit numerics.** `:server 2 alice :text` is a
+  *verb* named `2`, not numeric 2 — prompt 3's rule, working exactly as designed, on the
+  person who wrote it.
+- **Continuations must be copied out from under the lock before yielding.** `yield` and
+  `finish` can run a termination handler synchronously, and that handler takes the same
+  lock to unsubscribe. Holding it across the call is a deadlock that would only appear
+  when a consumer went away at the wrong moment — which is to say, in front of a user.
+- **CI found a race that had been latent in the test harness since prompt 4.** A client
+  reaches `.ready` the moment TCP completes, which is *before* the loopback server has
+  finished accepting — its listener callback still has an actor hop to make, and a line
+  sent into that window goes to a nil connection and is dropped. Green on this machine
+  for two prompts; red on a loaded runner. The transport harness now waits for the
+  server to have accepted, and `ScriptedIRCServer.send` says so in its documentation.
+  Scripted replies were never exposed to it, since a rule can only fire on a line that
+  already arrived — which is why the session suites never flaked.
+
+  Diagnosed from the log rather than reproduced: six concurrent test processes on this
+  machine did not trigger it even with the fix removed. The evidence is nonetheless
+  unambiguous — the harness's own `.ready` expectation passed, and *zero* inbound lines
+  reached a fresh trace buffer in five seconds, which happens only if the server's
+  connection was still nil when it wrote. Worth stating plainly that the fix is
+  reasoned, not demonstrated, since "could not reproduce" is where flaky tests go to
+  hide.
+
+**Measured:** 166 tests in 0.36s, run 8 times consecutively without a flake. The
+translator suite is 40 of those and needs no networking at all.
+
+**Live check.** Both network-gated suites re-run against Libera after the refactor:
+TLS handshake, certificate surfacing, and registration reading back `NETWORK=Libera.Chat`
+through the new event stream. Passed.
+
+**Also fixed:** three code comments still asserting that a *refused* connection leaves
+`NWConnection` in `.waiting` forever. Prompt 5 measured that and corrected it in this
+log, but left the comments saying the old thing. An unroutable address is what hangs.
+
+**Carry-forward consumed:** all three notes on prompt 6, from prompt 5. Both streams are
+replaced; the `.raw` guarantee now covers every message including the ones the session
+handles itself, with a test for PING specifically; the `.disconnected`-then-
+`.reconnecting` pairing survives and has its own test; and `.registered`'s timing is
+decided above. Notes deleted.
+
+**Carry-forward raised:** two on prompt 7 (subscribe before connecting since there is no
+replay; render `.numeric` generically), two on prompt 8 (the membership events already
+exist, so what remains is 332/333/331/324 and the join-failure numerics; `.modeChanged`
+arguments are deliberately unparsed), and one on `PLAN.md`'s Queries & CTCP item
+(`ACTION` is unwrapped, every other CTCP still renders as control characters).

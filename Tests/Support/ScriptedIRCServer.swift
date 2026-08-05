@@ -120,6 +120,12 @@ public actor ScriptedIRCServer {
     /// How many connections have been accepted. A reconnect shows up here.
     public func connectionCount() -> Int { acceptedConnections }
 
+    /// Writes a line to the connected client.
+    ///
+    /// Does nothing if no client has been accepted yet, which is a real hazard: a client
+    /// reaches `.ready` as soon as TCP completes, while accepting here still has an
+    /// actor hop to make. Wait for ``connectionCount()`` before sending unprompted —
+    /// scripted replies are immune, since a rule can only fire on a line that arrived.
     public func send(_ line: String) {
         connection?.send(content: WireDecoding.data(for: line), completion: .idempotent)
     }

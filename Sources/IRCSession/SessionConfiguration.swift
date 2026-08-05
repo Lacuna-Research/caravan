@@ -22,10 +22,11 @@ public struct SessionConfiguration: Sendable {
 
     /// How long the whole of connecting *and* registering may take.
     ///
-    /// One deadline for both because both fail the same way: `NWConnection` retries a
-    /// refused connection in `.waiting` indefinitely and never reports a failure, and a
-    /// server that accepts TCP but never sends 001 is just as stuck. Nothing below this
-    /// layer will ever time either of them out.
+    /// One deadline for both because both fail the same way, and neither has a timeout
+    /// anywhere below this layer. An unroutable address leaves `NWConnection` in
+    /// `.connecting` for as long as anyone cares to watch, and a server that accepts TCP
+    /// but never sends 001 is just as stuck. (A *refused* connection does fail promptly
+    /// on its own — measured, and recorded in the build log.)
     public var connectTimeout: Duration
 
     /// Silence tolerated before we send our own `PING`.

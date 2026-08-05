@@ -33,14 +33,14 @@ struct LiveRegistrationTests {
             backoff: BackoffPolicy(initialDelay: .seconds(3600), multiplier: 1)
         )
         let session = IRCSession(configuration: configuration, trace: TraceBuffer(capacity: 512))
-        let states = StreamLog<SessionState>()
-        states.drain(session.state)
+        let events = StreamLog<IRCEvent>()
+        events.drain(session.events())
 
         await session.connect()
         #expect(
             await waitUntil(timeout: .seconds(40)) {
-                await states.snapshot().contains {
-                    if case .connected = $0 { true } else { false }
+                await events.snapshot().contains {
+                    if case .stateChanged(.connected) = $0 { true } else { false }
                 }
             }
         )

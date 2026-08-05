@@ -1,6 +1,6 @@
 # Stage 1 — The Ten Prompts
 
-**Status:** 5/10 complete. Next: prompt 6.
+**Status:** 6/10 complete. Next: prompt 7.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -272,24 +272,6 @@ Include a test that an unrecognized command still yields .raw and nothing else.
 Do not: add channel/user state (prompt 8), and do not build UI.
 ```
 
-### Carry-forward
-
-- From prompt 5: `IRCSession` currently publishes two `AsyncStream`s, `state` and
-  `inbound`, both single-consumer and neither finishing while the session lives. Both
-  are what this prompt replaces. `inbound` deliberately carries *every* message,
-  including the ones the session handled itself (`PING`, 001–005), which is already the
-  `.raw` guarantee — keep it when the event model lands.
-- From prompt 5: a failure emits `.disconnected(reason:)` *and then* `.reconnecting`,
-  because `.reconnecting` carries an attempt number and no reason, and "why did it
-  drop?" is the question a user actually asks. Preserve that pairing when mapping states
-  onto events rather than collapsing it.
-- From prompt 5: `ServerInfo` keeps being refined after `.connected` is announced —
-  001 arrives first and 002/003/004 fill in the rest. Decide deliberately whether
-  `.registered(ServerInfo)` fires on 001 with partial data (as `.connected` does now) or
-  waits for 004; there is no line that marks the end of the burst.
-
----
-
 ---
 
 ## Prompt 7 — Minimal UI and the scrollback view
@@ -338,6 +320,13 @@ a preferences window.
   server `ERROR` (with its text), a transport failure, a registration failure, an idle
   timeout and a connect timeout, and a status line that says only "disconnected" throws
   all of that away.
+- From prompt 6: `session.events()` is the only feed, and it does **not replay** —
+  subscribe before calling `connect()` or the connection's first events are missed. Each
+  view model gets its own stream; a stalled one loses its oldest events rather than
+  blocking the session or any other consumer.
+- From prompt 6: render `.numeric` generically. Every numeric without a more specific
+  event arrives there, MOTD included, so the status window needs no case per code — and
+  `session.state` gives the current lifecycle state without waiting for a transition.
 
 ---
 
@@ -382,6 +371,13 @@ Do not: context menus, mode dialogs, ban lists, or user-facing mode editing.
   four groups, `isChannelName(_:)` from `CHANTYPES`, and `caseMapping` from
   `CASEMAPPING`. Key every nick and channel dictionary with the last of those; it is
   live on the session as `caseMapping` and reset per connection.
+- From prompt 6: the events this prompt consumes already exist — `.joined`, `.parted`,
+  `.quit`, `.kicked`, `.nickChanged`, `.topicChanged`, `.namesReply`, `.endOfNames` —
+  and `Target` is already casemapping-aware and safe as a dictionary key. What is
+  missing is 332/333/331/324 and the join-failure numerics, which currently arrive as
+  plain `.numeric`; turning those into specific events is part of this prompt.
+- From prompt 6: `.modeChanged` carries its arguments **unparsed**. Splitting them needs
+  `CHANMODES` to know which modes take a parameter, which is this prompt's job.
 
 ---
 
