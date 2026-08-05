@@ -1589,3 +1589,50 @@ single-window sidebar model and the monospaced mIRC line shape, both of which th
 matches, and a growing multi-line input box, which conflicts with prompt 9's "a paste
 sends immediately" and is flagged there as a revision. That file is not a spec and is not
 mine to fold in; it wants weaving into the prompts deliberately, by whoever owns it.
+
+---
+
+## Correction — the TextKit comparison was stated unfairly
+
+**Date:** 2026-08-05  **Affects:** the prompt 7 entry; no code changes
+
+The prompt 7 entry concludes with "The memory figure decides it on its own: 589 MB versus
+25 MB". That pairs TextKit 1 against the *hybrid* — TextKit 2 driven through
+`textStorage`, with both engines' machinery alive at once. That configuration is a
+misconfiguration, not TextKit 2's best case, and it is not what we would have shipped had
+we chosen TextKit 2. The table in that entry has the honest numbers; the sentence drawing
+the conclusion from them picked the flattering pair.
+
+**The fair comparison** is TextKit 1 against the native path, appending through
+`NSTextContentStorage`:
+
+- **25 MB versus 258 MB.** A tenfold gap, and the real argument.
+- **Slowest viewport 0.01 ms versus 6.89 ms.** 6.89 ms is inside a 16.7 ms frame budget,
+  so TextKit 2 native would still have scrolled at 60 fps. Not disqualifying, which "five
+  dropped frames" implied of it — that figure belonged to the hybrid's 85 ms.
+- **Total to ingest and display 50,000 lines: 0.93s versus 3.2s.** TextKit 1 lays out
+  during append and TextKit 2 defers into scrolling, so the reported "scroll 0.00s"
+  flatters TextKit 1 by measuring work it had already done.
+
+**And the benchmark ran with the cap lifted**, to 200,000 lines, so all 50,000 stayed
+resident. The app ships a 5,000-line cap. Scaled to what actually runs, that is roughly
+2.5 MB against 26 MB — both unremarkable. **The choice was safe, not forced.** TextKit 1
+was better on every axis measured and cost nothing to take, which is reason enough; but
+had TextKit 2 won on something we cared about, memory would not have vetoed it at the
+buffer size we ship.
+
+**Instruments was never run.** The prompt asked for it. The signposter intervals are in
+place and the numbers come from a programmatic harness reading `phys_footprint`, which is
+the figure the memory gauge reports — but no trace was taken, so the memory is not
+attributed to particular allocations the way a trace would show. The wall-clock and
+throughput figures are unaffected.
+
+**The decision stands.** Nothing here argues for TextKit 2; it argues that the margin was
+overstated and the reasoning less forced than it read. `MessageLogView` keeps the engine
+as an init parameter and the benchmark still measures all three paths, so revisiting is a
+one-line change plus a rerun.
+
+**Worth generalising:** the benchmark's own configuration — a lifted cap, a measurement
+harness rather than the shipping one — is part of the result and belongs next to it. A
+number without the conditions that produced it invites exactly the overstatement this
+entry is correcting.
