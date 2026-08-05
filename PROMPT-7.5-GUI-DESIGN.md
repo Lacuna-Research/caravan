@@ -16,19 +16,21 @@ redone.
 Fold the settled GUI design decisions into the stage 1 prompt queue.
 
 INPUT
-`GUI-DESIGN-NOTES.md`, twenty sections, committed on branch `gui-design-notes` and
-pushed. Read it with:
+`GUI-DESIGN-NOTES.md`, twenty sections, committed on branch `gui-design-notes`. Read it:
 
     git show gui-design-notes:GUI-DESIGN-NOTES.md
 
-Read it from the branch, not from a worktree path — the `gui-design` worktree may have
-been removed by the time this runs, and an earlier draft of this brief was written
-against a stale copy of the file, which is why several of its claims needed correcting.
-Check you are reading all twenty sections before starting.
+**Do not merge that branch.** It forks from `main` back at prompt 5 and does not contain
+prompts 6 or 7 — merging it reverts roughly 3,500 lines of shipped work. Branch from
+`main` and copy the file across if it is to land there:
 
-It is explicitly "not a prompt, not a spec": settled choices with reasoning, to be woven
-in deliberately. Its status keys matter — **settled** is decided, **provisional** is a
-recommendation the user did not challenge, **open** is not decided.
+    git switch -c prompt-75-gui-design main
+    git show gui-design-notes:GUI-DESIGN-NOTES.md > GUI-DESIGN-NOTES.md
+
+Confirm you are reading all twenty sections before starting. The notes are explicitly
+"not a prompt, not a spec": settled choices with reasoning, to be woven in deliberately.
+The status keys matter — **settled** is decided, **provisional** is a recommendation the
+user did not challenge, **open** is not decided.
 
 Work on a branch, one PR, never commit to main. Read `CLAUDE.md` first; its conventions
 are enforced mechanically and this task trips several of them.
@@ -37,8 +39,8 @@ SCOPE
 Prompts 1–7 are built and merged — do not rewrite them. The notes land in prompts 8, 9
 and 10, in new prompts if the work does not fit those, and in `PLAN.md` for anything
 beyond stage 1. Anything the notes change about already-shipped code becomes a
-carry-forward on the prompt that will next touch it, or a `PLAN.md` item — not an edit
-to a completed prompt.
+carry-forward on the prompt that will next touch it, or a `PLAN.md` item — never an edit
+to a completed prompt, and never a carry-forward block under one.
 
 DO NOT DESTROY THE CARRY-FORWARD NOTES
 `STAGE1-PROMPTS.md` currently carries `### Carry-forward` blocks that are unconsumed
@@ -72,34 +74,42 @@ rejected alternative, plus the corresponding edit in the same commit:
      routinely, and this is the case that slips through review), and stage 3's paste-
      protection dialog becomes a warning on an already-visible payload rather than the
      only thing between a paste and the wire.
+
   2. §4 formatting scheme. The two-tier format table (declarative templates + opt-in JS)
      subsumes prompt 10's "put the colours in one table so stage 2 theming has a single
      seam". Make it one seam, not two. Note that prompt 7 shipped `LineKind` as that
      table's first form — the fold should say what happens to it.
+
   3. §10 Debug & Settings canvas. ⌘0, not chat-shaped, and it introduces a
      buffer-vs-canvas distinction the app does not have. This materially changes prompt
      10, which currently owns `/debug` and the status window. Decide whether prompt 10
      absorbs it or a new prompt does.
+
   4. §3 / §9 / §12 sidebar behaviour — activity colour states, next-unread and
      next-highlight keys, MRU Ctrl-Tab, collapsed groups rolling up activity, tree
      ordering. Prompt 8 builds the sidebar. Decide what is stage 1 and what is stage 2;
      the prompt 8 "Do not" fence needs updating either way.
+
   5. §11 keyboard bindings and §9 quick-switcher are probably stage 2 — but say so
      explicitly in `PLAN.md` rather than leaving them only in a notes file.
 
-  The six below were missing from an earlier draft of this brief, which was written
-  against a stale copy of the notes covering only §3–§12. They need the same treatment
-  as 1–5: a decision entry and the corresponding edit in the same commit.
-
-  6. §15 fonts and density — the largest omission, and it touches shipped code.
-     `Scripts/font-coverage.swift` on the `gui-design-notes` branch measured every system
-     monospaced font and selected **Menlo, not SF Mono**: SF Mono is missing eleven of the
+  6. §15 fonts and density — the largest of these, and it contradicts shipped code.
+     `Scripts/font-coverage.swift` on `gui-design-notes` measured every system monospaced
+     font and selected **Menlo, not SF Mono**: SF Mono is missing eleven of the
      forty-four CP437 art characters, and CoreText substitutes them from proportional
      fonts at up to 1.80x cell width, breaking exactly the ASCII art it should render.
      Also settled there: an explicit monospaced-only fallback cascade rather than
      CoreText's automatic choice, ligatures forced off, ambiguous-width characters
-     treated as narrow, and line height clamped against Zalgo text. This lands in prompt
-     10's rendering work, and as a carry-forward on prompt 7's shipped `MessageLogView`.
+     treated as narrow, and line height clamped against Zalgo text.
+
+     Prompt 7 shipped `LineRenderer.font` returning `NSFont.monospacedSystemFont` — SF
+     Mono, the font this rejects. This work does not change that: it is docs-only. The
+     carry-forward goes on **prompt 10**, which next touches rendering; a carry-forward
+     block under prompt 7 fails `make check`, which reports a note under a completed
+     prompt as outliving it. State plainly in the decision entry that the app still
+     renders in SF Mono until prompt 10 runs, so nobody reads the merged fold and assumes
+     the font was changed here.
+
      Decide whether the font script moves into the repo alongside the decision.
 
   7. §13 Dashboard replaces the Connect sheet — and prompt 7 already SHIPPED a Connect
@@ -127,23 +137,21 @@ rejected alternative, plus the corresponding edit in the same commit:
      prompts 8 and 10 already say.
 
 THE NOTES HAVE NO OPEN ITEMS — DO NOT REOPEN SETTLED DECISIONS
-§20 of the notes states this explicitly: every question raised in that conversation was
-answered. `PLAN.md`'s **Still open** list should stay empty unless *this* work raises a
-genuinely new question.
+§20 states this explicitly: every question raised in that conversation was answered. That
+includes six that look like natural candidates for the open list — the palette toggle
+(§5), the nick-colour hash seed (§6), input box scroll-vs-grow (§7), toolbar default
+visibility (§8), binding capacity (§11) and tree ordering (§12). Every one of them now
+carries its answer in the notes. Filing them as open would take answered questions and
+un-answer them in the one place the project treats as authoritative for unanswered ones.
 
-An earlier draft of this brief listed six items as open — the palette toggle (§5), the
-nick-colour hash seed (§6), input box scroll-vs-grow (§7), toolbar default visibility
-(§8), binding capacity (§11) and tree ordering (§12). **All six were settled afterwards**
-and every one now carries its answer in the notes. Filing them as open would take
-answered questions and un-answer them in the one place the project treats as
-authoritative for unanswered ones. Do not do it.
+`PLAN.md`'s **Still open** list stays empty unless *this* work raises a genuinely new
+question.
 
-What §20 *does* record is a separate category: **deferred, not undecided** — the
-switchbar (§2), Dashboard statistics and the activity graph (§13), the notifications
-interface (§18), per-buffer fonts (§15.5) and VoiceOver over the scrollback (§15.6).
-Those belong in `PLAN.md` as future items at the stage where they fit, not in the open
-list. The distinction is the point: nobody has to decide them, somebody has to build
-them.
+§20 does record a separate category: **deferred, not undecided** — the switchbar (§2),
+Dashboard statistics and the activity graph (§13), the notifications interface (§18),
+per-buffer fonts (§15.5) and VoiceOver over the scrollback (§15.6). Those belong in
+`PLAN.md` as future items at the stage where they fit, not in the open list. The
+distinction is the point: nobody has to decide them, somebody has to build them.
 
 IF YOU ADD PROMPTS
 Adding a prompt means four mechanical edits, or `make check` fails confusingly:
@@ -162,6 +170,7 @@ on `main` as a standing design document or is distributed into the prompts and l
 its branch as history. Either is defensible — but note that the notes carry *reasoning*
 the prompts will not, and `CLAUDE.md` puts reasoning in `BUILD-LOG.md` rather than in the
 prompt queue. Whichever way this goes, the reasoning must survive somewhere findable.
+If it lands on `main`, copy the file across as above — do not merge the branch.
 
 Delete `PROMPT-7.5-GUI-DESIGN.md` and its pointer in `STAGE1-PROMPTS.md` as part of this
 work — a prompt that has run should not still be sitting in the queue.
@@ -182,12 +191,11 @@ prompts must still read as prompts: self-contained, with a "Do not" scope fence.
 
 The eleven conflicts are the part worth reading personally — everything else is
 transcription, but those are scope decisions. 1 and 3 rewrite prompts substantially, and
-6, 7 and 11 touch behaviour that prompt 7 already shipped, so they will surface as
+6, 7 and 11 touch behaviour prompt 7 already shipped, so they will surface as
 carry-forwards and `PLAN.md` items rather than clean prompt edits.
 
 `make check` verifies document *hygiene*, not whether the prompts still describe the app
 you want, so read the diff before merging rather than squash-merging on green.
 
-**Check the fold against all twenty sections of the notes, not against this brief.** This
-file has already been wrong once by being written against a stale copy, and a brief is a
-summary — the notes are the source.
+Check the fold against all twenty sections of the notes, not against this brief. A brief
+is a summary; the notes are the source.
