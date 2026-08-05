@@ -1676,3 +1676,43 @@ summary reads exactly as confidently as a current one. The fix applied here is t
 brief point at the source and say so: it now instructs the fold to check against all twenty
 sections rather than against the brief. Prefer briefs that cite a stable ref over briefs
 that restate content.
+
+---
+
+## Correction — three defects in prompt 7.5's brief, and a prune
+
+**Date:** 2026-08-05  **Affects:** PROMPT-7.5-GUI-DESIGN.md; no code changes
+
+Three problems, one of which would have destroyed shipped work:
+
+**Merging `gui-design-notes` would revert prompts 6 and 7.** The branch forks from `main`
+at `b9da1b7` and does not contain the five commits after it — roughly 3,500 lines. The
+brief invited exactly that by asking whether the notes should "land on `main`" without
+saying how. It now says to branch from `main` and copy the file across with `git show`,
+and says plainly not to merge.
+
+**A carry-forward under prompt 7 fails `make check`.** Conflict 6 asked for the font
+decision to land "as a carry-forward on prompt 7's shipped `MessageLogView`". Prompt 7 is
+complete, and the staleness check reports a note under a completed prompt as outliving it
+— verified by probe when this file was first written. The brief's own SCOPE section had
+the rule right; the specific instruction contradicted it, and an executor follows the
+specific one. The note now goes on prompt 10, which next touches rendering, and SCOPE
+says "never a carry-forward block under one" rather than leaving it implied.
+
+**The font decision contradicts shipped code, and the fold does not fix it.**
+`LineRenderer.font` returns `NSFont.monospacedSystemFont` — SF Mono, the font §15 rejects
+on measurement. 7.5 is docs-only, so the app keeps rendering in SF Mono until prompt 10
+runs. The brief now requires the decision entry to say so, because a merged fold that
+records "Menlo, decided" invites the reader to assume the code follows.
+
+**Also pruned.** The brief had accumulated four passages narrating its own correction
+history — which draft was stale, what it had got wrong, which sections it had missed. All
+of that is in the previous entry, which is where this project keeps reasoning; in the
+brief it was noise between an executor and its instructions, and it made a summary look
+like an argument. The substance those passages carried is kept: the six settled decisions
+are still named, so the specific mistake is still warned against, without the archaeology
+of who made it.
+
+**Generalising:** a document that is corrected in place accretes a second document inside
+itself, addressed to a different reader. Corrections belong in the log; the instruction
+should read as though it had been right the first time.
