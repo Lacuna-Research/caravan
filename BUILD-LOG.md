@@ -1069,3 +1069,51 @@ anything with logic in it.
   stage 3, with the DCC and identd sandboxing questions in view, since they push the
   same way. Recorded here rather than in `PLAN.md`'s open list because it is a
   sub-question of an item that is otherwise settled.
+
+---
+
+## Decision — the app is Caravan, licensed BSD 3-Clause
+
+**Date:** 2026-08-04  **Affects:** everything; closes two open questions and the stage-4 naming gate
+
+**Name: Caravan**, after *Planet Caravan*, Black Sabbath, 1970. The user's choice.
+Explicitly **not** a theme: the app is not to be styled after the band, now or later.
+The user reserves the right to hide an easter egg or two, which is recorded here so a
+future session neither builds a Sabbath skin nor deletes a deliberate easter egg as
+stray cruft.
+
+Applied everywhere, which is the whole point of having gated it: display name
+`Caravan`, target and product `Caravan`, `Caravan.xcodeproj`, bundle id
+`com.lacuna-research.caravan`, SwiftPM package `Caravan`, config at
+`~/.config/caravan/` with data and cache to match, and the GitHub repository renamed
+to `Lacuna-Research/caravan` (old URLs redirect). Module names — `IRCProtocol`,
+`IRCTransport`, `IRCSession`, `Diagnostics` — are descriptive rather than branded and
+deliberately unchanged.
+
+**This consumes the naming gate** carried on the stage-4 release-engineering item
+since the rename was first flagged. It was the right call to gate it: the bundle id is
+frozen by Keychain ACLs at first signed build, and the config paths would have needed
+a detect-and-migrate path carried forever. Doing it now cost a mechanical rename and a
+regenerated wordmark; doing it after shipping would have cost a migration.
+
+Verified after renaming rather than assumed: `make build`, `make test` (60 tests),
+`make lint` and `make app` all clean, and the built bundle reports
+`CFBundleDisplayName` = `Caravan` and `CFBundleIdentifier` = `com.lacuna-research.caravan`.
+
+**Licence: BSD 3-Clause**, copyright 2026 Lacuna Research. The user said "BSD"; the
+3-clause variant is the reading taken because it is what unqualified "BSD" most often
+means and because its non-endorsement clause protects the organisation's name on a
+product that carries it. Switching to 2-clause is a one-file change if that reading is
+wrong. The vendored parser-tests corpus is CC0-1.0 and imposes nothing.
+
+That closes the only open item that actively misrepresented the project: a public repo
+with no `LICENSE` is all-rights-reserved regardless of being readable.
+
+**Open questions remaining: one** — distribution, App Store sandbox versus direct and
+notarized. Everything else that was open is now decided and written down.
+
+**Incidental:** the wordmark generator needed `A` and `V` glyphs it had never had, and
+the bulk rename missed `IRC-CLIENT` — a third spelling alongside `IRCClient` and
+`irc-client` — because it only appeared as the generator's default argument. Caught by
+regenerating and looking at the output, which is the check that exists precisely
+because looking at it is unreliable.

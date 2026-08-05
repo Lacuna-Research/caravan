@@ -14,7 +14,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		AA0000000000000000000006 /* IRCClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IRCClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000006 /* Caravan.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Caravan.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -47,7 +47,7 @@
 		AA0000000000000000000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				AA0000000000000000000006 /* IRCClient.app */,
+				AA0000000000000000000006 /* Caravan.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,9 +55,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AA0000000000000000000002 /* IRCClient */ = {
+		AA0000000000000000000002 /* Caravan */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AA000000000000000000000B /* Build configuration list for PBXNativeTarget "IRCClient" */;
+			buildConfigurationList = AA000000000000000000000B /* Build configuration list for PBXNativeTarget "Caravan" */;
 			buildPhases = (
 				AA0000000000000000000007 /* Sources */,
 				AA0000000000000000000008 /* Frameworks */,
@@ -70,15 +70,15 @@
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000005 /* App */,
 			);
-			name = IRCClient;
+			name = Caravan;
 			packageProductDependencies = (
 				AA0000000000000000000011 /* Diagnostics */,
 				AA0000000000000000000012 /* IRCProtocol */,
 				AA0000000000000000000013 /* IRCTransport */,
 				AA0000000000000000000014 /* IRCSession */,
 			);
-			productName = IRCClient;
-			productReference = AA0000000000000000000006 /* IRCClient.app */;
+			productName = Caravan;
+			productReference = AA0000000000000000000006 /* Caravan.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -96,7 +96,7 @@
 					};
 				};
 			};
-			buildConfigurationList = AA000000000000000000000A /* Build configuration list for PBXProject "irc-client" */;
+			buildConfigurationList = AA000000000000000000000A /* Build configuration list for PBXProject "caravan" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -113,7 +113,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AA0000000000000000000002 /* IRCClient */,
+				AA0000000000000000000002 /* Caravan */,
 			);
 		};
 /* End PBXProject section */
@@ -191,7 +191,7 @@
 		AA000000000000000000000E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = App/IRCClient.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/Caravan.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -200,7 +200,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "IRC Client";
+				INFOPLIST_KEY_CFBundleDisplayName = "Caravan";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -208,7 +208,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.lacuna-research.irc-client";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.lacuna-research.caravan";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -217,7 +217,7 @@
 		AA000000000000000000000F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = App/IRCClient.entitlements;
+				CODE_SIGN_ENTITLEMENTS = App/Caravan.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -226,7 +226,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "IRC Client";
+				INFOPLIST_KEY_CFBundleDisplayName = "Caravan";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -234,7 +234,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.lacuna-research.irc-client";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.lacuna-research.caravan";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
@@ -243,7 +243,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AA000000000000000000000A /* Build configuration list for PBXProject "irc-client" */ = {
+		AA000000000000000000000A /* Build configuration list for PBXProject "caravan" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA000000000000000000000C /* Debug */,
@@ -252,7 +252,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AA000000000000000000000B /* Build configuration list for PBXNativeTarget "IRCClient" */ = {
+		AA000000000000000000000B /* Build configuration list for PBXNativeTarget "Caravan" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AA000000000000000000000E /* Debug */,

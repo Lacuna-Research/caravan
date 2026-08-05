@@ -53,6 +53,6 @@ jobs:
         run: swift format lint --strict --recursive Sources Tests App Package.swift
 
       - name: Build the app
-        # Keeps irc-client.xcodeproj honest. The package builds under Command Line
+        # Keeps Caravan.xcodeproj honest. The package builds under Command Line
         # Tools, but the app target needs Xcode and would otherwise rot unnoticed.
-        run: xcodebuild -project irc-client.xcodeproj -scheme IRCClient -configuration Debug build
+        run: xcodebuild -project Caravan.xcodeproj -scheme Caravan -configuration Debug build

@@ -39,6 +39,22 @@ GLYPHS = {
         "██║",
         "╚═╝",
     ],
+    "A": [
+        " █████╗ ",
+        "██╔══██╗",
+        "███████║",
+        "██╔══██║",
+        "██║  ██║",
+        "╚═╝  ╚═╝",
+    ],
+    "V": [
+        "██╗   ██╗",
+        "██║   ██║",
+        "██║   ██║",
+        "╚██╗ ██╔╝",
+        " ╚████╔╝ ",
+        "  ╚═══╝  ",
+    ],
     "R": [
         "██████╗ ",
         "██╔══██╗",
@@ -99,7 +115,7 @@ GLYPHS = {
 
 
 
-def wordmark(word: str = "IRC-CLIENT", indent: int = 3) -> list[str]:
+def wordmark(word: str = "CARAVAN", indent: int = 3) -> list[str]:
     """Compose the wordmark from fixed-width glyph blocks.
 
     Concatenating per-letter blocks makes misalignment impossible, rather than
@@ -127,7 +143,7 @@ TOTAL = 1 + LEFT + 1 + MID + 1 + RIGHT + 1
 
 TREE = [
     ("* Libera.Chat", ""),
-    ("  |- #irc-client", "*"),
+    ("  |- #caravan", "*"),
     ("  |- #swift", ""),
     ("  `- >NickServ", ""),
     ("", ""),
@@ -150,9 +166,9 @@ NICKS = ["@ops", "@bob", "+eve", " ann", " joe", "", "", ""]
 
 def mockup() -> list[str]:
     rows = []
-    title = "┌─ IRC Client "
+    title = "┌─ Caravan "
     rows.append(title + "─" * (TOTAL - cols(title) - 1) + "┐")
-    topic = " #irc-client - a native macOS IRC client"
+    topic = " #caravan - a native macOS IRC client"
     rows.append("│" + " " * LEFT + "│" + pad(topic, MID + 1 + RIGHT) + "│")
     rows.append("│" + " " * LEFT + "├" + "─" * MID + "┬" + "─" * RIGHT + "┤")
 
@@ -166,7 +182,7 @@ def mockup() -> list[str]:
         )
 
     rows.append("├" + "─" * LEFT + "┴" + "─" * MID + "┴" + "─" * RIGHT + "┤")
-    rows.append("│" + pad(" [#irc-client] > /msg alice thanks!", TOTAL - 2) + "│")
+    rows.append("│" + pad(" [#caravan] > /msg alice thanks!", TOTAL - 2) + "│")
     rows.append("└" + "─" * (TOTAL - 2) + "┘")
 
     for row in rows:
