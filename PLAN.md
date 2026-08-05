@@ -55,10 +55,7 @@ approaching a thousand lines, so questions buried in it are questions nobody fin
 Delete an item from this list when it is answered, and record the answer as a
 decision entry.
 
-1. **Distribution.** App Store sandbox vs. direct/notarized. DCC (incoming
-   connections, arbitrary file writes) and identd (port 113) are
-   painful-to-impossible sandboxed. Leaning direct, notarized, Sparkle for updates.
-   Not blocking; the app target is already configured un-sandboxed.
+*Empty. Everything raised so far has been decided and recorded in `BUILD-LOG.md`.*
 
 ### Testing strategy
 
@@ -220,7 +217,25 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     instrument the text pipeline.
 45. **Diagnostics.** OSLog structured logging, opt-in crash reporting, a raw-traffic
     debug window.
-46. **Release engineering.** Notarization, DMG, Sparkle auto-update, release notes.
+46. **Release engineering.** Distribution is a **Homebrew cask in our own tap**
+    (`Lacuna-Research/homebrew-tap`), not the App Store and not homebrew-cask core —
+    core has notability requirements a new project will not meet, and a tap is one
+    file we control.
+    - Signed with a Developer ID and **notarized**. A cask installs into
+      `/Applications`, so Gatekeeper quarantines it; without notarization users meet
+      "damaged and can't be opened". This needs a paid Apple Developer account, which
+      is the real cost of this choice. Notarization also requires the hardened
+      runtime, which the app target already sets — inert under ad-hoc signing today,
+      live the moment a Developer ID exists.
+    - Release artifact: a zipped `Caravan.app` attached to a GitHub release; the cask
+      carries the version, URL and SHA-256.
+    - A `zap` stanza removing `~/.config/caravan`, `~/.local/share/caravan` and
+      `~/.cache/caravan`. Keeping everything under XDG paths makes clean uninstall a
+      three-line stanza rather than a scavenger hunt.
+    - **No Sparkle.** `brew upgrade` is the update mechanism; shipping a second
+      updater that rewrites an app Homebrew believes it manages causes exactly the
+      drift Homebrew exists to prevent. Revisit only if direct downloads become a
+      channel too.
 
 47. **mIRC import.** Read `mirc.ini`, `servers.ini`, `aliases.ini`, `popups.ini`,
     `remote.ini` — a genuine differentiator for anyone migrating.

@@ -224,7 +224,7 @@ Full detail in [`PLAN.md`](PLAN.md).
 <summary><b>Stage 4 — Polish and release</b></summary>
 
 - Accessibility, localization, performance work on the scrollback pipeline
-- Notarization, DMG, Sparkle auto-update
+- Distribution as a Homebrew cask from our own tap; Developer ID signing and notarization
 - **mIRC settings importer** — read `mirc.ini`, `servers.ini`, `remote.ini`
 - Optional iCloud sync, optional iOS companion sharing the core modules
 
