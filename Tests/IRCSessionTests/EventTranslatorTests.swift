@@ -223,21 +223,26 @@ struct EventTranslatorTests {
         )
     }
 
-    /// The arguments are reported unparsed: knowing that `+l` takes a number and `+m`
-    /// does not needs `CHANMODES` and the channel state, which is prompt 8's.
-    @Test("MODE reports its arguments without interpreting them")
+    /// `PREFIX` says `o` takes a nick and `CHANMODES` says `l` takes a number when set,
+    /// which is the only way a mode string can be split at all.
+    @Test("MODE is split into its individual changes")
     func mode() throws {
         #expect(
             try events(":bob!u@h MODE #swift +ol carol 50").dropFirst() == [
                 .modeChanged(
                     target: .channel(channel("#swift")),
                     who: user("bob"),
-                    arguments: ["+ol", "carol", "50"]
+                    changes: [
+                        ModeChange(isSet: true, mode: "o", argument: "carol"),
+                        ModeChange(isSet: true, mode: "l", argument: "50"),
+                    ]
                 )
             ]
         )
     }
 
+    /// User modes never take an argument, and treating them as if they might would eat
+    /// the next parameter of a line that has none.
     @Test("a server-sourced MODE on a nick is a user mode change")
     func userMode() throws {
         #expect(
@@ -245,8 +250,102 @@ struct EventTranslatorTests {
                 .modeChanged(
                     target: .nick(IRCNick("alice", mapping: .ascii)),
                     who: .server("irc.example.org"),
-                    arguments: ["+i"]
+                    changes: [ModeChange(isSet: true, mode: "i")]
                 )
+            ]
+        )
+    }
+
+    @Test("324 reports the channel's standing modes")
+    func channelModeReply() throws {
+        #expect(
+            try events(":irc.example.org 324 alice #swift +ntl 50").dropFirst() == [
+                .channelModes(
+                    channel: channel("#swift"),
+                    changes: [
+                        ModeChange(isSet: true, mode: "n"),
+                        ModeChange(isSet: true, mode: "t"),
+                        ModeChange(isSet: true, mode: "l", argument: "50"),
+                    ]
+                )
+            ]
+        )
+    }
+
+    // MARK: - Topic numerics
+
+    @Test("332 is the standing topic, with no one to attribute it to yet")
+    func topicReply() throws {
+        #expect(
+            try events(":irc.example.org 332 alice #swift :a topic").dropFirst() == [
+                .topicChanged(channel: channel("#swift"), who: nil, topic: "a topic")
+            ]
+        )
+    }
+
+    /// One representation of "no topic", not two: an empty topic is what a `TOPIC`
+    /// clearing one sends, so 331 says the same thing the same way.
+    @Test("331 is an empty topic rather than an event of its own")
+    func noTopicReply() throws {
+        #expect(
+            try events(":irc.example.org 331 alice #swift :No topic is set").dropFirst() == [
+                .topicChanged(channel: channel("#swift"), who: nil, topic: "")
+            ]
+        )
+    }
+
+    @Test("333 attributes the standing topic")
+    func topicAuthorReply() throws {
+        #expect(
+            try events(":irc.example.org 333 alice #swift bob 1700000000").dropFirst() == [
+                .topicAuthor(channel: channel("#swift"), nick: "bob", setAt: 1_700_000_000)
+            ]
+        )
+    }
+
+    /// Some servers send a full `nick!user@host` here, and some omit the timestamp.
+    @Test("333 tolerates a full source and a missing timestamp")
+    func topicAuthorVariants() throws {
+        #expect(
+            try events(":irc.example.org 333 alice #swift bob!u@h").dropFirst() == [
+                .topicAuthor(channel: channel("#swift"), nick: "bob", setAt: nil)
+            ]
+        )
+    }
+
+    // MARK: - Join failures
+
+    @Test(
+        "a join failure becomes a typed error rather than a bare numeric",
+        arguments: [
+            (UInt16(471), JoinFailure.channelIsFull),
+            (473, .inviteOnly),
+            (474, .banned),
+            (475, .badKey),
+            (476, .badChannelMask),
+            (477, .needsRegisteredNick),
+        ]
+    )
+    func joinFailures(code: UInt16, reason: JoinFailure) throws {
+        #expect(
+            try events(":irc.example.org \(code) alice #swift :Cannot join channel").dropFirst()
+                == [
+                    .joinFailed(
+                        channel: channel("#swift"),
+                        reason: reason,
+                        text: "Cannot join channel"
+                    )
+                ]
+        )
+    }
+
+    /// Suppression is conditional on a specific event actually being produced. A join
+    /// failure too short to name a channel still reaches the status window.
+    @Test("a truncated join failure falls through to .numeric rather than vanishing")
+    func truncatedJoinFailure() throws {
+        #expect(
+            try events(":irc.example.org 475 alice").dropFirst() == [
+                .numeric(code: 475, parameters: ["alice"])
             ]
         )
     }

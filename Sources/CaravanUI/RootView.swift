@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The window: a sidebar of buffers, and the selected buffer's scrollback with an input
-/// field under it.
+/// The window: the buffer tree, and the selected buffer beside it.
 public struct RootView: View {
     @State private var model = AppModel()
 
@@ -9,22 +8,15 @@ public struct RootView: View {
 
     public var body: some View {
         NavigationSplitView {
-            sidebar
+            SidebarTree(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 400)
         } detail: {
-            if let connection = model.connection {
-                BufferView(connection: connection)
-            } else {
-                ContentUnavailableView {
-                    Label("Not connected", systemImage: "network.slash")
-                } description: {
-                    Text("Connect to an IRC network to get started.")
-                } actions: {
-                    Button("Connect…") { model.isShowingConnectSheet = true }
-                }
-            }
+            detail
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                closeChannelButton
+            }
             ToolbarItem(placement: .primaryAction) {
                 if model.connection?.isConnected == true {
                     Button("Disconnect") {
@@ -42,27 +34,49 @@ public struct RootView: View {
         }
     }
 
-    private var sidebar: some View {
-        List(selection: $model.selection) {
-            if let connection = model.connection {
-                Section(connection.displayName) {
-                    Label(connection.displayName, systemImage: "bubble.left.and.bubble.right")
-                        .tag(AppModel.SidebarItem.status(connection.id))
-                }
+    @ViewBuilder
+    private var detail: some View {
+        if let connection = model.connection {
+            if let buffer = model.selectedChannel {
+                ChannelBufferView(connection: connection, buffer: buffer)
+            } else {
+                StatusBufferView(connection: connection)
+            }
+        } else {
+            ContentUnavailableView {
+                Label("Not connected", systemImage: "network.slash")
+            } description: {
+                Text("Connect to an IRC network to get started.")
+            } actions: {
+                Button("Connect…") { model.isShowingConnectSheet = true }
             }
         }
-        .listStyle(.sidebar)
+    }
+
+    /// ⌘W closes the selected *channel*, which parts it — membership never outlives its
+    /// buffer.
+    ///
+    /// Disabled when no channel is selected, so the shortcut falls back to the window's
+    /// own Close rather than swallowing it. A status window is not closable: it is the
+    /// network row, and closing a network is disconnecting from it.
+    private var closeChannelButton: some View {
+        Button("Close Channel") {
+            Task { await model.closeSelectedChannel() }
+        }
+        .keyboardShortcut("w", modifiers: .command)
+        .disabled(model.selectedChannel == nil)
+        .help("Close this channel's buffer and part the channel")
     }
 }
 
-/// One buffer: scrollback, a status line, and the input field.
-struct BufferView: View {
+/// The network's status window: everything not addressed to a channel.
+struct StatusBufferView: View {
     let connection: ConnectionViewModel
     @State private var input = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            scrollback
+            ScrollbackView(log: connection.log)
             Divider()
             inputField
         }
@@ -71,29 +85,11 @@ struct BufferView: View {
         }
     }
 
-    private var scrollback: some View {
-        MessageLogView(controller: connection.log)
-            .overlay(alignment: .bottomTrailing) {
-                // Only offered when it is needed: while pinned to the bottom there is no
-                // "latest" to jump to.
-                if !connection.log.isPinnedToBottom {
-                    Button {
-                        connection.log.scrollToLatest()
-                    } label: {
-                        Label(
-                            connection.log.unseenLineCount > 0
-                                ? "\(connection.log.unseenLineCount) new" : "Jump to latest",
-                            systemImage: "arrow.down.circle.fill"
-                        )
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .padding(12)
-                }
-            }
-    }
-
     /// Connection state belongs on screen, not only in the console — including *why* a
     /// connection dropped, which is the one thing a user wants when it does.
+    ///
+    /// Prompt 10 replaces this with the status window's own header band, showing the
+    /// MOTD; the tree's network row already carries the same state as a dot.
     private var statusBar: some View {
         HStack(spacing: 6) {
             Circle()

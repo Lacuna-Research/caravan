@@ -52,6 +52,10 @@ public final class MessageLogController {
 
     @ObservationIgnored private weak var textView: NSTextView?
     @ObservationIgnored private weak var scrollView: NSScrollView?
+
+    /// The view built by ``displayView(usesTextKit2:)``, held strongly so it outlives the
+    /// SwiftUI representable that draws it. `nil` when a caller attached its own.
+    @ObservationIgnored private var ownedScrollView: NSScrollView?
     @ObservationIgnored private var pending: [AttributedString] = []
 
     /// Character count of each line in the view, oldest first, including its newline.
@@ -93,6 +97,11 @@ public final class MessageLogController {
         flushTask?.cancel()
         flushTask = nil
         guard !pending.isEmpty, let textView, let textStorage = textView.textStorage else {
+            // A buffer that has never been on screen has nowhere to write yet, so its
+            // lines wait for ``displayView(usesTextKit2:)``. Bounded by the same cap all
+            // the same: a busy channel you joined and never clicked on would otherwise
+            // grow without limit, which is the one thing this type exists to prevent.
+            if pending.count > lineCap { pending.removeFirst(pending.count - lineCap) }
             return
         }
 
@@ -217,6 +226,36 @@ public final class MessageLogController {
         self.textView = textView
         self.scrollView = scrollView
         scrollView.contentView.postsBoundsChangedNotifications = true
+    }
+
+    /// The scroll view this buffer is drawn in, built once and reused for the life of the
+    /// controller.
+    ///
+    /// **The controller owns the view, not the other way round.** SwiftUI tears a
+    /// representable's `NSView` down whenever it stops being on screen, and the text a
+    /// buffer holds lives *in* that view's storage — so a freshly built one per
+    /// appearance means every buffer goes blank the moment you look at another one. That
+    /// is not a hypothetical: it is what the first live run of the channel window did.
+    ///
+    /// Reusing it keeps the scroll position too, which is the behaviour anyone who has
+    /// used an IRC client expects on switching back to a window.
+    public func displayView(usesTextKit2: Bool = false) -> NSScrollView {
+        if let ownedScrollView { return ownedScrollView }
+
+        let scrollView = NSScrollView()
+        let textView = MessageLogView.makeTextView(usesTextKit2: usesTextKit2)
+        scrollView.documentView = textView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+
+        ownedScrollView = scrollView
+        attach(textView: textView, scrollView: scrollView)
+        // Lines that arrived before there was anywhere to put them. A channel joined in
+        // the background has its whole history queued up at this point.
+        flush()
+        return scrollView
     }
 
     private static let newline = NSAttributedString(string: "\n")

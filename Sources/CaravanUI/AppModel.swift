@@ -1,5 +1,6 @@
 import Diagnostics
 import Foundation
+import IRCProtocol
 import IRCSession
 import IRCTransport
 import Observation
@@ -68,9 +69,10 @@ public struct ConnectionSettings: Sendable, Equatable {
 
 /// What is on screen: one connection at most, and whether the sheet is up.
 ///
-/// Multiple networks are stage 2 by design — the sidebar grows a level and every window
-/// gains an owner, and doing that before there is a single working one is how you get a
-/// tree with nothing in it.
+/// The tree already has its settled shape — channels nested under their network, always,
+/// because `#music` on Efnet and `#music` on Undernet are different rooms and any
+/// structure that cannot say which one you are looking at is broken. What stage 2 adds is
+/// a *second* network beside the first, not a new level.
 @MainActor
 @Observable
 public final class AppModel {
@@ -80,15 +82,38 @@ public final class AppModel {
     /// One trace buffer for the process. Redacted on insert; prompt 10 exports it.
     @ObservationIgnored public let trace = TraceBuffer()
 
-    /// The sidebar item the user has selected. Only the status window exists at this
-    /// stage; prompt 8 adds channels underneath.
+    /// The tree row the user has selected.
     public var selection: SidebarItem?
 
+    /// Whether the network's children are showing. One network at this stage, so one
+    /// flag; stage 2's multi-network tree gives each its own.
+    public var isNetworkExpanded = true
+
+    /// One selectable row in the tree.
+    ///
+    /// There is no separate status row: the network row *is* the status buffer's entry,
+    /// which removes a row per network and a concept from the UI.
     public enum SidebarItem: Hashable, Sendable {
         case status(UUID)
+        case channel(connection: UUID, channel: IRCChannelName)
     }
 
     public init() {}
+
+    /// The channel the selection names, when it names one.
+    public var selectedChannel: ChannelBuffer? {
+        guard case .channel(let connectionID, let name) = selection,
+            let connection, connection.id == connectionID
+        else { return nil }
+        return connection.buffer(named: name)
+    }
+
+    /// Closes the selected channel buffer, parting the channel. ⌘W's action.
+    public func closeSelectedChannel() async {
+        guard let buffer = selectedChannel, let connection else { return }
+        await connection.closeChannel(buffer.name)
+        selection = .status(connection.id)
+    }
 
     public func connect(using settings: ConnectionSettings) async {
         await connection?.disconnect()

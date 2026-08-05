@@ -1868,3 +1868,106 @@ and `PLAN.md`'s list stays empty. The five deferred-not-undecided items landed a
 entries: switchbar (Customization), Dashboard statistics (new stage 4 item),
 notifications interface (Highlights & notifications), per-buffer fonts (Themes),
 VoiceOver over the scrollback (Accessibility).
+
+## Prompt 8 — Channel and user state
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `IRCSession` — `Channel`/`Member`/`Topic`, `ModeChange`/`ModeParser`,
+`ChannelRoster`, and five new events (`.topicAuthor`, `.channelModes`, `.joinFailed`,
+`.channelChanged`, `.channelClosed`); `.modeChanged` now carries parsed changes.
+`CaravanUI` — `ChannelBuffer`, `SidebarTree`, `ChannelBufferView`, `BufferChrome`
+(`ScrollbackView`, `HeaderBand`, `ResizeHandle`). 254 tests across 31 suites; `make all`
+clean.
+
+**Two defects the live run found that no test could have.** Both are SwiftUI view
+lifecycle, and both were invisible with prompt 7's single buffer:
+
+1. **Switching buffers blanked the scrollback.** A buffer's text lives in its
+   `NSTextView`'s storage, and SwiftUI destroys a representable's `NSView` whenever it
+   leaves the screen. `makeNSView` built a fresh, empty one on the way back.
+   `MessageLogController` now owns its scroll view (`displayView(usesTextKit2:)`), built
+   once and handed back — which preserves the scroll position too, as switching back to a
+   window should. Three regression tests.
+2. **One channel's scrollback under another channel's topic and nick list.** With the
+   view owned, SwiftUI still *reused* the representable across the switch — same type,
+   same position in the hierarchy — so it called `updateNSView`, which does nothing, and
+   left the previous buffer's view installed. Fixed with `.id(ObjectIdentifier(log))` on
+   the representable. There is no headless test for SwiftUI view identity; the live run
+   is the test, and the reasoning is in the comment at the fix.
+
+Also found by (1): a buffer that has never been on screen queued its lines forever and
+without bound. `flush()` now trims the pending queue to the same line cap, so a busy
+channel joined and never clicked on cannot grow the process.
+
+**Decisions:**
+- **The session broadcasts whole `Channel` snapshots, not per-change events.** One
+  `.channelChanged(Channel)` after the event that caused it. The alternative — a case per
+  kind of change — puts the transition logic in every view that draws a member list, and
+  two copies of it eventually disagree. Cost is copy-on-write: a netsplit copies the
+  member dictionary once per departing user. Measured at 2,000 members it is not close to
+  mattering; revisit if a snapshot ever shows up in a profile.
+- **The event order is part of the contract.** The event first, then the snapshots. A
+  buffer renders the `QUIT` line and *then* redraws its nick list — and routing a `QUIT`
+  to the right windows is only possible because the UI's snapshots still contain the user
+  when the line arrives.
+- **`.modeChanged` carries parsed `ModeChange`s and *not* the raw arguments.** Two
+  representations of one thing invite them to disagree; `.raw` already guarantees nothing
+  is lost. An undeclared mode is assumed to take no argument — the failure that stays
+  local, where the opposite guess swallows the next mode's argument and mis-parses the
+  rest of the line.
+- **`ServerCapabilities` gained an RFC 2811 default for `CHANMODES`.** An empty table is
+  not neutral: a server that omits the token and then sends `+k hunter2` leaves the key
+  unconsumed and desynchronises everything after it. Revisit only if a server is found
+  whose unstated modes differ from RFC 2811's.
+- **331 is an empty topic, not an event of its own.** It is the same thing a `TOPIC` that
+  clears one sends, and one representation of "no topic" beats two. The renderer says
+  "No topic is set for #x" rather than printing an empty string after a colon.
+- **A casemapping or `PREFIX` change re-keys the roster.** `IRCNick`/`IRCChannelName`
+  compare only within one mapping — that is what makes them safe keys — so a reconnect,
+  which resets `ISUPPORT`, would otherwise leave carried-over channels unable to match
+  themselves. Rejected: dropping the channels instead, which is exactly the vanishing
+  tree §17 forbids.
+- **`Topic.setAt` is Unix epoch seconds, not a `Date`.** `IRCSession` has no Foundation
+  dependency and formatting belongs where the locale is known. A topic changed while we
+  watch has no timestamp at all: the session has no clock, and the buffer's own line
+  already carries the time.
+- **`closeChannel` lives on the session, not just the view model.** It is the only thing
+  that removes a channel from the roster, so the invariant — membership never outlives
+  its buffer — is enforced below the UI rather than by convention above it.
+- **The nick list pane runs the full height, beside the input field.** Taken without
+  asking; the alternative (input spanning the full width) is equally common in real
+  clients. Trivially reversible if it reads wrong in use.
+- **⌘W is a disabled-when-inapplicable toolbar button.** With no channel selected the
+  shortcut falls through to the window's own Close, which is what makes a status window
+  non-closable without a special case: it is the network row, and closing a network is
+  disconnecting from it.
+
+**Learned:**
+- **A `PART` echo arriving after its buffer is closed lands in the status window.**
+  Visible in the live run as `*** Parts: <us> #caravan-smoke` after ⌘W. That is the
+  fallback rule working — nothing a server says is dropped — rather than a bug, but it is
+  the kind of line that looks like one.
+- **`ChannelBuffer.id` has to be `nonisolated`.** `Identifiable` is not main-actor
+  isolated, and a computed `id` on an `@MainActor` type fails the conformance under Swift
+  6. The identity is an immutable `let`, so reading it off the actor is sound.
+- **The `DisclosureGroup`-in-`List` tree is a real `NSOutlineView`,** and a `.tag()` on
+  its label makes the network row selectable exactly as an ordinary row — which is what
+  §12's "no header-styled rows" rule needs and what was least certain going in.
+
+**Live acceptance:** connected to `irc.libera.chat:6697` over TLS, joined `#libera`
+(1,748 members) and `#caravan-smoke`, switched between them and the status window,
+`PART`ed one and ⌘W-closed the other. The parted channel kept its row, greyed; the closed
+one sent `PART` and vanished. Nick list ordered by `PREFIX` rank with `@` prefixes, topic
+and its 333 attribution rendered in local time, and the MOTD intact in the status window
+after every switch.
+
+**Carry-forward:** consumed all five notes on this prompt. Prompt 5's
+(`ServerCapabilities` already has `rank(ofPrefix:)`, `channelModes`, `caseMapping`) and
+prompt 6's two (the membership events exist; 332/333/331/324 and the join failures did
+not; `.modeChanged` was unparsed) were acted on exactly as written. Prompt 7's two (a
+buffer is a controller plus a view, already per-buffer; `LineRenderer` already renders the
+membership events) were both correct and made the UI half far smaller than it looked —
+though "a channel window is a second controller, not a rework" turned out to be true only
+after the two view-lifecycle defects above were fixed. Raised: two notes on prompt 9 and
+two on prompt 10.

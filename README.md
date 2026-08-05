@@ -21,7 +21,7 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
-[![stage 1: 7/11](https://img.shields.io/badge/stage%201-7%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
+[![stage 1: 8/11](https://img.shields.io/badge/stage%201-8%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
 
 </div>
 
@@ -151,8 +151,8 @@ Stage 1 is eleven prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authorita
 | 5 | Registration and connection state machine | ✅ done |
 | 6 | Typed event model | ✅ done |
 | 7 | Minimal UI and the scrollback view | ✅ done |
-| 8 | Channel and user state | ⬜ next |
-| 9 | Command line | ⬜ |
+| 8 | Channel and user state | ✅ done |
+| 9 | Command line | ⬜ next |
 | 10 | Status window, timestamps, line rendering | ⬜ |
 | 11 | Debug & Settings canvas | ⬜ |
 

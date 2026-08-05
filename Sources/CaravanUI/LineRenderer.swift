@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import IRCProtocol
 import IRCSession
 
@@ -119,21 +120,74 @@ public enum LineRenderer {
             )
 
         case .topicChanged(let channel, let who, let topic):
+            guard !topic.isEmpty else {
+                // 331, and a `TOPIC` that cleared one. Both are "there is no topic", and
+                // rendering an empty string after a colon says that badly.
+                let attribution =
+                    who.map { "\(senderName($0)) cleared the topic for" } ?? "No topic is set for"
+                return line("*** \(attribution) \(channel)", kind: .status)
+            }
             let attribution = who.map { "\(senderName($0)) changed" } ?? "Topic for"
             return line("*** \(attribution) \(channel): \(topic)", kind: .status)
 
-        case .modeChanged(let target, let who, let arguments):
+        case .topicAuthor(_, let nick, let setAt):
+            let when = setAt.map { " on \(timestamp(epochSeconds: $0))" } ?? ""
+            return line("*** Topic set by \(nick)\(when)", kind: .status)
+
+        case .modeChanged(let target, let who, let changes):
             let attribution = who.map(senderName) ?? "server"
             return line(
-                "*** \(attribution) sets mode \(arguments.joined(separator: " ")) on \(target)",
+                "*** \(attribution) sets mode: \(modeDescription(changes)) on \(target)",
                 kind: .status
             )
 
+        case .channelModes(let channel, let changes):
+            return line(
+                "*** Channel modes for \(channel): \(modeDescription(changes))",
+                kind: .status
+            )
+
+        case .joinFailed(let channel, let reason, let text):
+            // A join failure is something the user can act on — supply a key, get an
+            // invite — so it reads as our error rather than as another server numeric.
+            return line(
+                "*** Cannot join \(channel): \(text.isEmpty ? reason.summary : text)",
+                kind: .clientError
+            )
+
         case .namesReply, .endOfNames:
-            // The nick list is prompt 8's, and printing every NAMES batch into the status
-            // window before there is one is noise, not information.
+            // The nick list is the visible form of these. Printing every 353 batch into
+            // the buffer as well would repeat, line by line, what the pane already shows.
+            return nil
+
+        case .channelChanged, .channelClosed:
+            // State, not a thing that happened. The nick list, header band and tree row
+            // are where these land.
             return nil
         }
+    }
+
+    /// `+o alice -v bob`, with the signs collapsed the way a server writes them.
+    private static func modeDescription(_ changes: [ModeChange]) -> String {
+        guard !changes.isEmpty else { return "" }
+        var letters = ""
+        var arguments: [String] = []
+        var sign: Bool?
+        for change in changes {
+            if sign != change.isSet {
+                letters.append(change.isSet ? "+" : "-")
+                sign = change.isSet
+            }
+            letters.append(change.mode)
+            if let argument = change.argument { arguments.append(argument) }
+        }
+        return ([letters] + arguments).joined(separator: " ")
+    }
+
+    /// 333's Unix epoch seconds, in the user's own locale and time zone.
+    private static func timestamp(epochSeconds: Int) -> String {
+        Date(timeIntervalSince1970: TimeInterval(epochSeconds))
+            .formatted(date: .abbreviated, time: .shortened)
     }
 
     /// A human sentence for a lifecycle change, or `nil` for the ones with nothing to

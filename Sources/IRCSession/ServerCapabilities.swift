@@ -58,6 +58,20 @@ public struct ServerCapabilities: Sendable, Equatable {
         ]
         public static let nickLength = 9
         public static let channelLength = 200
+
+        /// RFC 2811's channel modes, grouped as `CHANMODES` would express them.
+        ///
+        /// Not empty, because an empty table is not a neutral default: without it a
+        /// server that omits `CHANMODES` and then sends `+k hunter2` leaves the key
+        /// unconsumed, and every mode after it on that line is parsed against the wrong
+        /// argument. These are the modes the protocol defines, so a server that omits the
+        /// token is fairly read as supporting them.
+        public static let channelModes = ChannelModeGroups(
+            lists: ["b"],
+            alwaysArgument: ["k"],
+            argumentWhenSet: ["l"],
+            noArgument: ["i", "m", "n", "p", "s", "t"]
+        )
     }
 
     /// Every token, keyed by its uppercased name. `nil` means the token was sent without
@@ -75,7 +89,7 @@ public struct ServerCapabilities: Sendable, Equatable {
     /// Membership prefixes, highest rank first, in the order the server declared.
     public private(set) var prefixes = Default.prefixes
 
-    public private(set) var channelModes = ChannelModeGroups()
+    public private(set) var channelModes = Default.channelModes
 
     public private(set) var network: String?
     public private(set) var nickLength = Default.nickLength
@@ -166,7 +180,7 @@ public struct ServerCapabilities: Sendable, Equatable {
             ?? Default.caseMapping
         channelTypes = value(of: "CHANTYPES").map { Set($0) } ?? Default.channelTypes
         prefixes = value(of: "PREFIX").map(Self.parsePrefix) ?? Default.prefixes
-        channelModes = value(of: "CHANMODES").map(Self.parseChannelModes) ?? ChannelModeGroups()
+        channelModes = value(of: "CHANMODES").map(Self.parseChannelModes) ?? Default.channelModes
         network = value(of: "NETWORK")
         nickLength = value(of: "NICKLEN").flatMap(Int.init) ?? Default.nickLength
         channelLength = value(of: "CHANNELLEN").flatMap(Int.init) ?? Default.channelLength
