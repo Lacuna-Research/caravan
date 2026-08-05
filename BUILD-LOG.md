@@ -1556,6 +1556,18 @@ it streamed. The automated half of that is `LiveScrollbackTests`, which drives t
 its position while lines kept coming, and that the jump-to-latest affordance counts them
 — 41 lines rendered on the run recorded here.
 
+**Two latent test races surfaced, both from earlier prompts.** Adding 33 `@MainActor`
+tests to the suite changed the contention enough to expose them, and CI found both:
+- The timer-flush test slept a fixed 200 ms and asserted. Every suite in this target
+  wants the main actor, so on a loaded runner 200 ms is not a guarantee of anything. Now
+  polled.
+- Prompt 5's ISUPPORT test read `capabilities` the moment the session reported connected.
+  005 arrives *after* 001 — the test had been winning that race by luck since it was
+  written. Now waits for the value.
+
+Both are the same mistake: asserting on a fixed delay rather than on the outcome. The
+polling helper existed already in both cases.
+
 **Also learned, the embarrassing way:** the first three screenshots showed an empty
 window and I went looking for a SwiftUI bug that was not there. Each worktree gets its
 own DerivedData directory, and the path had been copied from a previous prompt's build —

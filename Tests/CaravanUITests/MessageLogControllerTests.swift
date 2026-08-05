@@ -1,4 +1,5 @@
 import AppKit
+import CaravanTestSupport
 import Testing
 
 @testable import CaravanUI
@@ -82,8 +83,10 @@ struct MessageLogControllerTests {
         harness.controller.append(lines(5))
         #expect(harness.controller.lineCount == 0)  // Nothing applied yet.
 
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(harness.controller.lineCount == 5)
+        // Polled rather than slept: the flush lands on the main actor, and every suite in
+        // this target wants the main actor too. A fixed wait passes here and fails on a
+        // loaded runner, which is the least useful kind of test.
+        #expect(await waitUntil { harness.controller.lineCount == 5 })
         #expect(text(of: harness.textView).hasPrefix("line 0\n"))
     }
 

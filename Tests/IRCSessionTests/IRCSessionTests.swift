@@ -130,8 +130,11 @@ struct IRCSessionTests {
     func capabilitiesFromISUPPORT() async throws {
         let harness = try await registeredHarness()
 
+        // 005 arrives *after* 001, so being connected is not yet a promise that ISUPPORT
+        // has landed. Reading it straight away is a race this test used to win by luck.
+        #expect(await waitUntil { await harness.session.capabilities.network == "ExampleNet" })
+
         let capabilities = await harness.session.capabilities
-        #expect(capabilities.network == "ExampleNet")
         #expect(capabilities.nickLength == 30)
         #expect(capabilities.channelTypes == ["#"])
         #expect(await harness.session.caseMapping == .ascii)
