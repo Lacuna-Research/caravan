@@ -1429,6 +1429,22 @@ across 23 suites; `make all` clean.
   `finish` can run a termination handler synchronously, and that handler takes the same
   lock to unsubscribe. Holding it across the call is a deadlock that would only appear
   when a consumer went away at the wrong moment — which is to say, in front of a user.
+- **CI found a race that had been latent in the test harness since prompt 4.** A client
+  reaches `.ready` the moment TCP completes, which is *before* the loopback server has
+  finished accepting — its listener callback still has an actor hop to make, and a line
+  sent into that window goes to a nil connection and is dropped. Green on this machine
+  for two prompts; red on a loaded runner. The transport harness now waits for the
+  server to have accepted, and `ScriptedIRCServer.send` says so in its documentation.
+  Scripted replies were never exposed to it, since a rule can only fire on a line that
+  already arrived — which is why the session suites never flaked.
+
+  Diagnosed from the log rather than reproduced: six concurrent test processes on this
+  machine did not trigger it even with the fix removed. The evidence is nonetheless
+  unambiguous — the harness's own `.ready` expectation passed, and *zero* inbound lines
+  reached a fresh trace buffer in five seconds, which happens only if the server's
+  connection was still nil when it wrote. Worth stating plainly that the fix is
+  reasoned, not demonstrated, since "could not reproduce" is where flaky tests go to
+  hide.
 
 **Measured:** 166 tests in 0.36s, run 8 times consecutively without a flake. The
 translator suite is 40 of those and needs no networking at all.

@@ -33,6 +33,12 @@ struct IRCConnectionTests {
 
         await connection.connect(host: "127.0.0.1", port: port, tls: .disabled)
         #expect(await waitUntil { await states.snapshot().contains(.ready) })
+        // The client is `.ready` the moment TCP completes, which is *before* the server
+        // has finished accepting: its listener callback still has an actor hop to make.
+        // Anything the server sends in that window goes to a nil connection and is
+        // dropped, so a test that sends immediately after connecting would flake — and
+        // on a loaded CI runner, did.
+        #expect(await waitUntil { await server.connectionCount() >= 1 })
 
         return Harness(
             server: server,
