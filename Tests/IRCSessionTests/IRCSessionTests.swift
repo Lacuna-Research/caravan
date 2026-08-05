@@ -426,13 +426,16 @@ struct IRCSessionTests {
 
         // The snapshot follows the event that caused it, so a consumer renders the join
         // line and only then redraws its nick list.
+        //
+        // Waited for on the *log*, not on the session: the actor applies an event before
+        // the stream that carries it has been drained, so reading the log the moment the
+        // roster settles is a race — and one that only lost on CI.
+        #expect(await waitUntil { await harness.events.snapshot().contains(where: isSnapshot) })
         let events = await harness.events.snapshot()
         let joinIndex = try #require(
             events.firstIndex { if case .joined = $0 { true } else { false } }
         )
-        let snapshotIndex = try #require(
-            events.firstIndex { if case .channelChanged = $0 { true } else { false } }
-        )
+        let snapshotIndex = try #require(events.firstIndex(where: isSnapshot))
         #expect(joinIndex < snapshotIndex)
 
         await harness.shutDown()
@@ -451,9 +454,11 @@ struct IRCSessionTests {
         #expect(await waitUntil { await harness.server.receivedLines().contains("PART #swift") })
         #expect(await harness.session.channels.isEmpty)
         #expect(
-            await harness.events.snapshot().contains(
-                .channelClosed(IRCChannelName("#swift", mapping: .ascii))
-            )
+            await waitUntil {
+                await harness.events.snapshot().contains(
+                    .channelClosed(IRCChannelName("#swift", mapping: .ascii))
+                )
+            }
         )
 
         await harness.shutDown()
@@ -485,6 +490,10 @@ struct IRCSessionTests {
 
 private func isConnected(_ state: SessionState) -> Bool {
     if case .connected = state { true } else { false }
+}
+
+private func isSnapshot(_ event: IRCEvent) -> Bool {
+    if case .channelChanged = event { true } else { false }
 }
 
 private func isReconnecting(_ state: SessionState) -> Bool {
