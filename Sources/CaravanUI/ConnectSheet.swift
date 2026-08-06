@@ -49,7 +49,7 @@ struct ConnectSheet: View {
                     prompt: Text("Defaults to the nickname")
                 )
             }
-            authentication
+            AuthenticationSection(settings: $settings)
         }
         .onAppear {
             settings = .lastUsed(from: config, credentials: credentials)
@@ -76,12 +76,21 @@ struct ConnectSheet: View {
         .frame(width: 460, height: 620)
     }
 
-    /// The fields the chosen method actually uses, and no others.
-    ///
-    /// A password field beside `EXTERNAL` would be a lie about what is being sent: CertFP
-    /// proves who you are with the TLS certificate and puts nothing on the wire.
-    @ViewBuilder
-    private var authentication: some View {
+}
+
+/// The fields the chosen authentication method actually uses, and no others.
+///
+/// A password field beside `EXTERNAL` would be a lie about what is being sent: CertFP
+/// proves who you are with the TLS certificate and puts nothing on the wire.
+///
+/// Its own view rather than a `private var` on the sheet so it can be laid out on its own.
+/// The sheet fills itself in `onAppear`, which does not fire offscreen — so a test that
+/// hosted the whole sheet would only ever measure the `.none` case, and the conditional
+/// rows here are exactly the shape that went wrong in prompt 2.
+struct AuthenticationSection: View {
+    @Binding var settings: ConnectionSettings
+
+    var body: some View {
         Section("Authentication") {
             Picker("Method", selection: $settings.authentication) {
                 ForEach(ConnectionSettings.AuthenticationChoice.allCases) { choice in

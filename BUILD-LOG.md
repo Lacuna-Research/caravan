@@ -2733,3 +2733,33 @@ presents and is readable, and that the two password fields arrive pre-filled fro
 Keychain. Everything below the pixels was checked headlessly instead, including against a
 real ircd and a real self-signed handshake. **This is the outstanding item for this prompt**
 and it is on the PR.
+
+## Stage 2, prompt 3 — laying the sheets out without a screen
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+A follow-up to the entry above, and a partial answer to the item it left outstanding.
+
+With the machine locked, the honest options were "ship two unlooked-at sheets" or "find out
+what a machine *can* check about them". `SheetLayoutTests` hosts `ConnectSheet`,
+`AuthenticationSection` and `TrustSheet` in an `NSHostingView` offscreen, lays them out at
+the size the app presents them, and measures. It cannot say whether a label reads well. It
+can say whether a row collapsed or exploded, which is precisely the defect prompt 2 shipped:
+a `TextField` inside a `LabeledContent` drew its own placeholder as a second label, wrapped
+one word per line, and produced a five-line row with a sliver of field beside it.
+
+**Measured, so the bound is not a guess:** a `Form` row is ~37pt. The Authentication section
+is 104pt for `.none`, 178pt for the three methods with an account and a password, and 215pt
+for `.saslExternal`, which adds the certificate field and its explanatory paragraph. The
+ceiling is 300pt — two rows of headroom for metric drift between OS versions, and still well
+under the ~355pt that turning one row into five would produce.
+
+**`AuthenticationSection` became its own view to make this possible**, and it is a better
+shape anyway. `ConnectSheet` fills itself in `onAppear`, which does not fire offscreen, so a
+test hosting the whole sheet only ever measures the `.none` case — the conditional rows,
+which are the part at risk, would never render. A view taking a `Binding` can be laid out
+once per method.
+
+**Still not checked, and the entry above still stands:** that the sheets *read* well, that
+the trust sheet's red-for-a-changed-certificate lands, and that the password fields visibly
+arrive pre-filled. Measuring is not looking.
