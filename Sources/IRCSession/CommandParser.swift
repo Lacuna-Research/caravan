@@ -52,6 +52,22 @@ public struct CommandParser: Sendable {
 
     // MARK: - The table
 
+    /// Every verb the switch below answers to, for Tab completion to offer.
+    ///
+    /// **Here rather than in the UI**, because this switch is the one place that knows
+    /// what a command is; a second list in the input box would be a second answer to the
+    /// same question, and the one nobody edits is the one that goes stale. It is still a
+    /// hand-kept list — Swift cannot enumerate a `switch` — so `everyKnownCommandParses`
+    /// checks that nothing here falls through to the passthrough. That catches a name
+    /// removed from the switch. A case *added* to the switch and not listed here can only
+    /// be caught by reading, which is why they are adjacent.
+    ///
+    /// Aliases are included: someone who types `/j` wants to see it offered.
+    public static let knownCommands = [
+        "connect", "debug", "disconnect", "j", "join", "leave", "m", "me", "msg", "nick",
+        "notice", "part", "query", "quit", "quote", "raw", "server", "topic",
+    ]
+
     private func command(_ verb: String, rest: String, activeTarget: Target?) -> [CommandAction] {
         // A bare `/`. It has to answer rather than vanish, and the answer people need is
         // that `//` is how you send a line that starts with one.

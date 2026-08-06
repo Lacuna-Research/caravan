@@ -69,10 +69,14 @@ struct ChannelBufferView: View {
         InputBar(
             state: buffer.input,
             target: .channel(buffer.name),
-            placeholder: "Message \(buffer.name.raw), or /command"
-        ) { text in
-            await model.submit(text, from: .channel(buffer.name))
-        }
+            placeholder: "Message \(buffer.name.raw), or /command",
+            sources: { model.completionSources(in: buffer) },
+            palette: settings.palette,
+            completionStyle: settings.completionSuffix,
+            submit: { text in
+                await model.submit(text, from: .channel(buffer.name))
+            }
+        )
     }
 }
 

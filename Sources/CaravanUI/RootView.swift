@@ -168,9 +168,15 @@ struct StatusBufferView: View {
         InputBar(
             state: connection.statusInput,
             target: nil,
-            placeholder: "/command"
-        ) { text in
-            await model.submit(text, from: nil)
-        }
+            placeholder: "/command",
+            // No nicks: a status window has no membership, and offering the nicks of some
+            // other channel here would complete to people who cannot see the line.
+            sources: { model.completionSources(in: nil) },
+            palette: model.settings.palette,
+            completionStyle: model.settings.completionSuffix,
+            submit: { text in
+                await model.submit(text, from: nil)
+            }
+        )
     }
 }

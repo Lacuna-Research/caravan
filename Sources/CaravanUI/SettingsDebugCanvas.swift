@@ -124,6 +124,47 @@ private struct SettingsPane: View {
                 )
             }
 
+            Section("Typing") {
+                // `labelsHidden()` is load-bearing, not decoration: without it the field's
+                // own placeholder is drawn as a second label inside a 70pt box and wraps
+                // one word per line, which is what the live run found.
+                LabeledContent("After a nickname at the start") {
+                    TextField(
+                        "suffix",
+                        text: Binding(
+                            get: { settings.completionSuffix.atLineStart },
+                            set: { settings.completionSuffix.atLineStart = $0 }
+                        )
+                    )
+                    .labelsHidden()
+                    // Bordered, unlike the other fields here, because a suffix is often a
+                    // single space — an unbordered field holding one looks like no field.
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 70)
+                }
+                LabeledContent("After a nickname elsewhere") {
+                    TextField(
+                        "suffix",
+                        text: Binding(
+                            get: { settings.completionSuffix.elsewhere },
+                            set: { settings.completionSuffix.elsewhere = $0 }
+                        )
+                    )
+                    .labelsHidden()
+                    // Bordered, unlike the other fields here, because a suffix is often a
+                    // single space — an unbordered field holding one looks like no field.
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 70)
+                }
+                Text(
+                    "What Tab puts after a completed nickname. A nickname opening a line "
+                        + "is an address, so it takes the first; one inside a sentence "
+                        + "takes the second. In the config file a space is written `_`."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             Section("Where these live") {
                 LabeledContent("Config file") {
                     Button(model.config.url.path) {
