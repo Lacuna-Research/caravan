@@ -107,6 +107,18 @@ struct SessionEventTests {
         await server.stop()
     }
 
+    /// A log's events up to and including `.registered`, which every consumer must have
+    /// received identically by the time it has any of them.
+    private func eventsThroughRegistration(_ log: StreamLog<IRCEvent>) async -> [IRCEvent] {
+        let events = await log.snapshot()
+        guard
+            let index = events.firstIndex(where: {
+                if case .registered = $0 { true } else { false }
+            })
+        else { return events }
+        return Array(events.prefix(through: index))
+    }
+
     /// The reason the multicast exists: the UI and the logger both want the whole feed.
     @Test("two consumers each receive the whole registration")
     func twoConsumers() async throws {
@@ -130,7 +142,11 @@ struct SessionEventTests {
                 }
             )
         }
-        #expect(await first.snapshot() == second.snapshot())
+        // Compared up to registration rather than wholesale: the feed is still running,
+        // so the two snapshots are taken at different instants and the later one can hold
+        // an extra 005. What the multicast promises is that both consumers see the *same
+        // events in the same order*, which is what this asserts.
+        #expect(await eventsThroughRegistration(first) == eventsThroughRegistration(second))
 
         await session.disconnect()
         await server.stop()

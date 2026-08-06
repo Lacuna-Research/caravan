@@ -2,9 +2,12 @@ import SwiftUI
 
 /// The window: the buffer tree, and the selected buffer beside it.
 public struct RootView: View {
-    @State private var model = AppModel()
+    /// Owned by the app rather than by this view, so the menu bar can reach it too.
+    @Bindable private var model: AppModel
 
-    public init() {}
+    public init(model: AppModel) {
+        self._model = Bindable(wrappedValue: model)
+    }
 
     public var body: some View {
         NavigationSplitView {
@@ -12,7 +15,15 @@ public struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 400)
         } detail: {
             detail
+                .navigationTitle(title)
+                .navigationSubtitle(subtitle)
         }
+        // Set once, read by every buffer, the tree, the nick list and the input box —
+        // one chat font, which is the requirement rather than a convenience.
+        .environment(
+            \.chatFont,
+            ChatFont.font(family: model.settings.fontFamily, size: model.settings.fontSize)
+        )
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 closeChannelButton
@@ -53,6 +64,18 @@ public struct RootView: View {
         }
     }
 
+    /// The title names the buffer you are in; the subtitle names the network it belongs
+    /// to — the same "always say which network" rule the tree follows, since `#music` on
+    /// two networks are different rooms.
+    private var title: String {
+        model.selectedChannel?.name.raw ?? model.connection?.displayName ?? "Caravan"
+    }
+
+    private var subtitle: String {
+        guard let connection = model.connection else { return "" }
+        return model.selectedChannel == nil ? connection.statusSummary : connection.displayName
+    }
+
     /// ⌘W closes the selected *channel*, which parts it — membership never outlives its
     /// buffer.
     ///
@@ -74,36 +97,63 @@ struct StatusBufferView: View {
     let model: AppModel
     let connection: ConnectionViewModel
 
+    @Environment(\.chatFont) private var chatFont
+    @State private var isMOTDExpanded = false
+
     var body: some View {
         VStack(spacing: 0) {
+            header
+            Divider()
             ScrollbackView(log: connection.log)
             Divider()
             inputField
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            statusBar
-        }
     }
 
-    /// Connection state belongs on screen, not only in the console — including *why* a
-    /// connection dropped, which is the one thing a user wants when it does.
+    /// The status window's header band, showing the MOTD.
     ///
-    /// Prompt 10 replaces this with the status window's own header band, showing the
-    /// MOTD; the tree's network row already carries the same state as a dot.
-    private var statusBar: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(connection.isConnected ? Color.green : Color.secondary)
-                .frame(width: 8, height: 8)
-            Text(connection.statusSummary)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            Spacer()
+    /// The MOTD is long and multi-line, which makes the shrink behaviour load-bearing
+    /// here rather than an edge case — the band is never hidden and never closable, so it
+    /// has to be able to be small. Connection state rides in the trailing corner, because
+    /// the one thing a user wants when a connection drops is to know why.
+    private var header: some View {
+        HeaderBand(
+            content: connection.motd,
+            placeholder: connection.statusSummary,
+            isExpanded: $isMOTDExpanded
+        ) {
+            HStack(spacing: 8) {
+                rawTrafficToggle
+                Circle()
+                    .fill(connection.isConnected ? Color.green : Color.secondary)
+                    .frame(width: 8, height: 8)
+                    .help(connection.statusSummary)
+                    .accessibilityLabel(connection.statusSummary)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .font(chatFont)
+    }
+
+    /// Wire traffic, both directions, `>>` and `<<`.
+    ///
+    /// Turning it on starts appending from that moment rather than interleaving what came
+    /// before — mIRC's `/debug` behaviour, and prompt 11's `-i` flag is what reaches back
+    /// into the ring buffer for the history.
+    private var rawTrafficToggle: some View {
+        Button {
+            model.settings.showsRawTraffic.toggle()
+        } label: {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+                .foregroundStyle(
+                    model.settings.showsRawTraffic ? Color.accentColor : Color.secondary
+                )
+        }
+        .buttonStyle(.plain)
+        .help(
+            model.settings.showsRawTraffic
+                ? "Stop showing raw wire traffic" : "Show raw wire traffic"
+        )
+        .accessibilityLabel("Raw wire traffic")
     }
 
     /// A status window has no target, so plain text has nowhere to go and says so.

@@ -17,6 +17,8 @@ import SwiftUI
 struct SidebarTree: View {
     @Bindable var model: AppModel
 
+    @Environment(\.chatFont) private var chatFont
+
     var body: some View {
         List(selection: $model.selection) {
             if let connection = model.connection {
@@ -37,7 +39,7 @@ struct SidebarTree: View {
             }
         }
         .listStyle(.sidebar)
-        .font(.system(.body, design: .monospaced))
+        .font(chatFont)
     }
 }
 

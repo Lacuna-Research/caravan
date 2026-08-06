@@ -50,6 +50,16 @@ public final class MessageLogController {
     /// more than this, so "one line off the bottom" reads as scrolled up.
     @ObservationIgnored private let pinTolerance: CGFloat = 4
 
+    /// The chat font. One font governs every buffer, so the owner sets this from the
+    /// settings and the controller only draws with it.
+    @ObservationIgnored public var chatFont: NSFont
+
+    /// Which line holds the unread rule, as an index into ``lineLengths``.
+    ///
+    /// An index rather than a character offset, because trimming from the top moves every
+    /// offset below it and an index only has to be decremented.
+    @ObservationIgnored private var unreadMarkerLine: Int?
+
     @ObservationIgnored private weak var textView: NSTextView?
     @ObservationIgnored private weak var scrollView: NSScrollView?
 
@@ -68,6 +78,7 @@ public final class MessageLogController {
     public init(lineCap: Int = 5000, coalesceInterval: Duration = .milliseconds(50)) {
         self.lineCap = lineCap
         self.coalesceInterval = coalesceInterval
+        self.chatFont = ChatFont.nsFont()
     }
 
     // MARK: - Appending
@@ -119,7 +130,7 @@ public final class MessageLogController {
             appendedLengths.append(attributed.length + 1)
         }
         pending.removeAll(keepingCapacity: true)
-        applyDefaultFont(to: batch)
+        applyChatAttributes(to: batch)
 
         // One editing transaction for the append *and* the trim, so layout and the
         // typesetter run once however many lines arrived.
@@ -137,15 +148,27 @@ public final class MessageLogController {
         }
     }
 
-    /// Fills in the monospaced default wherever a run has no font of its own.
+    /// Fills in the chat font and the grid rules wherever a run has no font of its own.
     ///
     /// `AttributedString` cannot carry an `NSFont` under Swift 6 — the type is not
-    /// `Sendable` — so the font is applied here, on the AppKit side. Only the gaps are
-    /// filled, so a run that *does* specify a font keeps it: prompt 10 will want bold and
+    /// `Sendable` — so this happens here, on the AppKit side. Only the gaps are filled, so
+    /// a run that *does* specify a font keeps it: stage 2's formatting codes want bold and
     /// italic runs, and blanket-setting the font over the batch would silently undo them.
-    private func applyDefaultFont(to batch: NSMutableAttributedString) {
-        let font = LineRenderer.font
+    ///
+    /// The paragraph style goes on unconditionally. It carries the rules that make a
+    /// monospaced grid stay a grid — no head indent, so wrapped lines run flush-left at
+    /// column 0 rather than hanging under the message column, and a clamped line height so
+    /// pasted Zalgo cannot blow one line to hundreds of points.
+    private func applyChatAttributes(to batch: NSMutableAttributedString) {
+        let font = chatFont
         let whole = NSRange(location: 0, length: batch.length)
+        batch.addAttributes(
+            [
+                .ligature: 0,
+                .paragraphStyle: ChatFont.paragraphStyle(for: font),
+            ],
+            range: whole
+        )
         batch.enumerateAttribute(.font, in: whole) { existing, range, _ in
             guard existing == nil else { return }
             batch.addAttribute(.font, value: font, range: range)
@@ -166,6 +189,64 @@ public final class MessageLogController {
         textStorage.deleteCharacters(in: NSRange(location: 0, length: charactersToRemove))
         lineLengths.removeFirst(excess)
         lineCount = lineLengths.count
+        // The rule is tracked by line index, so a trim shifts it — and a rule old enough
+        // to be trimmed away is gone rather than dangling at some other line's position.
+        if let index = unreadMarkerLine {
+            unreadMarkerLine = index >= excess ? index - excess : nil
+        }
+    }
+
+    // MARK: - The unread marker
+
+    /// Whether a rule is currently drawn. For tests, and for deciding whether to redraw.
+    public var hasUnreadMarker: Bool { unreadMarkerLine != nil }
+
+    /// Draws the unread rule at the end of the buffer, moving any existing one.
+    ///
+    /// Called when a buffer is *left*, which is what makes the rule mean "everything above
+    /// this you have seen". It persists while you are away and while you are reading —
+    /// not cleared the instant it scrolls into view, which would defeat the point — and
+    /// moves only the next time you leave.
+    public func markUnreadPosition(with rule: AttributedString) {
+        flush()
+        guard let textView, let textStorage = textView.textStorage else { return }
+
+        let wasPinned = isPinnedToBottom
+        textStorage.beginEditing()
+        removeUnreadMarker(from: textStorage)
+
+        let attributed = NSMutableAttributedString(attributedString: NSAttributedString(rule))
+        attributed.append(Self.newline)
+        let whole = NSRange(location: 0, length: attributed.length)
+        attributed.addAttributes(
+            [
+                .font: chatFont,
+                .ligature: 0,
+                // Clipping, not wrapping: the rule is deliberately longer than any window
+                // so it always spans the width, and a wrapped rule would be two rules.
+                .paragraphStyle: ChatFont.clippingParagraphStyle(for: chatFont),
+            ],
+            range: whole
+        )
+        textStorage.append(attributed)
+        lineLengths.append(attributed.length)
+        lineCount = lineLengths.count
+        unreadMarkerLine = lineLengths.count - 1
+        textStorage.endEditing()
+
+        if wasPinned { scrollToBottom() }
+    }
+
+    private func removeUnreadMarker(from textStorage: NSTextStorage) {
+        guard let index = unreadMarkerLine, index < lineLengths.count else {
+            unreadMarkerLine = nil
+            return
+        }
+        let location = lineLengths.prefix(index).reduce(0, +)
+        textStorage.deleteCharacters(in: NSRange(location: location, length: lineLengths[index]))
+        lineLengths.remove(at: index)
+        lineCount = lineLengths.count
+        unreadMarkerLine = nil
     }
 
     /// Empties the view.
@@ -176,6 +257,7 @@ public final class MessageLogController {
         lineLengths.removeAll()
         lineCount = 0
         unseenLineCount = 0
+        unreadMarkerLine = nil
         textView?.textStorage?.setAttributedString(NSAttributedString())
     }
 

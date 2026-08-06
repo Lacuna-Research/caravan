@@ -2079,3 +2079,117 @@ a reason.
 Worth saying plainly, since it is the second time this project has learned it: the
 mechanical check found what review did not. The fixture was written, read and committed by
 someone who knew the rule it broke.
+
+## Prompt 10 — Status window, timestamps, and line rendering
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `CaravanUI` — `ChatFont`, `LineFormat`/`LineKind`/`LineColour`/`LineFormatTable`,
+a rewritten `LineRenderer`, `ChatSettings`, `DiagnosticsReport`, the unread rule in
+`MessageLogController`, local self-echo, the raw-traffic toggle, the status window's MOTD
+band, and window titles. `IRCSession` — `EventTranslator.unwrapAction` made public for the
+echo path. 329 tests across 36 suites; `make all` clean.
+
+**The font measurement, rerun before shipping the decision.** `Scripts/font-coverage.swift`
+at 13pt, unchanged from §15.1:
+
+| Font | cell | Box Drawing | Block Elements | Geometric | CP437 art set | Off-grid |
+|---|---|---|---|---|---|---|
+| **Menlo** | 7.827 | **100%** | **100%** | **100%** | **44/44** | **none** |
+| SF Mono (`monospacedSystemFont`) | 8.036 | 100% | 100% | 14% | 33/44 | none |
+| Andale Mono | 7.801 | 31% | 25% | 15% | 44/44 | none |
+| Monaco | 7.801 | 8% | 6% | 2% | 13/44 | 1 |
+
+Menlo it is. The eleven SF Mono is missing are `▬ ► ◄ ☺ ☻ ♠ ♣ ♥ ♦ ♪ ♫`, and
+`ChatFontTests` now asserts each of them has a glyph — the measurement turned into a
+regression test, because the failure it guards against is silent: swap the family and
+every one of those still renders, just up to 1.80× cell width.
+
+**Decisions:**
+- **One table holds the template *and* the colour.** `LineFormatTable` maps a `LineKind`
+  to a `$variable` template plus a colour role. Stage 3's Colors dialog and stage 2's
+  themes both reach for this, and a theme that could change the colour but not the wording
+  would have sent them looking for a second seam. No JavaScript on the render path — a JS
+  call per line cannot hit the ingest target, and the opt-in hook is stage 3's.
+- **`DateFormatter` patterns, not `strftime`.** The prompt says "strftime-style" but its
+  own default, `[HH:mm:ss]`, is written in ICU syntax — so ICU it is, and the brackets pass
+  through as literals. A deviation from the words, matching the example.
+- **The timestamp is dimmed by range, not by search.** `expand` reports where it landed.
+  Searching the rendered line for the time would find the wrong digits the first time
+  someone is called `12:00:00`.
+- **Colours are semantic roles, not RGB.** `.text`, `.dim`, `.event`, `.error` and so on
+  map to system colours, which adapt to light and dark without a table per appearance.
+  Stage 2's mIRC palette work adds the indexed colours beside them.
+- **The `own*` line kinds are the self-echo mark.** One enum case per shape rather than a
+  flag beside the kind: `isSelfEcho` is then a switch over kinds, and stage 2 suppressing
+  the duplicate when `echo-message` is negotiated is a filter rather than an excavation.
+- **The raw toggle streams from the moment it is turned on.** It does not retroactively
+  interleave what came before, and turning it off does not remove what was shown. mIRC's
+  `/debug` behaviour, and prompt 11's `-i` flag is what reaches back into the ring.
+- **Raw lines are redacted on the way to the screen.** The trace already redacts on
+  insert; the toggle renders `Redactor.redact` output for the same reason, so the raw view
+  cannot become the one place a `PASS` appears in plaintext. Verified live.
+- **The unread rule is 400 `─` drawn with a clipping paragraph style.** Measuring the
+  window instead would be wrong the moment it was resized; clipping makes an over-long
+  rule span whatever width there is. Tracked by *line index* rather than character offset,
+  because trimming from the top moves every offset below it.
+- **`AppModel` moved into `CaravanApp`.** A `@State` inside a view does not reach
+  `.commands`, and "Copy Diagnostics" is a menu item. `RootView` takes the model now.
+- **`ChatSettings` persists to `UserDefaults`, injectably.** The same stopgap shape the
+  Connect sheet uses; prompt 11 moves both to the plain-text config. Injectable because
+  the first version of the new tests wrote into the preferences of whoever ran them.
+
+**Learned:**
+- **A bare `foregroundColor` on an `AttributedString` run resolves to SwiftUI's `Color`**
+  when both attribute scopes are imported. `run.appKit.foregroundColor` is the one that
+  compares against an `NSColor`.
+- **`osascript keystroke` mangles non-ASCII.** The first attempt to type CP437 art into
+  the running app produced a row of `a`s, which looked exactly like a font failure. Pasting
+  through the clipboard is the way to get art into a GUI under automation.
+- **`DerivedData` is keyed on the project path**, so every worktree gets its own. Prompt
+  9's entry says this; it cost time again here before the lesson took. `xcodebuild
+  -showBuildSettings | grep BUILT_PRODUCTS_DIR` is the answer, and it is now the first
+  thing to run before any live check.
+
+**Live acceptance, against Libera over TLS:** connected; joined two channels; held a
+conversation in both; sent an action; sent a PM and received one (self-addressed, so it
+arrives twice — once as the local echo and once as the server's delivery, which is correct
+for that case and not for any other); used `/whois` through the raw passthrough; pasted a
+CP437 art line and watched every glyph render with `!=` and `->` unligatured; turned on the
+raw toggle and saw `>>`/`<<` in both directions with `PASS <redacted>`; copied diagnostics
+to the clipboard and confirmed no plaintext credential; `/quit` and `/connect` cleanly,
+with both channel buffers surviving greyed and the unread rule sitting exactly where the
+buffer had been left. Not covered live: watching another person join and quit, which needs
+a second party — the rendering is unit-tested and prompt 8's run exercised the events.
+
+**Carry-forward:** consumed all seven notes on this prompt. Prompt 7's three (the
+`LineKind` table is the seam; `.raw` renders nothing until the toggle exists; a font cannot
+go into an `AttributedString`) shaped the whole design. Prompt 7.5's — the SF Mono call
+sites, including the four `.system(.body, design: .monospaced)` modifiers prompt 8 added —
+is now zero call sites: `grep` for that modifier returns nothing, and the chat font travels
+by environment value. Prompt 8's two and prompt 9's two were each acted on as written; the
+`>>` echo is gone from the buffer and lives only behind the toggle, and the input box's
+six-line measurement still measures six in Menlo. Raised: three notes on prompt 11.
+
+## Correction — two flaky tests, one mistake
+
+**Date:** 2026-08-05
+
+Both found while landing prompt 10, and both the same error: **comparing a snapshot of a
+live stream against something that is still moving.**
+
+One was new. `StatusWindowTests` asserted that `/who` left the status window *unchanged*,
+to prove that only messages are echoed locally. The window does change — `WHO`'s numeric
+replies land in it — and the test only passed on a machine slow enough that they had not
+arrived yet. CI is not that machine. It now asserts the property it meant: no line
+attributed to us, contrasted in the same test with a `/msg` that does produce one.
+
+The other was prompt 6's, and had been latent since. `SessionEventTests` compared two
+consumers' whole event logs after waiting for `.registered` to appear in each — but the
+feed keeps running between the two `snapshot()` calls, so the second can hold an extra
+005. It now compares the events up to and including registration, which is what the
+multicast actually promises: every consumer sees the same events in the same order.
+
+The general rule, since this is twice now: **wait on the thing being asserted, and assert
+a property rather than an equality against a moving target.** A test that says "nothing
+else happened" about a live connection is a test that will fail on someone else's machine.

@@ -282,6 +282,81 @@ struct MessageLogControllerTests {
         #expect(controller.lineCount <= 100)
     }
 
+    // MARK: - The unread rule
+
+    private func rule() -> AttributedString { LineRenderer().unreadRule() }
+
+    /// The rule means "everything above this you have seen", which is why it is drawn on
+    /// the way *out* of a buffer rather than on the way in.
+    @Test("the rule lands at the end and stays put while lines keep arriving")
+    func unreadMarker() {
+        let harness = makeHarness()
+        harness.controller.append(lines(3))
+        harness.controller.flush()
+
+        harness.controller.markUnreadPosition(with: rule())
+        #expect(harness.controller.hasUnreadMarker)
+        #expect(harness.controller.lineCount == 4)
+        #expect(text(of: harness.textView).contains("─"))
+
+        // Lines arriving afterwards go below it: it marks a position, not the end.
+        harness.controller.append(lines(2, prefix: "later"))
+        harness.controller.flush()
+        let rendered = text(of: harness.textView)
+        let ruleOffset = try? #require(rendered.range(of: "─")).lowerBound
+        let laterOffset = rendered.range(of: "later 0")?.lowerBound
+        #expect(ruleOffset != nil && laterOffset != nil)
+        if let ruleOffset, let laterOffset { #expect(ruleOffset < laterOffset) }
+    }
+
+    /// Leaving again moves it. One rule, always — not one per visit.
+    @Test("marking again moves the rule rather than adding a second")
+    func unreadMarkerMoves() {
+        let harness = makeHarness()
+        harness.controller.append(lines(2))
+        harness.controller.flush()
+        harness.controller.markUnreadPosition(with: rule())
+        harness.controller.append(lines(2, prefix: "later"))
+        harness.controller.flush()
+        harness.controller.markUnreadPosition(with: rule())
+
+        let ruleLines = text(of: harness.textView)
+            .split(separator: "\n")
+            .filter { $0.allSatisfy { $0 == "─" } }
+        #expect(ruleLines.count == 1)
+        #expect(harness.controller.lineCount == 5)
+    }
+
+    /// The rule is tracked by line index, so trimming from the top has to move it — and a
+    /// rule old enough to be trimmed away is gone rather than dangling somewhere else.
+    @Test("trimming moves the rule, and drops it once it falls off the top")
+    func unreadMarkerSurvivesTrimming() {
+        let harness = makeHarness(lineCap: 100)
+        harness.controller.append(lines(10))
+        harness.controller.flush()
+        harness.controller.markUnreadPosition(with: rule())
+        harness.controller.append(lines(50, prefix: "after"))
+        harness.controller.flush()
+        #expect(harness.controller.hasUnreadMarker)
+        #expect(text(of: harness.textView).contains("─"))
+
+        // Enough to push the rule off the top entirely.
+        harness.controller.append(lines(500, prefix: "flood"))
+        harness.controller.flush()
+        #expect(!harness.controller.hasUnreadMarker)
+        #expect(!text(of: harness.textView).contains("─"))
+    }
+
+    @Test("clearing forgets the rule")
+    func clearForgetsTheMarker() {
+        let harness = makeHarness()
+        harness.controller.append(lines(2))
+        harness.controller.flush()
+        harness.controller.markUnreadPosition(with: rule())
+        harness.controller.clear()
+        #expect(!harness.controller.hasUnreadMarker)
+    }
+
     /// Text storage edits are what a flush is measured in.
     private final class EditCounter: NSObject, NSTextStorageDelegate {
         private(set) nonisolated(unsafe) var edits = 0

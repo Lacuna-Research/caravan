@@ -16,12 +16,14 @@ struct InputBar: View {
     let placeholder: String
     let submit: (String) async -> Void
 
+    @Environment(\.chatFont) private var chatFont
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             if state.text.isEmpty {
                 Text(placeholder)
                     .foregroundStyle(.tertiary)
-                    .font(.system(.body, design: .monospaced))
+                    .font(chatFont)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .allowsHitTesting(false)
