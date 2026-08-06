@@ -81,7 +81,11 @@ else
 		err "README progress badge disagrees with the status line; expected to contain '$badge'"
 	fi
 
-	done_rows=$(grep -cE '^\| *[0-9]+ *\|.*\| *✅ done *\|' README.md || true)
+	# Counted *within the stage 1 section*, not across the whole file: there are two
+	# progress tables now, and an unscoped count would break stage 1's check the moment
+	# a stage 2 prompt landed.
+	done_rows=$(awk '/^### Stage 1/,/^## Roadmap/' README.md |
+		grep -cE '^\| *[0-9]+ *\|.*\| *✅ done *\|' || true)
 	if [ "$done_rows" -eq "$completed" ]; then
 		ok "README progress table matches ($done_rows done)"
 	else
@@ -110,6 +114,21 @@ if [ -z "$stage2" ]; then
 	err "STAGE2-PROMPTS.md needs a line of exactly the form: **Status:** N/$STAGE2_TOTAL_PROMPTS complete. Next: prompt M."
 else
 	ok "STAGE2-PROMPTS.md status $stage2/$STAGE2_TOTAL_PROMPTS"
+
+	badge2="stage%202-${stage2}%2F${STAGE2_TOTAL_PROMPTS}"
+	if grep -qF "$badge2" README.md; then
+		ok "README stage 2 badge matches ($stage2/$STAGE2_TOTAL_PROMPTS)"
+	else
+		err "README stage 2 badge disagrees with the status line; expected '$badge2'"
+	fi
+
+	stage2_rows=$(awk '/^### Stage 2/,/^### Stage 1/' README.md |
+		grep -cE '^\| *[0-9]+ *\|.*\| *✅ done *\|' || true)
+	if [ "$stage2_rows" -eq "$stage2" ]; then
+		ok "README stage 2 table matches ($stage2_rows done)"
+	else
+		err "README stage 2 table shows $stage2_rows done, status line says $stage2"
+	fi
 
 	stale2=$(awk -v done="$stage2" '
 		/^## Prompt [0-9]+ / { n = $3 + 0; next }

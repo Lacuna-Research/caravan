@@ -21,7 +21,8 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
-[![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
+[![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-2ea44f)](STAGE1-PROMPTS.md)
+[![stage 2: 0/17](https://img.shields.io/badge/stage%202-0%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
 
 </div>
 
@@ -140,7 +141,40 @@ comment in a file.
 
 ## Progress
 
-Stage 1 is eleven prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authoritative.
+### Stage 2 — a mIRC daily driver
+
+Seventeen prompts. [`STAGE2-PROMPTS.md`](STAGE2-PROMPTS.md) is authoritative; every
+roadmap item below is attached to one of them.
+
+| # | Prompt | Status |
+|---|--------|--------|
+| 1 | Formatting codes: rendering | ⬜ in flight |
+| 2 | The input field grows up | ⬜ |
+| 3 | Capabilities and authentication | ⬜ |
+| 4 | Multi-network, and the bouncer | ⬜ |
+| 5 | Queries and CTCP | ⬜ |
+| 6 | Activity and navigation at scale | ⬜ |
+| 7 | Windows and chrome | ⬜ |
+| 8 | Commands and modes | ⬜ |
+| 9 | Things you can do to what is in the buffer | ⬜ |
+| 10 | Options | ⬜ |
+| 11 | The Dashboard and the server list | ⬜ |
+| 12 | Logging | ⬜ |
+| 13 | What deserves attention, and what deserves none | ⬜ |
+| 14 | Presence | ⬜ |
+| 15 | Channel list | ⬜ |
+| 16 | Flood protection | ⬜ |
+| 17 | Buffer utilities | ⬜ |
+
+**Stage 2 is done when** you would use this instead of your current client.
+
+### Stage 1 — connect, join, chat · complete
+
+You can idle in a channel on Libera and hold a conversation.
+[`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is the finished queue, kept for the record.
+
+<details>
+<summary>Eleven prompts, all landed</summary>
 
 | # | Prompt | Status |
 |---|--------|--------|
@@ -156,7 +190,7 @@ Stage 1 is eleven prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authorita
 | 10 | Status window, timestamps, line rendering | ✅ done |
 | 11 | Debug & Settings canvas | ✅ done |
 
-**Stage 1 is done when** you can idle in a channel on Libera and hold a conversation.
+</details>
 
 ## Roadmap
 
