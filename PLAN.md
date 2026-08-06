@@ -64,6 +64,20 @@ decision entry.
   answers `904` for a reason that clears — services being down, say. Nothing observed so
   far; the answer would be a narrow "retry once, with the ordinary backoff, only for a
   server that was previously authenticating".
+- **Should a terminal disconnect reason render in red rather than teal?** *(not blocking)*
+  Seen in prompt 3's acceptance run: `*** Authentication failed: SASL authentication failed`
+  draws in `.event` teal, the same colour as `*** Connecting...`, because
+  `LineRenderer.describe` maps every `.stateChanged` to `.status`. Pre-existing — every
+  disconnect reason has always read this way — but the two reasons that are now terminal and
+  need the user to *do* something, `.authenticationFailed` and `.trustRefused`, are the ones
+  it reads wrongest for. Changing it means deciding whether *all* disconnects go red or only
+  the terminal ones, which is a themes question and probably prompt 10's.
+- **The Connect sheet scrolls in its tallest case.** *(not blocking)* At the fixed 460×620,
+  choosing SASL EXTERNAL pushes the "the certificate has to be in your login keychain
+  already" paragraph below the fold — so the guidance is there but only if you scroll, which
+  is the one case where a user most needs it. Prompt 11 retires `ConnectSheet` for the
+  Dashboard's server list, so this may not be worth fixing in place; if it is, the sheet
+  wants about 60pt more height.
 - **Where does a live GUI acceptance run happen when the machine is locked?**
   *(not blocking, but it will recur)* Prompt 3 could confirm nothing on screen:
   `screencapture` returns black and `System Events` reports zero windows for a running app
