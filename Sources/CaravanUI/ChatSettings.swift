@@ -25,6 +25,14 @@ public final class ChatSettings {
 
         public static let nickListWidth = 180.0
         public static let nickListVisible = true
+
+        /// Auto, per §5: the toggle is explicit, but its default defers to the system
+        /// rather than making a first-run user find it.
+        public static let paletteMode = Palette.Mode.auto
+
+        /// On, per §6. mIRC did not colour nicks; every client since has, and a channel
+        /// of twenty people is much harder to read without it.
+        public static let coloursNicks = true
     }
 
     /// The range the form offers, and the range a hand-edited file is clamped to.
@@ -46,6 +54,22 @@ public final class ChatSettings {
         public static let scrollbackLines = "chat.scrollback-lines"
         public static let nickListWidth = "ui.nick-list-width"
         public static let nickListVisible = "ui.nick-list-visible"
+        public static let paletteMode = "chat.palette"
+        public static let coloursNicks = "chat.colour-nicks"
+    }
+
+    /// Which of the two base palettes mIRC's colour indices read, per §5.
+    ///
+    /// `auto` is not resolved here. The mode travels to the scrollback's `NSAppearance`
+    /// and the colours resolve themselves against it, so this never has to ask what the
+    /// system is doing — and never has to be told when the user changes it at sunset.
+    public var paletteMode: Palette.Mode {
+        didSet { config.set(paletteMode.rawValue, forKey: Key.paletteMode) }
+    }
+
+    /// Whether nicks are coloured by hash (§6).
+    public var coloursNicks: Bool {
+        didSet { config.set(coloursNicks, forKey: Key.coloursNicks) }
     }
 
     /// The nick list's width and whether it is showing.
@@ -139,11 +163,22 @@ public final class ChatSettings {
             config.double(Key.nickListWidth) ?? Default.nickListWidth
         )
         self.isNickListVisible = config.bool(Key.nickListVisible) ?? Default.nickListVisible
+        // An unknown value takes the default rather than refusing to launch: this file is
+        // hand-edited, and `chat.palette = darkk` should cost you the setting, not the app.
+        self.paletteMode =
+            config.string(Key.paletteMode).flatMap(Palette.Mode.init(rawValue:))
+            ?? Default.paletteMode
+        self.coloursNicks = config.bool(Key.coloursNicks) ?? Default.coloursNicks
+    }
+
+    /// The colours configured here, as the buffers and the renderer want them.
+    public var palette: Palette {
+        Palette(mode: paletteMode, coloursNicks: coloursNicks)
     }
 
     /// A renderer configured from these settings.
     public var renderer: LineRenderer {
-        LineRenderer(table: .mIRC, timestampFormat: timestampFormat)
+        LineRenderer(table: .mIRC, timestampFormat: timestampFormat, palette: palette)
     }
 }
 

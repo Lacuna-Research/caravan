@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 0/17 complete. Next: prompt 1.
+**Status:** 1/17 complete. Next: prompt 2.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -70,15 +70,9 @@ Do not: the input box. Writing codes is prompt 2 — reading and writing share o
 code table, and a client that writes codes it cannot read is the wrong way round.
 ```
 
-**Status:** in flight on branch `item-mirc-formatting-codes` — the module, the render path
-and the palettes are done and green; the settings-form rows, the `ChatSettings`
-persistence for palette mode and nick colouring, and the live run are outstanding. See the
-`BUILD-LOG.md` entry "Stage 2, formatting codes — rendering" for what is deferred and why.
-
-That branch also carries the `PLAN.md` edit splitting the single formatting-codes item
-into a rendering item and an authoring one, which is why `PLAN.md` on `main` still shows
-one. Deliberately not duplicated here: two branches editing the same paragraph is a merge
-conflict for no gain, and the split lands when that branch does.
+**Status:** complete. Per-index and per-nick overrides ship without UI — `Palette` carries
+both and both are tested, but a 99-swatch grid belongs in stage 3's Colors dialog rather
+than bolted onto a settings list. Recorded on that `PLAN.md` item.
 
 ---
 
@@ -118,6 +112,19 @@ anything that requires a network round trip.
 - From prompt 1: `IRCFormatting` names every control character and `InlineStyle` models
   every switch, so authoring is inserting characters the parser already round-trips.
   `IRCFormatting.parse` on the input box's own text gives the preview for free.
+- From prompt 1, and this cost the whole item once: **styling dies silently at the
+  crossing into an `NSTextView`, in two different ways.** `NSAttributedString(_:including:)`
+  carries the named scope and nothing else — `AttributeScopes.CaravanAttributes` now nests
+  `AppKitAttributes` for exactly this reason — and a bare `.single` on `underlineStyle` or
+  `strikethroughStyle` resolves to SwiftUI's `Text.LineStyle`, which has no
+  `NSAttributedString` key at all. `LineRenderer.singleLine` is the typed constant that
+  avoids the second. The input box's preview draws through an `NSTextView` too, so assert
+  the *storage* rather than the `AttributedString`: `stylingReachesTheTextView` in
+  `InlineFormattingTests` is the shape to copy.
+- From prompt 1: the colour strip's swatches should come from `MIRCPalette` through
+  `Palette.colours`, not a second table. Note they may be appearance-resolving `NSColor`s,
+  so a swatch compares equal to a plain colour only after resolving — `drawn(_:in:)` in
+  `InlineFormattingTests` is the helper for that.
 
 ---
 
@@ -333,6 +340,16 @@ straight through to `caravan.conf` with no Apply button and nothing to cancel, a
 file survives being hand-edited. Display carries the density and zoom model from §15.5.
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 1: the Colours tab already has rows to absorb — a Palette segmented control
+  and a "Colour nicknames" toggle, in `SettingsDebugCanvas`'s `SettingsPane`, backed by
+  `ChatSettings.paletteMode` and `.coloursNicks`. What it does *not* have is the per-index
+  and per-nick override UI §5 and §6 ask for; `Palette.overrides` and `.nickOverrides` are
+  carried and tested but nothing writes them, and `ChatSettings` does not persist them.
+  Whether that grid lands here or waits for stage 3's Colors dialog is this prompt's call —
+  the stage 3 item records the persistence question either way.
 
 ---
 

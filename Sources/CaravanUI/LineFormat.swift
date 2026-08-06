@@ -72,7 +72,9 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
 /// Semantic rather than RGB so the system's own colours can adapt to light and dark
 /// without a table per appearance. Stage 3's Colors dialog makes these user-editable;
 /// stage 2's palette work adds the mIRC colour indices beside them.
-public enum LineColour: Sendable, Hashable {
+/// The raw values name the role on the wire between the renderer and the buffer — a
+/// ``NickColumn`` carries one so the nick can be put back in its line's colour.
+public enum LineColour: String, Sendable, Hashable {
     case text
     case ownText
     case dim

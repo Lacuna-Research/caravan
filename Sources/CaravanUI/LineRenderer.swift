@@ -91,7 +91,12 @@ public struct LineRenderer: Sendable {
     @MainActor
     public func line(for event: IRCEvent, context: RenderContext) -> AttributedString? {
         guard let (kind, fields) = describe(event, context: context) else { return nil }
-        return render(kind: kind, fields: fields, now: context.now)
+        return render(
+            kind: kind,
+            fields: fields,
+            now: context.now,
+            senderPrefix: context.senderPrefix
+        )
     }
 
     // MARK: - Event to fields
@@ -206,7 +211,12 @@ public struct LineRenderer: Sendable {
     // MARK: - Rendering
 
     @MainActor
-    private func render(kind: LineKind, fields: LineFields, now: Date) -> AttributedString {
+    private func render(
+        kind: LineKind,
+        fields: LineFields,
+        now: Date,
+        senderPrefix: Character? = nil
+    ) -> AttributedString {
         var fields = fields
         fields.timestamp = formattedTimestamp(now)
 
@@ -235,10 +245,15 @@ public struct LineRenderer: Sendable {
         // *column* — an event line names people mid-sentence, and colouring those turns a
         // join into a ransom note.
         if kind.hasNickColumn, !fields.nick.isEmpty,
-            let colour = palette.colour(forNick: fields.nick),
             let range = attributedRange(expansion["nick"], in: attributed, text: text)
         {
-            attributed[range].foregroundColor = colour
+            let nick = Self.undecorated(fields.nick, prefix: senderPrefix)
+            // Recorded whether or not it is coloured right now, so turning the setting on
+            // or off reaches the buffer rather than only the next line to arrive.
+            attributed[range].nickColumn = NickColumn(nick: nick, base: format.colour)
+            if let colour = palette.colour(forNick: nick) {
+                attributed[range].foregroundColor = colour
+            }
         }
 
         if !formatted.isPlain, let textRange = expansion["text"] {
@@ -288,14 +303,21 @@ public struct LineRenderer: Sendable {
 
             if let foreground { attributed[range].foregroundColor = foreground }
             if let background { attributed[range].backgroundColor = background }
-            if style.isUnderlined { attributed[range].underlineStyle = .single }
-            if style.isStruckThrough { attributed[range].strikethroughStyle = .single }
+            if style.isUnderlined { attributed[range].underlineStyle = Self.singleLine }
+            if style.isStruckThrough { attributed[range].strikethroughStyle = Self.singleLine }
             // Bold, italic and monospace are traits of the *font*, and a font cannot go
             // into an `AttributedString` under Swift 6. They travel as an attribute
             // `MessageLogController` reads when it fills in the chat font.
             attributed[range].inlineTraits = InlineTraits(style: style)
         }
     }
+
+    /// **Typed, not a bare `.single`.** `underlineStyle` and `strikethroughStyle` exist in
+    /// both the AppKit and the SwiftUI attribute scopes, and a bare `.single` picks
+    /// SwiftUI's `Text.LineStyle` — which `NSAttributedString` has no key for and drops
+    /// on the way into the text storage. Naming the type picks AppKit's, which is the one
+    /// the text view can actually draw.
+    private static let singleLine: NSUnderlineStyle = .single
 
     /// The `AttributedString` range matching a `String` range, or `nil` if it does not
     /// convert — which it will not for an index inside a grapheme cluster.
@@ -334,6 +356,19 @@ public struct LineRenderer: Sendable {
         let nick = source.nick ?? source.wireForm
         guard let prefix = context.senderPrefix else { return nick }
         return "\(prefix)\(nick)"
+    }
+
+    /// `@bob` back to `bob`, given the prefix the caller decorated it with.
+    ///
+    /// The nick column shows the prefix the sender holds here, but the colour hash is
+    /// seeded on the name alone (§6) — so hashing the decorated form would give the same
+    /// person one colour in a channel where he is opped and another where he is not.
+    /// Undecorated with the character the caller actually used rather than by stripping
+    /// a guessed class of punctuation: a server declares its own `PREFIX`, and the
+    /// resolved one is already in hand.
+    static func undecorated(_ nick: String, prefix: Character?) -> String {
+        guard let prefix, nick.first == prefix else { return nick }
+        return String(nick.dropFirst())
     }
 
     private func isOwn(_ nick: String?, context: RenderContext) -> Bool {

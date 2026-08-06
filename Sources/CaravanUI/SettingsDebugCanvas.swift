@@ -68,6 +68,35 @@ private struct SettingsPane: View {
                 .foregroundStyle(.secondary)
             }
 
+            Section("Colours") {
+                Picker("Palette", selection: $settings.paletteMode) {
+                    ForEach(Palette.Mode.allCases, id: \.self) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: settings.paletteMode) { model.applySettings() }
+                Text(
+                    "Which of the two 16-colour tables a sender's colour codes read. The "
+                        + "dark one is a full alternate palette, not white and black "
+                        + "swapped — the other fourteen are tuned for a white background "
+                        + "too. Auto follows the system."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                Toggle("Colour nicknames", isOn: $settings.coloursNicks)
+                    .onChange(of: settings.coloursNicks) { model.applySettings() }
+                Text(
+                    "A colour per nickname, from the name alone — so somebody looks the "
+                        + "same on every network you reach them on. Only where there is a "
+                        + "nickname column: names inside a join or a quit stay the "
+                        + "line's colour."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             Section("Messages") {
                 TextField("Timestamp format", text: $settings.timestampFormat)
                 LabeledContent("Preview") {

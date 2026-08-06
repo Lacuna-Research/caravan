@@ -48,7 +48,10 @@ public final class DebugController {
     public init(trace: TraceBuffer, settings: ChatSettings) {
         self.trace = trace
         self.settings = settings
-        self.log = MessageLogController(lineCap: settings.scrollbackLines)
+        self.log = MessageLogController(
+            lineCap: settings.scrollbackLines,
+            palette: settings.palette
+        )
         self.log.chatFont = ChatFont.nsFont(
             family: settings.fontFamily,
             size: settings.fontSize
@@ -144,6 +147,7 @@ public final class DebugController {
     public func applySettings() {
         log.lineCap = settings.scrollbackLines
         log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        log.palette = settings.palette
     }
 
     /// Empties the canvas view. The ring buffer is untouched — `/debug -i` can still

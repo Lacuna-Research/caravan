@@ -24,6 +24,26 @@ struct InlineFormattingTests {
         line.runs.first { String(line[$0.range].characters) == fragment }?.appKit.foregroundColor
     }
 
+    /// What `colour` actually draws under an appearance.
+    ///
+    /// A colour that differs between the two tables resolves itself at draw time — that is
+    /// what lets the palette toggle repaint text already on screen — so comparing the
+    /// object against a plain colour compares two different kinds of thing. This asks it
+    /// what it draws.
+    private func drawn(_ colour: NSColor?, in appearance: NSAppearance.Name) -> NSColor? {
+        guard let colour else { return nil }
+        var resolved: NSColor?
+        NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+            resolved = colour.usingColorSpace(.sRGB)
+        }
+        return resolved
+    }
+
+    /// The same treatment for the expected side, so both are compared in one colour space.
+    private func swatch(_ colour: RGB) -> NSColor? {
+        Palette.nsColor(colour).usingColorSpace(.sRGB)
+    }
+
     private func message(from nick: String, _ text: String) -> IRCEvent {
         .message(
             target: .channel(IRCChannelName("#swift", mapping: .ascii)),
@@ -55,11 +75,11 @@ struct InlineFormattingTests {
                 context: RenderContext()
             )
         )
-        let red = Palette.nsColor(MIRCPalette.dark[4])
         let colours = line.runs.map {
             (String(line[$0.range].characters), $0.appKit.foregroundColor)
         }
-        #expect(colours.contains { $0.0 == "red" && $0.1 == red })
+        let red = colours.first { $0.0 == "red" }?.1
+        #expect(drawn(red, in: .darkAqua) == swatch(MIRCPalette.dark[4]))
         #expect(colours.contains { $0.0.contains("plain") && $0.1 != red })
     }
 
@@ -107,6 +127,51 @@ struct InlineFormattingTests {
         #expect(plain?.fontDescriptor.symbolicTraits.contains(.bold) == false)
     }
 
+    /// **The crossing into the text storage is where styling silently dies**, and it does
+    /// so without an error, a warning or a failing test that merely checks the renderer's
+    /// output. Two separate ways were found here at once: naming an attribute scope in the
+    /// conversion drops every scope not named, and a bare `.single` writes SwiftUI's
+    /// underline rather than AppKit's, which has no `NSAttributedString` key at all. So
+    /// this asserts the *storage*, attribute by attribute, rather than the line.
+    @Test("every kind of styling survives the crossing into the text view")
+    func stylingReachesTheTextView() throws {
+        let controller = MessageLogController(
+            coalesceInterval: .milliseconds(1),
+            palette: Palette(coloursNicks: true)
+        )
+        let textView = try #require(controller.displayView().documentView as? NSTextView)
+        controller.append([
+            renderer(palette: Palette(coloursNicks: true)).line(
+                for: message(
+                    from: "bob",
+                    "\u{03}4red\u{03} \u{1F}under\u{1F} \u{1E}struck\u{1E} https://example.com"
+                ),
+                context: RenderContext()
+            )!
+        ])
+        controller.flush()
+        let storage = try #require(textView.textStorage)
+
+        func attribute(_ key: NSAttributedString.Key, on fragment: String) throws -> Any? {
+            let at = try #require(offset(of: fragment, in: storage))
+            return storage.attribute(key, at: at, effectiveRange: nil)
+        }
+
+        #expect(
+            drawn(try attribute(.foregroundColor, on: "red") as? NSColor, in: .darkAqua)
+                == swatch(MIRCPalette.dark[4]),
+            "a colour code"
+        )
+        #expect(try attribute(.underlineStyle, on: "under") != nil, "an underline")
+        #expect(try attribute(.strikethroughStyle, on: "struck") != nil, "a strikethrough")
+        #expect(try attribute(.link, on: "https://example.com") != nil, "a link")
+        #expect(try attribute(.foregroundColor, on: "bob") != nil, "a nick colour")
+        #expect(try attribute(.nickColumn, on: "bob") != nil, "the nick column tag")
+        // And the line's own colour, which is the one that was there before this item and
+        // was being dropped along with the rest.
+        #expect(try attribute(.foregroundColor, on: "<") as? NSColor == LineColour.text.nsColor)
+    }
+
     /// The carry-forward this item was handed: a font change used to flatten every styled
     /// run in the buffer.
     @Test("changing the font keeps bold bold")
@@ -143,9 +208,20 @@ struct InlineFormattingTests {
         let second = try #require(
             renderer.line(for: message(from: "bob", "two"), context: RenderContext())
         )
-        let expected = NickColour.colour(for: "bob", appearance: .dark).map(Palette.nsColor)
-        #expect(colour(of: "bob", in: first) == expected)
-        #expect(colour(of: "bob", in: second) == expected)
+        let bob = colour(of: "bob", in: first)
+        #expect(
+            drawn(bob, in: .darkAqua)
+                == NickColour.colour(for: "bob", appearance: .dark).flatMap(swatch)
+        )
+        // The same hue in both appearances, at the lightness that background needs.
+        #expect(
+            drawn(bob, in: .aqua)
+                == NickColour.colour(for: "bob", appearance: .light).flatMap(swatch)
+        )
+        #expect(
+            drawn(colour(of: "bob", in: second), in: .darkAqua) == drawn(bob, in: .darkAqua),
+            "the same nick keeps its colour"
+        )
         // The angle brackets are the line's colour, not the nick's: only the name is
         // coloured, or the column stops reading as a column.
         #expect(colour(of: "<", in: first) == LineColour.text.nsColor)
@@ -157,8 +233,9 @@ struct InlineFormattingTests {
             renderer(palette: Palette(mode: .dark, coloursNicks: false))
                 .line(for: message(from: "bob", "hello"), context: RenderContext())
         )
-        // With colouring off the nick is not a run of its own at all: the whole line is
-        // one colour, which is the property worth asserting.
+        // The nick is still a run of its own — it carries the ``NickColumn`` that lets the
+        // setting be turned back on later — but it is not a *colour* of its own, and one
+        // colour across the whole line is the property worth asserting.
         #expect(
             Set(line.runs.compactMap { $0.appKit.foregroundColor }) == [LineColour.text.nsColor]
         )
@@ -181,6 +258,96 @@ struct InlineFormattingTests {
         #expect(colours == [LineColour.event.nsColor])
     }
 
+    /// A prefix is a fact about one channel; the colour is a fact about the person. Ops in
+    /// `#a` and not in `#b` must not be two different-coloured people.
+    @Test("the channel prefix is not part of what the colour is hashed on")
+    func prefixDoesNotChangeTheColour() throws {
+        let renderer = renderer(palette: Palette(coloursNicks: true))
+        let plain = try #require(
+            renderer.line(for: message(from: "bob", "hi"), context: RenderContext())
+        )
+        let opped = try #require(
+            renderer.line(
+                for: message(from: "bob", "hi"),
+                context: RenderContext(senderPrefix: "@")
+            )
+        )
+        #expect(String(opped.characters).contains("<@bob>"), "the prefix is still shown")
+        #expect(
+            drawn(colour(of: "@bob", in: opped), in: .darkAqua)
+                == drawn(colour(of: "bob", in: plain), in: .darkAqua)
+        )
+    }
+
+    /// Turning the setting off has to reach the buffer. One that applied only to the next
+    /// line to arrive would leave the scrollback in two conventions at once.
+    @Test("turning nick colouring off recolours lines already on screen")
+    func nickColouringReachesTheBuffer() throws {
+        let controller = MessageLogController(
+            coalesceInterval: .milliseconds(1),
+            palette: Palette(coloursNicks: true)
+        )
+        let textView = try #require(controller.displayView().documentView as? NSTextView)
+        controller.append([
+            renderer(palette: Palette(coloursNicks: true))
+                .line(for: message(from: "bob", "hello"), context: RenderContext())!
+        ])
+        controller.flush()
+
+        let storage = try #require(textView.textStorage)
+        let nick = try #require(offset(of: "bob", in: storage))
+        let coloured = storage.attribute(.foregroundColor, at: nick, effectiveRange: nil)
+        #expect(
+            drawn(coloured as? NSColor, in: .darkAqua)
+                != drawn(LineColour.text.nsColor, in: .darkAqua)
+        )
+
+        controller.palette = Palette(coloursNicks: false)
+        let plain = storage.attribute(.foregroundColor, at: nick, effectiveRange: nil)
+        #expect(plain as? NSColor == LineColour.text.nsColor, "back to the line's own colour")
+
+        controller.palette = Palette(coloursNicks: true)
+        let again = storage.attribute(.foregroundColor, at: nick, effectiveRange: nil)
+        #expect(
+            drawn(again as? NSColor, in: .darkAqua) == drawn(coloured as? NSColor, in: .darkAqua),
+            "and on again puts the same colour back"
+        )
+    }
+
+    /// The other half of the toggle, and the reason indexed colours resolve themselves:
+    /// pinning the mode pins the window, and every colour in it follows.
+    @Test("the palette mode pins the scrollback's appearance")
+    func modeReachesTheView() throws {
+        let controller = MessageLogController(coalesceInterval: .milliseconds(1))
+        let scrollView = controller.displayView()
+        #expect(scrollView.appearance == nil, "auto leaves it to the system")
+
+        controller.palette = Palette(mode: .dark)
+        #expect(scrollView.appearance?.name == .darkAqua)
+        controller.palette = Palette(mode: .light)
+        #expect(scrollView.appearance?.name == .aqua)
+    }
+
+    /// `|` is a legal nick character, and `bob|away` is a shape every network is full of.
+    @Test("a nick column round-trips, separator in the nick and all")
+    func nickColumnRoundTrips() throws {
+        for column in [
+            NickColumn(nick: "bob", base: .text),
+            NickColumn(nick: "bob|away", base: .ownText),
+            NickColumn(nick: "|", base: .notice),
+        ] {
+            #expect(NickColumn(encoded: column.encoded) == column)
+        }
+        #expect(NickColumn(encoded: "nosuchrole|bob") == nil)
+        #expect(NickColumn(encoded: "bob") == nil)
+    }
+
+    private func offset(of fragment: String, in storage: NSTextStorage) -> Int? {
+        storage.string.range(of: fragment).map {
+            storage.string.distance(from: storage.string.startIndex, to: $0.lowerBound)
+        }
+    }
+
     /// A manual override is the escape hatch §6 asks for.
     @Test("a per-nick override wins over the hash")
     func nickOverride() throws {
@@ -200,20 +367,29 @@ struct InlineFormattingTests {
 
     // MARK: - Palette resolution
 
-    @Test("the mode picks which base table an index reads")
-    func modePicksTheTable() {
-        let dark = Palette(mode: .dark).colours(foreground: .indexed(2), background: nil)
-        let light = Palette(mode: .light).colours(foreground: .indexed(2), background: nil)
-        #expect(dark.foreground == Palette.nsColor(MIRCPalette.dark[2]))
-        #expect(light.foreground == Palette.nsColor(MIRCPalette.light[2]))
+    /// The property the whole palette toggle rests on: one colour that answers differently
+    /// depending on what is drawing it, so switching the toggle repaints the scrollback
+    /// rather than only the next line to arrive.
+    @Test("an index reads both tables and lets the window pick")
+    func indexFollowsTheDrawingAppearance() {
+        let colour = Palette().colours(foreground: .indexed(2), background: nil).foreground
+        #expect(drawn(colour, in: .aqua) == swatch(MIRCPalette.light[2]))
+        #expect(drawn(colour, in: .darkAqua) == swatch(MIRCPalette.dark[2]))
     }
 
-    @Test("auto follows the appearance it is handed")
-    func autoFollowsTheSystem() {
-        let inDark = Palette(mode: .auto, systemAppearance: .dark)
-        let inLight = Palette(mode: .auto, systemAppearance: .light)
-        #expect(inDark.appearance == .dark)
-        #expect(inLight.appearance == .light)
+    /// And the other half: which appearance draws is what the mode decides.
+    @Test("the mode pins the window's appearance, and auto leaves it alone")
+    func modePinsTheAppearance() {
+        #expect(Palette.Mode.auto.nsAppearance == nil)
+        #expect(Palette.Mode.light.nsAppearance?.name == .aqua)
+        #expect(Palette.Mode.dark.nsAppearance?.name == .darkAqua)
+    }
+
+    /// The fixed 16–98 range is one table, not two, so it needs no resolving at all.
+    @Test("an extended index is the same colour in both appearances")
+    func extendedIndexIsPlain() {
+        let colour = Palette().colours(foreground: .indexed(40), background: nil).foreground
+        #expect(colour == Palette.nsColor(MIRCPalette.extended[40 - 16]))
     }
 
     @Test("a per-index override replaces the table entry")

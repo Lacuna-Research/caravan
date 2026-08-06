@@ -82,6 +82,15 @@ public enum InlineTraitsAttribute: ObjectiveCConvertibleAttributedStringKey {
 extension AttributeScopes {
     public struct CaravanAttributes: AttributeScope {
         public let inlineTraits: InlineTraitsAttribute
+        public let nickColumn: NickColumnAttribute
+
+        /// **Nested, and load-bearing.** `NSAttributedString(_:including:)` carries the
+        /// named scope and *only* the named scope, so a scope holding nothing but our two
+        /// attributes converts a fully styled line into an unstyled one — no colours, no
+        /// underlines, no links. The reason for naming a scope at all is that the default
+        /// conversion drops the custom attributes; naming ours has to bring AppKit's
+        /// along or it trades one silent loss for a much larger one.
+        public let appKit: AttributeScopes.AppKitAttributes
     }
 
     public var caravan: CaravanAttributes.Type { CaravanAttributes.self }
