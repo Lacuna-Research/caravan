@@ -326,6 +326,13 @@ them apart means writing `/ban` twice.
   nothing will fail if you forget; the command simply never gets offered.
   `everyKnownCommandParses` in `CommandParserTests` catches only the opposite mistake, a
   name listed that the switch no longer handles.
+- **Keep `CommandAction` describing *what was asked for*, not what the UI should do about
+  it.** This prompt roughly triples the table, so it is where the enum's shape sets. Two
+  later things read it as the client's whole vocabulary — stage 3's scripting `irc` object
+  and `PLAN.md` item 34a's control socket — and both want "join this channel", not "the
+  user typed something in a window". A case that reaches for the selection, a view model or
+  a sheet is one those two cannot use, and the divergence is invisible until the second
+  front end is built.
 
 ---
 
@@ -392,6 +399,18 @@ connect-on-startup, favourites. **Retires `ConnectSheet`**, which is shipped cod
 delete rather than a paper plan. Statistics stay deferred to stage 4.
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- **Give every server-list entry a stable, user-editable short name**, and treat it as an
+  identifier rather than a label. `PLAN.md` item 34a addresses buffers as `libera/#swift`
+  from the command line, and stage 3's scripting will name networks the same way, so this
+  is the thing they both hang off. Neither existing candidate serves: `ConnectionViewModel
+  .id` is a fresh `UUID` per launch, and `displayName` comes from `ISUPPORT NETWORK=`,
+  which the server owns and may change under you. Settle it here — renaming an identifier
+  after people have scripted against it is a breaking change with no good migration. It
+  wants a uniqueness check and a slug-shaped constraint (no `/`, since that is the
+  separator).
 
 ---
 

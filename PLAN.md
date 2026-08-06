@@ -58,6 +58,18 @@ approaching a thousand lines, so questions buried in it are questions nobody fin
 Delete an item from this list when it is answered, and record the answer as a
 decision entry.
 
+- **What is a network's stable, user-facing name?** *(blocking for item 34a, and answered in
+  stage 2)* Command-line control addresses buffers as `libera/#swift`, so `libera` has to
+  survive a relaunch and be the user's to choose. Neither existing candidate works:
+  `ConnectionViewModel.id` is a fresh `UUID` every launch, and `displayName` comes from
+  `ISUPPORT NETWORK=`, which the server owns and can change under you. The server list in
+  stage 2's Dashboard prompt is where a stable name belongs, and it has to be settled
+  *there* — renaming an identifier after people have scripted against it is a breaking
+  change with no good migration.
+- **Is the control socket always on, or opt-in?** *(not blocking)* Always-on is one more
+  thing listening, even at `0600`; opt-in is one more thing to discover was off after a
+  script has silently done nothing for a week. If it becomes a setting it belongs on the
+  Options canvas from stage 2's prompt 10. Decide when building item 34a.
 - **Does any network send `904` transiently?** *(not blocking)* Stage 2 prompt 3 decided
   that a refused SASL credential ends the attempt with no reconnect, on the grounds that a
   wrong password does not become right on retry. That is wrong if some ircd or bouncer ever
@@ -341,7 +353,9 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 
     *JavaScript layer, for everything else.*
     - Event handlers over the same `IRCEvent` stream the UI consumes
-    - A capability-scoped `irc` object: send, join, part, query client state, timers
+    - A capability-scoped `irc` object: send, join, part, query client state, timers.
+      **The same control API item 34a exposes over a socket** — one core, three front
+      ends, or the two vocabularies drift apart.
     - No ambient authority. A bare `JSContext` has no `require`, `process`, `fetch`,
       `XMLHttpRequest`, `WebSocket` or `localStorage` — verified, see `BUILD-LOG.md`.
       Filesystem and network access are injected deliberately or not at all, and are
@@ -356,6 +370,58 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     in the framework but is private API. Either declare the prototype and accept an
     unsupported dependency, or run scripts in an XPC helper that can be killed —
     heavier, but also a real OS sandbox. Decide when building this, not before.
+34a. **Command-line control.** A `caravan` binary that drives the running app over a
+    Unix-domain socket. `caravan message send libera/#swift "hello"`, `caravan network
+    list`, `caravan buffer tail libera/#swift`.
+
+    **Immediately after scripting because it is the same surface.** Item 34 promises "a
+    capability-scoped `irc` object: send, join, part, query client state"; a CLI needs
+    exactly that set. Designed twice they drift into two vocabularies and two sets of
+    bugs, so the deliverable is *one* control API with three front ends: `CommandParser`
+    (shipped), the JS `irc` object (34), and this. Whichever of 34 and 34a is built first
+    extracts the core; the second one is then mostly a front end.
+
+    - **Transport: a Unix-domain socket**, `$XDG_CACHE_HOME/caravan/control.sock`, `0600`
+      inside a `0700` directory. The app is deliberately unsandboxed (see the entitlements
+      file), so this needs none of the app-group and code-signing machinery XPC would.
+      Cache rather than a new `$XDG_STATE_HOME`: a socket is recreated on launch, so
+      deleting it is harmless, and it keeps the three-directory rule in `CLAUDE.md`
+      intact — that file is at its line cap.
+    - **Framing: newline-delimited JSON**, one object per line, request/response by `id`,
+      with `event` frames for subscriptions. Trivially testable headlessly, and
+      language-agnostic without shipping a client library.
+    - **Addressing is `network/target`** — `libera/#swift`, `libera/bob` — parsed at the
+      first `/`, with `--network` as the canonical long form. Omitting the network is
+      legal *only* when exactly one is open; otherwise it fails and lists the candidates.
+      **Never guess.** `#music` on two networks are different rooms is the rule the whole
+      tree is built on, and a CLI that guesses sends a stranger your message.
+    - **Nouns are the model's, not convenience groupings:** `network` (live) and `server`
+      (a saved server-list entry) are different things now that one bouncer is one server
+      and many networks. `buffer` covers channels, queries and status. Verbs follow the
+      noun, always — `caravan network list`, never `caravan list networks`.
+    - **`caravan raw <line>`** from the start: the CLI face of the `/raw` shipped in stage
+      1. It costs one passthrough and it is the escape hatch that stops half-considered
+      verbs being rushed in to unblock somebody.
+    - **Remote control of a running app, not a headless client.** Not running is exit code
+      4 and a clear sentence — never an auto-launch, least of all for `message send`.
+      Headless would mean a daemon lifecycle, which is a different project.
+    - **The socket never reads secrets back.** `server list` returns names and hosts and
+      never a password. Stage 2 prompt 3 put every credential in the Keychain and a
+      control socket that hands them out would quietly undo it. The trust model otherwise
+      is `~/.ssh`'s: any process running as you can act as you, which is worth stating
+      rather than leaving to be discovered.
+
+    **Compatibility rules, because a CLI's output becomes an API the moment it is piped:**
+    a version handshake on connect, accepting current and N−1 and failing loudly on
+    mismatch; JSON as the contract with `--json` opt-in and the human format documented as
+    explicitly unstable; additive-only schema changes, never a repurposed field; `x-`
+    prefixed verbs for experiments and everything unprefixed forever; fixed exit codes
+    (0 ok, 2 usage, 3 no or ambiguous target, 4 not running, 5 version mismatch).
+
+    What it unlocks is most of the point: `launchd` and `cron`, Shortcuts and Raycast via
+    a one-line shell step, notification and CI plumbing, and driving acceptance runs from
+    a test rather than through the accessibility API.
+
 35. **Themes.** The declarative format table grown in prompt 10 — a template string
     plus a colour per line kind, GUI-DESIGN-NOTES.md §4 — becomes user-editable:
     mIRC's Colors dialog over that one seam, importable/exportable theme files,
@@ -438,7 +504,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       carries the version, URL and SHA-256.
     - A `zap` stanza removing `~/.config/caravan`, `~/.local/share/caravan` and
       `~/.cache/caravan`. Keeping everything under XDG paths makes clean uninstall a
-      three-line stanza rather than a scavenger hunt.
+      three-line stanza rather than a scavenger hunt — and it already covers item 34a's
+      control socket, which lives in the cache directory for exactly that kind of reason.
+    - A `binary` stanza for item 34a's `caravan` CLI, pointing at
+      `Caravan.app/Contents/MacOS/caravan`. The same way `code` and `subl` reach `PATH`,
+      and it keeps the CLI and the app versions impossible to skew — they ship as one
+      artifact, which is half of why the protocol handshake only has to tolerate N−1.
     - **No Sparkle.** `brew upgrade` is the update mechanism; shipping a second
       updater that rewrites an app Homebrew believes it manages causes exactly the
       drift Homebrew exists to prevent. Revisit only if direct downloads become a
