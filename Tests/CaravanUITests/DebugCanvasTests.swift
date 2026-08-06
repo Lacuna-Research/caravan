@@ -188,7 +188,7 @@ struct DebugCanvasTests {
         let server = try ScriptedIRCServer()
         let port = try await server.start()
         await server.scriptWelcome(nick: "alice")
-        let model = AppModel(config: temporaryConfig())
+        let model = temporaryModel()
         await model.connect(
             using: ConnectionSettings(host: "127.0.0.1", port: port, useTLS: false, nick: "alice")
         )
@@ -215,7 +215,7 @@ struct DebugCanvasTests {
         let server = try ScriptedIRCServer()
         let port = try await server.start()
         await server.scriptWelcome(nick: "alice")
-        let model = AppModel(config: temporaryConfig())
+        let model = temporaryModel()
         await model.connect(
             using: ConnectionSettings(host: "127.0.0.1", port: port, useTLS: false, nick: "alice")
         )

@@ -92,8 +92,8 @@ struct ChannelRoster {
     /// with that user.
     mutating func apply(_ event: IRCEvent) -> [IRCChannelName] {
         switch event {
-        case .joined(let channel, let who):
-            return applyJoin(channel: channel, who: who)
+        case .joined(let channel, let who, let account, let realName):
+            return applyJoin(channel: channel, who: who, account: account, realName: realName)
 
         case .parted(let channel, let who, _):
             return applyDeparture(channel: channel, nick: nickOf(who))
@@ -138,21 +138,59 @@ struct ChannelRoster {
         case .stateChanged(let state):
             return applyStateChange(state)
 
-        case .raw, .registered, .message, .numeric, .clientError,
-            .joinFailed, .channelChanged, .channelClosed:
+        case .awayChanged(let who, let message):
+            return edit(nick: nickOf(who)) { $0.isAway = message != nil }
+
+        case .accountChanged(let who, let account):
+            return edit(nick: nickOf(who)) { $0.account = account }
+
+        case .hostChanged(let who, let user, let host):
+            return edit(nick: nickOf(who)) {
+                $0.user = user
+                $0.host = host
+            }
+
+        case .realNameChanged(let who, let realName):
+            return edit(nick: nickOf(who)) { $0.realName = realName }
+
+        case .raw, .registered, .message, .numeric, .clientError, .clientNotice,
+            .joinFailed, .channelChanged, .channelClosed,
+            .capabilitiesChanged, .authenticated, .standardReply, .invited,
+            .batchStarted, .batchEnded:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
-            // the channel it names may be one we have never seen.
+            // the channel it names may be one we have never seen. `.invited` likewise —
+            // an invitation is not a membership.
             return []
         }
+    }
+
+    /// Applies an edit to one person wherever they are, returning the channels it touched.
+    ///
+    /// The shape every `person changed` capability needs: `chghost`, `setname`,
+    /// `away-notify` and `account-notify` all describe someone rather than a channel, and
+    /// the client sees them in every channel it shares with them.
+    private mutating func edit(nick: String, _ change: (inout Member) -> Void)
+        -> [IRCChannelName]
+    {
+        let key = IRCNick(nick, mapping: capabilities.caseMapping)
+        var changed: [IRCChannelName] = []
+        for name in order where channels[name]?.contains(key) == true {
+            channels[name]?.updateMember(key, change)
+            changed.append(name)
+        }
+        return changed
     }
 
     private func nickOf(_ source: IRCSource) -> String {
         source.nick ?? source.wireForm
     }
 
-    private mutating func applyJoin(channel name: IRCChannelName, who: IRCSource)
-        -> [IRCChannelName]
-    {
+    private mutating func applyJoin(
+        channel name: IRCChannelName,
+        who: IRCSource,
+        account: String?,
+        realName: String?
+    ) -> [IRCChannelName] {
         let nick = IRCNick(nickOf(who), mapping: capabilities.caseMapping)
         let isSelf = nick == ownNick
 
@@ -177,7 +215,13 @@ struct ChannelRoster {
             channels[name]?.isJoined = true
         }
         channels[name]?.addMember(
-            Member(nick: nick, user: who.user, host: who.host)
+            Member(
+                nick: nick,
+                user: who.user,
+                host: who.host,
+                account: account,
+                realName: realName
+            )
         )
         return [name]
     }
@@ -223,9 +267,16 @@ struct ChannelRoster {
         return changed
     }
 
-    /// One 353 batch. Every leading prefix character is consumed, not just the first:
-    /// `multi-prefix` is stage 2's to negotiate, but a parser that stops after one turns
-    /// `@+bob` into a member called `+bob` the moment it is.
+    /// One 353 batch.
+    ///
+    /// Every leading prefix character is consumed, not just the first, which is what
+    /// `multi-prefix` needs: a parser that stops after one turns `@+bob` into a member
+    /// called `+bob` the moment the capability is negotiated.
+    ///
+    /// What follows is a bare nick, or — under `userhost-in-names` — a whole
+    /// `nick!user@host`. Split unconditionally rather than on the capability: a `!` cannot
+    /// appear in a nick, so the shape says which form it is and the roster needs no second
+    /// copy of what was negotiated.
     private mutating func applyNames(channel name: IRCChannelName, names: [String])
         -> [IRCChannelName]
     {
@@ -240,7 +291,15 @@ struct ChannelRoster {
                 rest = rest.dropFirst()
             }
             guard !rest.isEmpty else { continue }
-            batch.append(Member(nick: IRCNick(String(rest), mapping: mapping), modes: modes))
+            let source = IRCSource(prefix: String(rest))
+            batch.append(
+                Member(
+                    nick: IRCNick(source.nick ?? String(rest), mapping: mapping),
+                    user: source.user,
+                    host: source.host,
+                    modes: modes
+                )
+            )
         }
         pendingNames[name] = batch
         // Nothing is visible until 366: a half-applied nick list is worse than a late one.

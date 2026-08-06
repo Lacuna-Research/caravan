@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 2/17 complete. Next: prompt 3.
+**Status:** 3/17 complete. Next: prompt 4.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -145,13 +145,13 @@ Do not: bouncer-networks or chathistory — prompt 4 owns both, because they cha
 buffers are populated rather than how a connection is established.
 ```
 
-**Carry-forward** *(consumed when this prompt runs)*
-
-- From stage 1 prompt 4: TLS self-signed acceptance still has no user-facing trust
-  decision. `IRCConnection` records subject and SHA-256 fingerprint in
-  `acceptedCertificate` and logs loudly when trust was not established, but with no UI to
-  ask, `allowSelfSigned: true` still accepts. Turn that into trust-on-first-use here,
-  beside CertFP, since both are about which certificate you believe.
+**Status:** complete, with **one outstanding item: the GUI acceptance run**. The machine was
+locked throughout, so nothing on screen was confirmed — the Connect sheet's Authentication
+section, `TrustSheet`, and the Keychain pre-fill. Everything below the pixels was checked
+headlessly against Libera and against a real self-signed TLS handshake; `BUILD-LOG.md`
+records exactly what was and was not seen. Stage 1's TLS carry-forward is consumed:
+`allowSelfSigned` is gone, replaced by `TLSTrust.trustOnFirstUse`, a `KnownHosts` file and a
+trust sheet, and the handshake now fails closed when nobody can be asked.
 
 ---
 
@@ -187,6 +187,20 @@ it is a de-duplication problem, and it wants both halves to exist first.
 - From stage 1 prompt 8: the tree is a `List` of one `DisclosureGroup` per connection.
   Rolled-up activity and a second network both need the expansion state to move off
   `AppModel.isNetworkExpanded` — one flag for one network — and onto the connection.
+- From prompt 3: **`bouncer-networks` and `chathistory` are not in `ClientCapability`, and
+  adding them is this prompt's first move.** The negotiation machinery is done and generic:
+  add the two cases, and `IRCSession.wantedCapabilities()` asks for them. `batch` is already
+  negotiated and `IRCEvent.batchStarted`/`.batchEnded` already carry the reference and type,
+  so grouping a replay is a consumer problem rather than a protocol one.
+- From prompt 3: **only `IRCEvent.message` carries its `IRCTags`.** `server-time` lands in
+  `RenderContext.now` through `ConnectionViewModel.serverTime(of:)`, which matches on that
+  one case. A `chathistory` replay backfills joins, parts and topics too, and every one of
+  those will be stamped with the moment it arrived unless the tags are widened. Either add
+  `tags` to the replayed cases or give the events a common envelope — the second is the
+  larger change and probably the right one by then.
+- From prompt 3: `CAP NEW`/`CAP DEL` are handled and `cap-notify` is negotiated, which is
+  how soju announces an upstream network appearing. `IRCSession.handleCapability` is where
+  a `bouncer-networks-notify` would join them.
 
 ---
 
@@ -224,6 +238,12 @@ message-handling one.
   is the ordering of one array.
 - From stage 1 prompt 8: `HeaderBand` is general and already built — never hidden,
   shrink-to-two-lines, expand-into-a-scroller. The query case is content, not behaviour.
+- From prompt 3: **`echo-message` changes where a private message's echo comes from.** With
+  the capability on, `ConnectionViewModel.send` draws nothing and the server's copy arrives
+  as an ordinary `.message` whose target is a *nick* — which `destinations(for:)` routes to
+  the status window. So the `-> *bob* hi` form is currently reached only when the capability
+  is off. Once query buffers exist, the server's echo should land in the query, and the
+  `-> *nick*` form should stay for a message aimed at a window you are not in.
 - From stage 1 prompt 11: an outgoing `/msg bob hi` typed in a channel echoes *there* as
   `-> *bob* hi`, deliberately marked as leaving the window. Query buffers change where
   that echo goes, not how it reads: a message to a window that *is* the query renders
@@ -345,6 +365,13 @@ file survives being hand-edited. Display carries the density and zoom model from
   carried and tested but nothing writes them, and `ChatSettings` does not persist them.
   Whether that grid lands here or waits for stage 3's Colors dialog is this prompt's call —
   the stage 3 item records the persistence question either way.
+- From prompt 3: **the Connect sheet now collects authentication, and prompt 11 retires that
+  sheet** — so the Connect tab inherits it. `ConnectionSettings.AuthenticationChoice` is the
+  flat four-option list the picker shows, `Key.authentication`/`.account`/`.certificateLabel`
+  are its config keys, and the two passwords go to `CredentialStore` rather than the file.
+  The one thing with no UI at all is `KnownHosts`: accepted TLS fingerprints can be forgotten
+  only by editing `$XDG_DATA_HOME/caravan/known_hosts` by hand. A list with a Forget button
+  belongs on a tab here, and `KnownHosts.forget(_:)` is already written and tested.
 - From prompt 2: a Typing section exists too, holding the two nick-completion suffixes
   (`ChatSettings.completionSuffix`, a `CompletionStyle`). Note how they are stored: the
   config format cannot hold a value with a leading or trailing space, so `_` stands for a
@@ -380,6 +407,14 @@ local log already covers, so the buffer needs de-duplication by message id or
 
 *To be written out before it starts.*
 
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 3: **the `msgid` you will de-duplicate on is already in hand.**
+  `IRCEvent.message` carries the whole `IRCTags` section, so `tags.value(for: "msgid")` needs
+  nothing new from the session — and `ConnectionViewModel.parseServerTime` already turns the
+  `time` tag into a `Date` for the fallback comparison. Both are `.message`-only; see the
+  note on prompt 4 about widening that.
+
 ---
 
 ## Prompt 13 — What deserves attention, and what deserves none
@@ -411,6 +446,18 @@ Together because both answer "who is around" — one about other people, one abo
 and both hang off the same presence events.
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 3: **`away-notify` and `account-notify` are negotiated and tracked already.**
+  `Member.isAway`, `.account` and `.realName` are on the channel snapshot and maintained by
+  `ChannelRoster.edit(nick:_:)`, so a nick list that dims away members needs no protocol
+  work — only a renderer that reads the flag. The trap is the opposite direction: `isAway`
+  is `false` both for "present" and for "this server does not offer the capability", so
+  anything drawing absence as presence must first check
+  `NegotiatedCapabilities.isEnabled(.awayNotify)`.
+- From prompt 3: `/away` has to reach `CommandParser.knownCommands` as well as its switch —
+  the same trap prompt 8 carries.
 
 ---
 

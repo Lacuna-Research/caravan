@@ -100,17 +100,81 @@ public actor ScriptedIRCServer {
     ) {
         reply(
             to: after,
-            with: [
-                ":\(serverName) 001 \(nick) :Welcome to the \(network) IRC Network \(nick)",
-                ":\(serverName) 002 \(nick) :Your host is \(serverName), running version caravan-test-1",
-                ":\(serverName) 003 \(nick) :This server was created moments ago",
-                ":\(serverName) 004 \(nick) \(serverName) caravan-test-1 iow ov",
-                ":\(serverName) 005 \(nick) NETWORK=\(network) \(isupport.joined(separator: " ")) "
-                    + ":are supported by this server",
-            ],
+            with: Self.welcomeLines(
+                nick: nick,
+                serverName: serverName,
+                network: network,
+                isupport: isupport
+            ),
             repeats: repeats
         )
     }
+
+    /// The welcome burst as lines, for a test that triggers it on something other than a
+    /// bare verb — capability negotiation ends with `CAP END`, and every other `CAP` line
+    /// has to be answered differently.
+    public static func welcomeLines(
+        nick: String,
+        serverName: String = "irc.example.org",
+        network: String = "ExampleNet",
+        isupport: [String] = ["CASEMAPPING=ascii", "CHANTYPES=#", "PREFIX=(ov)@+", "NICKLEN=30"]
+    ) -> [String] {
+        [
+            ":\(serverName) 001 \(nick) :Welcome to the \(network) IRC Network \(nick)",
+            ":\(serverName) 002 \(nick) :Your host is \(serverName), running version caravan-test-1",
+            ":\(serverName) 003 \(nick) :This server was created moments ago",
+            ":\(serverName) 004 \(nick) \(serverName) caravan-test-1 iow ov",
+            ":\(serverName) 005 \(nick) NETWORK=\(network) \(isupport.joined(separator: " ")) "
+                + ":are supported by this server",
+        ]
+    }
+
+    /// Answers `CAP LS` and `CAP REQ`, then welcomes on `CAP END`.
+    ///
+    /// The whole negotiation in one call, because every capability test needs the same
+    /// four-line exchange around whatever it is actually checking.
+    ///
+    /// - Parameters:
+    ///   - offering: The `CAP LS` token list, `name=value` and all.
+    ///   - acknowledging: What to `ACK`. `nil` acknowledges exactly what was requested,
+    ///     which is what a cooperative server does.
+    ///   - refusing: Send a `NAK` instead of an `ACK`.
+    ///   - welcomingOnEnd: Whether `CAP END` produces the welcome burst. A SASL test that
+    ///     fails authentication never gets there.
+    public func scriptCapabilityNegotiation(
+        nick: String,
+        offering: [String],
+        acknowledging: [String]? = nil,
+        refusing: Bool = false,
+        welcomingOnEnd: Bool = true
+    ) {
+        reply(
+            toMessagesMatching: { $0.command.isVerb("CAP") && $0.parameters.first == "LS" },
+            with: [":irc.example.org CAP * LS :\(offering.joined(separator: " "))"]
+        )
+        if welcomingOnEnd {
+            reply(
+                toMessagesMatching: { $0.command.isVerb("CAP") && $0.parameters.first == "END" },
+                with: Self.welcomeLines(nick: nick)
+            )
+        }
+        // The `ACK` echoes the request, so it is built from the line that arrived rather
+        // than from a fixed list — which is also what makes `acknowledging: nil` mean
+        // "whatever they asked for".
+        acknowledgement = Acknowledgement(
+            nick: nick,
+            fixed: acknowledging,
+            isRefusal: refusing
+        )
+    }
+
+    private struct Acknowledgement {
+        let nick: String
+        let fixed: [String]?
+        let isRefusal: Bool
+    }
+
+    private var acknowledgement: Acknowledgement?
 
     // MARK: - Observation and control
 
@@ -171,6 +235,14 @@ public actor ScriptedIRCServer {
     private func handle(line: String) {
         received.append(line)
         guard let message = IRCMessage(line: line) else { return }
+        if let acknowledgement, message.command.isVerb("CAP"),
+            message.parameters.first == "REQ"
+        {
+            let requested = message.parameters.count > 1 ? message.parameters[1] : ""
+            let granted = acknowledgement.fixed?.joined(separator: " ") ?? requested
+            let verb = acknowledgement.isRefusal ? "NAK" : "ACK"
+            send(":irc.example.org CAP \(acknowledgement.nick) \(verb) :\(granted)")
+        }
         guard
             let index = rules.firstIndex(where: { rule in
                 (rule.repeats || !rule.hasFired) && rule.matches(message)

@@ -51,7 +51,7 @@ struct StatusWindowTests {
         let port = try await server.start()
         await server.scriptWelcome(nick: nick)
 
-        let model = AppModel(config: temporaryConfig())
+        let model = temporaryModel()
         model.settings.showsRawTraffic = showsRawTraffic
         let harness = Harness(server: server, model: model)
         await model.connect(

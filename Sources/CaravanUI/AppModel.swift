@@ -20,11 +20,61 @@ public struct ConnectionSettings: Sendable, Equatable {
 
     /// A server password, if the network or bouncer wants one.
     ///
-    /// Held only long enough to reach the socket, and never written anywhere: it is not
-    /// in the config file with the rest, because its home is the Keychain and that is
-    /// stage 2's. A user re-types it per connection until then, which is the right
-    /// failure mode.
+    /// Never written to `caravan.conf`. Its home is the macOS Keychain, and it is read
+    /// back from there when the sheet opens — which is what stops it being re-typed every
+    /// session.
     public var password: String
+
+    /// How to authenticate, if at all.
+    public var authentication: AuthenticationChoice = .none
+    public var account = ""
+    /// The SASL or NickServ password. Keychain, like ``password``.
+    public var accountPassword = ""
+    /// The Keychain label of the client certificate SASL `EXTERNAL` presents.
+    public var certificateLabel = ""
+
+    /// The authentication methods the Connect sheet offers.
+    ///
+    /// A flat list rather than SASL-with-a-mechanism-underneath: what a user picks is one
+    /// thing, and a two-level control for four options is a menu inside a menu.
+    public enum AuthenticationChoice: String, Sendable, CaseIterable, Identifiable {
+        case none
+        case saslPlain = "sasl-plain"
+        case saslExternal = "sasl-external"
+        case saslScram = "sasl-scram-sha-256"
+        case nickServ = "nickserv"
+
+        public var id: String { rawValue }
+
+        public var label: String {
+            switch self {
+            case .none: "None"
+            case .saslPlain: "SASL PLAIN"
+            case .saslExternal: "SASL EXTERNAL (client certificate)"
+            case .saslScram: "SASL SCRAM-SHA-256"
+            case .nickServ: "NickServ IDENTIFY"
+            }
+        }
+
+        var mechanism: SASLMechanism? {
+            switch self {
+            case .none, .nickServ: nil
+            case .saslPlain: .plain
+            case .saslExternal: .external
+            case .saslScram: .scramSHA256
+            }
+        }
+
+        /// Whether a password field makes sense for this choice.
+        public var needsPassword: Bool {
+            switch self {
+            case .none, .saslExternal: false
+            case .saslPlain, .saslScram, .nickServ: true
+            }
+        }
+
+        public var needsAccount: Bool { self != .none }
+    }
 
     public init(
         host: String = "irc.libera.chat",
@@ -46,17 +96,44 @@ public struct ConnectionSettings: Sendable, Equatable {
         self.password = password
     }
 
+    /// **TLS defaults to trust-on-first-use, not to bare system validation.**
+    ///
+    /// The two differ only for a certificate the system will not validate, which used to
+    /// fail the connection outright with nothing to say beyond a Network.framework error
+    /// string. Now the user is shown the fingerprint and asked. That is strictly more
+    /// permissive than refusing and strictly less permissive than the `allowSelfSigned`
+    /// flag it replaces, which accepted without asking anyone.
     public var sessionConfiguration: SessionConfiguration {
         SessionConfiguration(
             host: host,
             port: port,
-            tls: useTLS ? .enabled(allowSelfSigned: false) : .disabled,
+            tls: useTLS ? .enabled(.trustOnFirstUse) : .disabled,
             nick: nick,
             altNick: altNick.isEmpty ? nil : altNick,
             ident: ident.isEmpty ? nil : ident,
             realName: realName.isEmpty ? nil : realName,
-            password: password.isEmpty ? nil : password
+            password: password.isEmpty ? nil : password,
+            authentication: authenticationMethod
         )
+    }
+
+    var authenticationMethod: AuthenticationMethod {
+        switch authentication {
+        case .none:
+            return .none
+        case .nickServ:
+            guard !account.isEmpty, !accountPassword.isEmpty else { return .none }
+            return .nickServ(account: account, password: accountPassword)
+        case .saslPlain, .saslExternal, .saslScram:
+            guard let mechanism = authentication.mechanism else { return .none }
+            // A mechanism that needs a password and has none is not authentication, it is
+            // a failed connection waiting to happen; better to connect unauthenticated and
+            // say so than to abort every attempt until the field is filled in.
+            if mechanism.needsPassword, account.isEmpty || accountPassword.isEmpty {
+                return .none
+            }
+            return .sasl(mechanism: mechanism, account: account, password: accountPassword)
+        }
     }
 
     /// Whether the sheet has enough to connect.
@@ -78,17 +155,27 @@ public struct ConnectionSettings: Sendable, Equatable {
         public static let altNick = "server.alt-nick"
         public static let ident = "server.ident"
         public static let realName = "server.real-name"
+        public static let authentication = "server.authentication"
+        public static let account = "server.account"
+        public static let certificateLabel = "server.client-certificate"
     }
 
     /// The last values the Connect sheet was used with.
     ///
     /// `/server` changes the host and nothing else — identity belongs to the client's
     /// settings, and a command that silently changed your nick or real name would be a
-    /// surprise. The password is absent by design: its home is the Keychain, and until
-    /// that exists it is never written down.
+    /// surprise.
+    ///
+    /// **The two passwords come from the Keychain, keyed on the host**, and everything
+    /// else comes from `caravan.conf`. That split is the whole of the rule: the config
+    /// file records the *shape* of the credential — which host, which account, which
+    /// mechanism — and never the secret itself.
     @MainActor
-    public static func lastUsed(from config: ConfigFile = .shared) -> ConnectionSettings {
-        ConnectionSettings(
+    public static func lastUsed(
+        from config: ConfigFile = .shared,
+        credentials: any CredentialStore = Keychain.shared
+    ) -> ConnectionSettings {
+        var settings = ConnectionSettings(
             host: config.string(Key.host) ?? "irc.libera.chat",
             port: config.int(Key.port).map { UInt16(clamping: $0) } ?? 6697,
             useTLS: config.bool(Key.useTLS) ?? true,
@@ -97,12 +184,36 @@ public struct ConnectionSettings: Sendable, Equatable {
             ident: config.string(Key.ident) ?? "",
             realName: config.string(Key.realName) ?? ""
         )
+        settings.authentication =
+            config.string(Key.authentication).flatMap(AuthenticationChoice.init(rawValue:))
+            ?? .none
+        settings.account = config.string(Key.account) ?? ""
+        settings.certificateLabel = config.string(Key.certificateLabel) ?? ""
+        settings.loadSecrets(from: credentials)
+        return settings
+    }
+
+    /// Fills the two password fields from the credential store for whatever host is set.
+    ///
+    /// Separate from ``lastUsed(from:credentials:)`` so that changing the host in the sheet
+    /// can pull that host's credentials rather than the previous host's.
+    @MainActor
+    public mutating func loadSecrets(from credentials: any CredentialStore = Keychain.shared) {
+        password = credentials.password(.serverPassword, host: host) ?? ""
+        accountPassword = credentials.password(.account, host: host) ?? ""
     }
 
     /// Records these as the last-used values. Called on connecting rather than on every
     /// keystroke: "last used" should mean used, not merely typed and cancelled.
+    ///
+    /// The secrets go to the Keychain in the same breath, which is what stops the password
+    /// field being re-typed every session. An emptied field deletes the stored item rather
+    /// than storing an empty string, so clearing it really does forget.
     @MainActor
-    public func rememberAsLastUsed(in config: ConfigFile = .shared) {
+    public func rememberAsLastUsed(
+        in config: ConfigFile = .shared,
+        credentials: any CredentialStore = Keychain.shared
+    ) {
         config.set(host, forKey: Key.host)
         config.set(Int(port), forKey: Key.port)
         config.set(useTLS, forKey: Key.useTLS)
@@ -110,6 +221,18 @@ public struct ConnectionSettings: Sendable, Equatable {
         config.set(altNick.isEmpty ? nil : altNick, forKey: Key.altNick)
         config.set(ident.isEmpty ? nil : ident, forKey: Key.ident)
         config.set(realName.isEmpty ? nil : realName, forKey: Key.realName)
+        config.set(
+            authentication == .none ? nil : authentication.rawValue,
+            forKey: Key.authentication
+        )
+        config.set(account.isEmpty ? nil : account, forKey: Key.account)
+        config.set(
+            certificateLabel.isEmpty ? nil : certificateLabel,
+            forKey: Key.certificateLabel
+        )
+
+        credentials.setPassword(password, .serverPassword, host: host)
+        credentials.setPassword(accountPassword, .account, host: host)
     }
 }
 
@@ -135,6 +258,37 @@ public final class AppModel {
 
     /// The plain-text config both the settings form and the Connect sheet persist to.
     @ObservationIgnored public let config: ConfigFile
+
+    /// TLS fingerprints the user has already accepted.
+    @ObservationIgnored public let knownHosts: KnownHosts
+
+    /// Where passwords are kept. The Keychain in the app, something ephemeral in a test.
+    @ObservationIgnored public let credentials: any CredentialStore
+
+    /// A certificate the system would not validate, waiting on the user.
+    ///
+    /// The connection is genuinely blocked on this: the TLS verify block is holding its
+    /// completion handler open, so the handshake does not proceed either way until the
+    /// sheet is answered.
+    public var pendingTrust: TrustRequest?
+
+    /// One certificate, and somewhere to put the answer.
+    public struct TrustRequest: Identifiable {
+        public let id = UUID()
+        public let certificate: TLSCertificate
+        public let host: String
+        /// A fingerprint we remembered for this host that is *not* the one presented.
+        ///
+        /// The dangerous case, and it reads differently from a first visit: a certificate
+        /// that changed is either a rotation or an interception, and the user is the only
+        /// one who can tell which.
+        public let previousFingerprint: String?
+        let respond: (Bool) -> Void
+
+        public func answer(_ trusted: Bool) {
+            respond(trusted)
+        }
+    }
 
     /// Where the wire trace is going. Lives on the app rather than the connection: the
     /// trace is one ring for the process, and `/debug` outlives any single connection.
@@ -176,13 +330,23 @@ public final class AppModel {
     }
 
     /// The config file is injectable so a test can point it at a temporary directory
-    /// rather than writing into the settings of whoever is running the suite.
-    public init(config: ConfigFile = .shared, settings: ChatSettings? = nil) {
+    /// rather than writing into the settings of whoever is running the suite. The known
+    /// hosts file and the credential store are injectable for the same reason — with more
+    /// force for the last of the three, since the alternative is a test suite that leaves
+    /// passwords in the developer's login keychain.
+    public init(
+        config: ConfigFile = .shared,
+        settings: ChatSettings? = nil,
+        knownHosts: KnownHosts? = nil,
+        credentials: (any CredentialStore)? = nil
+    ) {
         let settings = settings ?? ChatSettings(config: config)
         let trace = TraceBuffer()
         self.config = config
         self.settings = settings
         self.trace = trace
+        self.knownHosts = knownHosts ?? .shared
+        self.credentials = credentials ?? Keychain.shared
         self.debug = DebugController(trace: trace, settings: settings)
     }
 
@@ -249,8 +413,12 @@ public final class AppModel {
         password: String?,
         reportingInto target: Target?
     ) async {
-        var settings = ConnectionSettings.lastUsed(from: config)
+        var settings = ConnectionSettings.lastUsed(from: config, credentials: credentials)
         settings.host = host
+        // Re-read the Keychain for the *new* host: `lastUsed` filled the fields from the
+        // previous one, and sending that host's password to a different server is exactly
+        // the mistake a credential store exists to prevent.
+        settings.loadSecrets(from: credentials)
         if let port { settings.port = port }
         if let tls { settings.useTLS = tls }
         if let password { settings.password = password }
@@ -268,16 +436,57 @@ public final class AppModel {
     }
 
     public func connect(using settings: ConnectionSettings) async {
-        settings.rememberAsLastUsed(in: config)
+        settings.rememberAsLastUsed(in: config, credentials: credentials)
         await connection?.disconnect()
         let connection = ConnectionViewModel(
             configuration: settings.sessionConfiguration,
             trace: trace,
-            settings: self.settings
+            settings: self.settings,
+            credentials: credentials(for: settings)
         )
         self.connection = connection
         selection = .status(connection.id)
         await connection.connect()
+    }
+
+    // MARK: - TLS
+
+    /// The trust evaluator and client certificate for one connection.
+    private func credentials(for settings: ConnectionSettings) -> TLSCredentials {
+        TLSCredentials(
+            trustEvaluator: { [weak self] certificate, host in
+                await self?.decideTrust(certificate, host: host) ?? false
+            },
+            // Looked up per connection rather than held: a certificate can be added to the
+            // Keychain while the app is running, and requiring a relaunch to notice would
+            // be a strange thing to make someone do.
+            clientIdentity: ClientCertificate.identity(labelled: settings.certificateLabel)
+        )
+    }
+
+    /// Trust-on-first-use: accept what we accepted before, ask about anything else.
+    ///
+    /// Runs on the main actor because its answer may be a sheet. Everything below it is
+    /// waiting — the TLS handshake is genuinely paused on this call — which is why there is
+    /// no timeout here: a dialog nobody answered should leave the connection hanging
+    /// visibly rather than failing on its own after a while and blaming the network.
+    func decideTrust(_ certificate: TLSCertificate, host: String) async -> Bool {
+        let remembered = knownHosts.fingerprint(for: host)
+        if remembered == certificate.sha256Fingerprint { return true }
+
+        let accepted = await withCheckedContinuation { continuation in
+            pendingTrust = TrustRequest(
+                certificate: certificate,
+                host: host,
+                previousFingerprint: remembered,
+                respond: { continuation.resume(returning: $0) }
+            )
+        }
+        pendingTrust = nil
+        if accepted {
+            knownHosts.remember(certificate.sha256Fingerprint, for: host)
+        }
+        return accepted
     }
 
     // MARK: - Settings

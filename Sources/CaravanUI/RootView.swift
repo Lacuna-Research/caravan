@@ -39,9 +39,14 @@ public struct RootView: View {
             }
         }
         .sheet(isPresented: $model.isShowingConnectSheet) {
-            ConnectSheet(config: model.config) { settings in
+            ConnectSheet(config: model.config, credentials: model.credentials) { settings in
                 Task { await model.connect(using: settings) }
             }
+        }
+        // The TLS handshake is genuinely paused behind this one, so it takes precedence
+        // over whatever else is on screen.
+        .sheet(item: $model.pendingTrust) { request in
+            TrustSheet(request: request)
         }
     }
 

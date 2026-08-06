@@ -444,4 +444,136 @@ struct ChannelRosterTests {
         let removedAgain = harness.roster.remove(name)
         #expect(!removedAgain)
     }
+
+    // MARK: - What the IRCv3 capabilities change
+
+    /// `multi-prefix` lists every prefix a member holds rather than only the highest. A
+    /// parser that stopped after one would turn `~&@bob` into a member called `&@bob`.
+    @Test("multi-prefix entries yield every mode, and the highest one displays")
+    func multiPrefixNames() {
+        var harness = harness()
+        harness.feed(
+            ":alice!u@h JOIN #swift",
+            ":irc.example.org 353 alice = #swift :~&@bob %+carol alice",
+            ":irc.example.org 366 alice #swift :End of /NAMES list"
+        )
+        #expect(harness.displayNames(in: "#swift") == ["~bob", "%carol", "alice"])
+        let bob = harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]
+        #expect(bob?.modes == ["q", "a", "o"])
+    }
+
+    /// `userhost-in-names` turns each entry into a whole source. Split unconditionally,
+    /// because a `!` cannot appear in a nick — so the shape says which form it is and the
+    /// roster needs no second copy of what was negotiated.
+    @Test("userhost-in-names fills in user and host without a flag to consult")
+    func userhostInNames() {
+        var harness = harness()
+        harness.feed(
+            ":alice!u@h JOIN #swift",
+            ":irc.example.org 353 alice = #swift :@bob!bobby@cloak.example.org carol",
+            ":irc.example.org 366 alice #swift :End of /NAMES list"
+        )
+        // `alice` is there from her own JOIN and is merged over rather than dropped, which
+        // is what the 353/366 merge exists for.
+        #expect(harness.nicks(in: "#swift") == ["bob", "alice", "carol"])
+        let bob = harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]
+        #expect(bob?.user == "bobby")
+        #expect(bob?.host == "cloak.example.org")
+        // A bare nick in the same reply is still a bare nick.
+        let carol = harness.channel("#swift")?.members[IRCNick("carol", mapping: .ascii)]
+        #expect(carol?.user == nil)
+    }
+
+    @Test("extended-join records the account and real name on the member")
+    func extendedJoinRecordsAccount() {
+        var harness = harness()
+        harness.feed(
+            ":alice!u@h JOIN #swift",
+            ":bob!u@h JOIN #swift robert :Bob Example"
+        )
+        let bob = harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]
+        #expect(bob?.account == "robert")
+        #expect(bob?.realName == "Bob Example")
+    }
+
+    /// These four describe a *person*, not a channel, so they reach every channel shared
+    /// with them — the same rule a `QUIT` follows, and for the same reason.
+    @Test("away, account, chghost and setname reach every shared channel")
+    func personalChangesReachEveryChannel() {
+        var harness = harness()
+        harness.feed(
+            ":alice!u@h JOIN #swift",
+            ":alice!u@h JOIN #vapor",
+            ":bob!u@h JOIN #swift",
+            ":bob!u@h JOIN #vapor"
+        )
+
+        harness.feed(":bob!u@h AWAY :making tea")
+        #expect(harness.names(ofLast: 2) == ["#swift", "#vapor"])
+        #expect(harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]?.isAway == true)
+
+        harness.feed(":bob!u@h AWAY")
+        #expect(
+            harness.channel("#vapor")?.members[IRCNick("bob", mapping: .ascii)]?.isAway == false
+        )
+
+        harness.feed(":bob!u@h ACCOUNT robert")
+        #expect(
+            harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]?.account == "robert"
+        )
+        harness.feed(":bob!u@h ACCOUNT *")
+        #expect(harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]?.account == nil)
+
+        harness.feed(":bob!u@h CHGHOST bobby cloak.example.org")
+        let bob = harness.channel("#vapor")?.members[IRCNick("bob", mapping: .ascii)]
+        #expect(bob?.user == "bobby")
+        #expect(bob?.host == "cloak.example.org")
+
+        harness.feed(":bob!u@h SETNAME :Robert Example")
+        #expect(
+            harness.channel("#swift")?.members[IRCNick("bob", mapping: .ascii)]?.realName
+                == "Robert Example"
+        )
+    }
+
+    /// Someone we share no channel with produces no snapshot at all: a client that
+    /// redrew every nick list on every stranger's `AWAY` would redraw constantly on a
+    /// large network.
+    @Test("a stranger's away notice changes nothing")
+    func strangerChangesNothing() {
+        var harness = harness()
+        harness.feed(":alice!u@h JOIN #swift")
+        let before = harness.snapshots.count
+        harness.feed(":dave!u@h AWAY :out")
+        #expect(harness.snapshots.count == before)
+    }
+
+    /// A nick change must not lose what the capabilities established about the person —
+    /// they are the same person, and re-learning their account would need another `WHO`.
+    @Test("a rename carries the account, real name and away state")
+    func renamePreservesEverything() {
+        var harness = harness()
+        harness.feed(
+            ":alice!u@h JOIN #swift",
+            ":bob!u@h JOIN #swift robert :Bob Example",
+            ":bob!u@h AWAY :out",
+            ":bob!u@h NICK bobby"
+        )
+        let renamed = harness.channel("#swift")?.members[IRCNick("bobby", mapping: .ascii)]
+        #expect(renamed?.account == "robert")
+        #expect(renamed?.realName == "Bob Example")
+        #expect(renamed?.isAway == true)
+    }
+
+    /// An invitation is not a membership, and the channel it names may be one we have
+    /// never seen.
+    @Test("an invite changes no state")
+    func inviteChangesNothing() {
+        var harness = harness()
+        harness.feed(":alice!u@h JOIN #swift")
+        let before = harness.snapshots.count
+        harness.feed(":bob!u@h INVITE alice #elsewhere")
+        #expect(harness.snapshots.count == before)
+        #expect(harness.roster.order.count == 1)
+    }
 }

@@ -4,20 +4,44 @@ import IRCProtocol
 public struct Member: Sendable, Hashable {
     public let nick: IRCNick
 
-    /// Known only when the server told us — `JOIN` carries a full source, a `NAMES` reply
-    /// usually does not (`userhost-in-names` is stage 2's).
+    /// Known only when the server told us — `JOIN` carries a full source, and a `NAMES`
+    /// reply does only under `userhost-in-names`.
     public var user: String?
     public var host: String?
+
+    /// The services account, under `account-notify` or `extended-join`. `nil` means either
+    /// "not logged in" or "never told", which the protocol does not distinguish.
+    public var account: String?
+
+    /// The real name, under `extended-join` or `setname`.
+    public var realName: String?
+
+    /// Whether they are marked away, under `away-notify`.
+    ///
+    /// False for a server that does not offer the capability, which is indistinguishable
+    /// from "present" — so a nick list must not draw absence of the flag as presence
+    /// unless the capability is enabled.
+    public var isAway = false
 
     /// Membership mode letters held, e.g. `o`, `v`. Mode letters rather than prefix
     /// characters, because `@` is only `o` by way of `PREFIX`.
     public var modes: Set<Character>
 
-    public init(nick: IRCNick, user: String? = nil, host: String? = nil, modes: Set<Character> = [])
-    {
+    public init(
+        nick: IRCNick,
+        user: String? = nil,
+        host: String? = nil,
+        account: String? = nil,
+        realName: String? = nil,
+        isAway: Bool = false,
+        modes: Set<Character> = []
+    ) {
         self.nick = nick
         self.user = user
         self.host = host
+        self.account = account
+        self.realName = realName
+        self.isAway = isAway
         self.modes = modes
     }
 }
@@ -123,6 +147,8 @@ public struct Channel: Sendable, Equatable {
             var merged = existing
             merged.user = member.user ?? existing.user
             merged.host = member.host ?? existing.host
+            merged.account = member.account ?? existing.account
+            merged.realName = member.realName ?? existing.realName
             merged.modes.formUnion(member.modes)
             replaceMember(merged)
             return
@@ -143,9 +169,32 @@ public struct Channel: Sendable, Equatable {
     /// Renames a member, keeping the list ordered. Returns whether anyone was renamed.
     @discardableResult
     mutating func renameMember(from oldNick: IRCNick, to newNick: IRCNick) -> Bool {
-        guard var member = removeMember(oldNick) else { return false }
-        member = Member(nick: newNick, user: member.user, host: member.host, modes: member.modes)
-        addMember(member)
+        guard let member = removeMember(oldNick) else { return false }
+        addMember(
+            Member(
+                nick: newNick,
+                user: member.user,
+                host: member.host,
+                account: member.account,
+                realName: member.realName,
+                isAway: member.isAway,
+                modes: member.modes
+            )
+        )
+        return true
+    }
+
+    /// Edits one member in place, keeping the ordered list in step. Returns whether they
+    /// were there to edit.
+    ///
+    /// The one seam for the capabilities that change a person rather than a membership —
+    /// `chghost`, `setname`, `away-notify`, `account-notify` — none of which can change
+    /// where the member sorts, but all of which have to reach both stores.
+    @discardableResult
+    mutating func updateMember(_ nick: IRCNick, _ edit: (inout Member) -> Void) -> Bool {
+        guard var member = members[nick] else { return false }
+        edit(&member)
+        replaceMember(member)
         return true
     }
 
@@ -188,6 +237,9 @@ public struct Channel: Sendable, Equatable {
                     nick: IRCNick($0.nick.raw, mapping: newMapping),
                     user: $0.user,
                     host: $0.host,
+                    account: $0.account,
+                    realName: $0.realName,
+                    isAway: $0.isAway,
                     modes: $0.modes
                 )
             }

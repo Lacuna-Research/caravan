@@ -24,6 +24,12 @@ public actor IRCSession {
     /// What the server said it supports. Reset per connection, refined by every 005.
     public private(set) var capabilities = ServerCapabilities()
 
+    /// What `CAP` negotiation settled on. Reset per connection, like ``capabilities``.
+    ///
+    /// The two are different questions with confusingly similar names: `ISUPPORT` is what
+    /// the *server* does, negotiated capabilities are what this connection agreed to.
+    public private(set) var negotiated = NegotiatedCapabilities()
+
     /// Registration data from 001–004. Refined after `.registered` is emitted, since
     /// 002–004 arrive after 001 and nothing marks the end of that burst.
     public private(set) var serverInfo: ServerInfo?
@@ -58,9 +64,44 @@ public actor IRCSession {
     private var lastActivity: ContinuousClock.Instant
     private var pingSentAt: ContinuousClock.Instant?
 
-    public init(configuration: SessionConfiguration, trace: TraceBuffer) {
+    /// Where `CAP` negotiation has got to on this attempt.
+    ///
+    /// Linear, and it matters that it is: registration is held open by the server until we
+    /// send `CAP END`, so an attempt that loses track of this phase is an attempt that
+    /// hangs until the connect deadline rather than failing.
+    private enum CapabilityPhase {
+        case notStarted
+        /// `CAP LS` sent, collecting what may be several lines of it.
+        case listing
+        /// `CAP REQ` sent, waiting for the `ACK` or `NAK`.
+        case requesting
+        /// A SASL exchange is in flight; `CAP END` waits for it.
+        case authenticating
+        /// `CAP END` sent, or the server turned out not to speak `CAP` at all.
+        case ended
+    }
+
+    private var capabilityPhase: CapabilityPhase = .notStarted
+    private var sasl: SASLExchange?
+    private var saslChunks = SASLWire.Accumulator()
+
+    /// NickServ credentials waiting for registration to finish, whether they were the
+    /// configured method or the fallback for a server with no SASL.
+    private var pendingIdentify: (account: String, password: String)?
+
+    /// The trust evaluator and client certificate, carried across reconnects because each
+    /// attempt builds a fresh ``IRCConnection`` and both belong to the *identity* rather
+    /// than to any one socket.
+    private let credentials: TLSCredentials
+
+    public init(
+        configuration: SessionConfiguration,
+        trace: TraceBuffer,
+        credentials: TLSCredentials = TLSCredentials()
+    ) {
         self.configuration = configuration
         self.trace = trace
+        self.credentials = credentials
         self.currentNick = configuration.nick
         self.lastActivity = ContinuousClock().now
         self.roster = ChannelRoster(ownNick: configuration.nick)
@@ -140,6 +181,11 @@ public actor IRCSession {
 
     private func startAttempt() async {
         capabilities = ServerCapabilities()
+        negotiated = NegotiatedCapabilities()
+        capabilityPhase = .notStarted
+        sasl = nil
+        saslChunks = SASLWire.Accumulator()
+        pendingIdentify = nil
         serverInfo = nil
         attemptedNicks = []
         setCurrentNick(configuration.nick)
@@ -150,7 +196,7 @@ public actor IRCSession {
         pingSentAt = nil
         lastActivity = clock.now
 
-        let connection = IRCConnection(trace: trace)
+        let connection = IRCConnection(trace: trace, credentials: credentials)
         self.connection = connection
         setState(.connecting)
 
@@ -271,6 +317,12 @@ public actor IRCSession {
 
     private func beginRegistration() async {
         guard let connection else { return }
+        // **First line on the wire, before `PASS`.** The server holds 001 back until
+        // `CAP END`, and asking after `USER` races a server that answers immediately.
+        // `302` asks for the 3.2 form, which carries `name=value` and implies `cap-notify`.
+        capabilityPhase = .listing
+        await connection.send(IRCMessage(verb: "CAP", parameters: ["LS", "302"]))
+
         if let password = configuration.password, !password.isEmpty {
             await connection.send(IRCMessage(verb: "PASS", parameters: [password]))
         }
@@ -372,9 +424,17 @@ public actor IRCSession {
             await endAttempt(reason: .serverError(reason), allowingReconnect: true)
             return
         }
+        if message.command.isVerb("CAP") {
+            await handleCapability(message)
+            return
+        }
+        if message.command.isVerb("AUTHENTICATE") {
+            await handleAuthenticate(message)
+            return
+        }
 
         switch message.command.numericCode {
-        case 1: handleWelcome(message)
+        case 1: await handleWelcome(message)
         case 2: serverInfo?.hostInfo = message.parameters.last
         case 3: serverInfo?.created = message.parameters.last
         case 4: handleMyInfo(message)
@@ -389,12 +449,200 @@ public actor IRCSession {
                 ),
                 allowingReconnect: false
             )
+        case 903, 907:
+            // SASL succeeded, or we were already authenticated. Either way registration is
+            // free to finish. 907 is not an error: it answers a second `AUTHENTICATE` on a
+            // connection that is already logged in.
+            await finishAuthentication()
+        case 902, 904, 905, 906:
+            await failAuthentication(
+                message.parameters.last ?? "the server refused the credentials"
+            )
         default:
             break
         }
     }
 
-    private func handleWelcome(_ message: IRCMessage) {
+    // MARK: - Capability negotiation
+
+    private func handleCapability(_ message: IRCMessage) async {
+        guard let command = CapabilityCommand(message: message) else { return }
+        switch command.subcommand {
+        case .ls:
+            negotiated.advertise(command.tokens)
+            // A `*` means another `LS` line follows; deciding what to ask for before the
+            // list is complete would ask for a subset of what is on offer.
+            guard !command.isContinued else { return }
+            await requestCapabilities()
+
+        case .new:
+            // `cap-notify`: something appeared mid-session. Ask for it if we can use it,
+            // and say so either way.
+            negotiated.advertise(command.tokens)
+            let wanted = wantedCapabilities(among: command.tokens.map(\.name))
+            guard !wanted.isEmpty else {
+                emit(.capabilitiesChanged(negotiated))
+                return
+            }
+            await sendRequest(for: wanted)
+
+        case .del:
+            negotiated.withdraw(command.tokens)
+            emit(.capabilitiesChanged(negotiated))
+
+        case .ack:
+            negotiated.acknowledge(command.tokens)
+            await capabilitiesAcknowledged()
+
+        case .nak:
+            // A `REQ` is atomic: a `NAK` means nothing in it was enabled. Loud rather than
+            // silent, because a server that refuses what it advertised is worth knowing
+            // about when something downstream then behaves oddly.
+            let refused = command.tokens.map(\.name).joined(separator: " ")
+            Log.session.error("server refused capabilities: \(refused, privacy: .public)")
+            emit(.clientNotice("the server refused these capabilities: \(refused)"))
+            await endCapabilityNegotiation()
+
+        case .list:
+            negotiated.replaceEnabled(command.tokens)
+            emit(.capabilitiesChanged(negotiated))
+        }
+    }
+
+    /// Everything we know how to use, that this server offers, that is not already on.
+    private func wantedCapabilities(among names: [String]? = nil) -> [ClientCapability] {
+        ClientCapability.allCases.filter { capability in
+            if let names, !names.contains(capability.rawValue) { return false }
+            guard negotiated.isAvailable(capability), !negotiated.isEnabled(capability) else {
+                return false
+            }
+            guard capability == .sasl else { return true }
+            // SASL is asked for only when it will be used, and only when the server offers
+            // the mechanism actually configured. Requesting it and then having nothing to
+            // say leaves the server waiting on an `AUTHENTICATE` that is not coming.
+            guard case .sasl(let mechanism, _, _) = configuration.authentication else {
+                return false
+            }
+            return negotiated.saslMechanisms.contains(mechanism.rawValue)
+        }
+    }
+
+    private func requestCapabilities() async {
+        let wanted = wantedCapabilities()
+        guard !wanted.isEmpty else {
+            await endCapabilityNegotiation()
+            return
+        }
+        capabilityPhase = .requesting
+        await sendRequest(for: wanted)
+    }
+
+    private func sendRequest(for capabilities: [ClientCapability]) async {
+        await connection?.send(
+            IRCMessage(
+                verb: "CAP",
+                parameters: ["REQ", capabilities.map(\.rawValue).joined(separator: " ")]
+            )
+        )
+    }
+
+    private func capabilitiesAcknowledged() async {
+        guard capabilityPhase == .requesting else {
+            // A `CAP NEW` acknowledged after registration. There is no negotiation left to
+            // end, only news to report.
+            emit(.capabilitiesChanged(negotiated))
+            return
+        }
+        guard negotiated.isEnabled(.sasl),
+            case .sasl(let mechanism, let account, let password) = configuration.authentication
+        else {
+            await endCapabilityNegotiation()
+            return
+        }
+        capabilityPhase = .authenticating
+        sasl = SASLExchange(mechanism: mechanism, account: account, password: password)
+        saslChunks = SASLWire.Accumulator()
+        Log.session.info(
+            "authenticating with SASL \(mechanism.rawValue, privacy: .public)"
+        )
+        await connection?.send(IRCMessage(verb: "AUTHENTICATE", parameters: [mechanism.rawValue]))
+    }
+
+    /// Sends `CAP END`, once, and works out whether NickServ has to stand in for SASL.
+    private func endCapabilityNegotiation() async {
+        guard capabilityPhase != .ended else { return }
+        capabilityPhase = .ended
+
+        switch configuration.authentication {
+        case .none:
+            break
+        case .nickServ(let account, let password):
+            pendingIdentify = (account, password)
+        case .sasl:
+            if !negotiated.isEnabled(.sasl),
+                let fallback = configuration.authentication.nickServFallback
+            {
+                pendingIdentify = fallback
+                emit(
+                    .clientNotice(
+                        "this server does not offer SASL; identifying to NickServ after registration"
+                    )
+                )
+            }
+        }
+
+        emit(.capabilitiesChanged(negotiated))
+        await connection?.send(IRCMessage(verb: "CAP", parameters: ["END"]))
+    }
+
+    // MARK: - Authentication
+
+    private func handleAuthenticate(_ message: IRCMessage) async {
+        guard var exchange = sasl else { return }
+        // A parameterless `AUTHENTICATE` is the empty challenge, which is what a server
+        // sends to say "go ahead" at the start of every mechanism.
+        switch saslChunks.push(message.parameters.first ?? SASLWire.empty) {
+        case .incomplete:
+            return
+        case .undecodable:
+            await abortAuthentication("the server's SASL challenge was not valid base64")
+        case .complete(let challenge):
+            do {
+                let response = try exchange.respond(to: challenge)
+                sasl = exchange
+                for chunk in SASLWire.chunks(for: response) {
+                    await connection?.send(IRCMessage(verb: "AUTHENTICATE", parameters: [chunk]))
+                }
+            } catch {
+                await abortAuthentication(String(describing: error))
+            }
+        }
+    }
+
+    /// Tells the server we are giving up on the exchange, then fails the attempt.
+    ///
+    /// The `AUTHENTICATE *` matters: without it the server holds the connection in a
+    /// half-finished exchange until its own timeout, which is a worse citizen than saying
+    /// so and leaving.
+    private func abortAuthentication(_ detail: String) async {
+        await connection?.send(IRCMessage(verb: "AUTHENTICATE", parameters: ["*"]))
+        await failAuthentication(detail)
+    }
+
+    private func failAuthentication(_ detail: String) async {
+        guard capabilityPhase == .authenticating else { return }
+        sasl = nil
+        Log.session.error("SASL authentication failed")
+        await endAttempt(reason: .authenticationFailed(detail), allowingReconnect: false)
+    }
+
+    private func finishAuthentication() async {
+        guard capabilityPhase == .authenticating else { return }
+        sasl = nil
+        await endCapabilityNegotiation()
+    }
+
+    private func handleWelcome(_ message: IRCMessage) async {
         connectDeadlineTask?.cancel()
         connectDeadlineTask = nil
         attempt = 0
@@ -409,6 +657,29 @@ public actor IRCSession {
         Log.session.info("registered as \(self.currentNick, privacy: .public)")
         emit(.registered(info))
         setState(.connected(info))
+
+        // A server that ignored `CAP LS` entirely gets here with negotiation still open.
+        // Marking it ended is what stops a later `CAP` line producing a stray `CAP END` on
+        // a connection that is already registered.
+        capabilityPhase = .ended
+        await identifyToNickServIfNeeded()
+    }
+
+    /// `PRIVMSG NickServ :IDENTIFY <account> <password>`, once, after registration.
+    ///
+    /// Redaction is not this function's business and deliberately so: `TraceBuffer` strips
+    /// the arguments of a NickServ `IDENTIFY` on insert, which covers this line, the one a
+    /// user types by hand, and any other route to the same command.
+    private func identifyToNickServIfNeeded() async {
+        guard let (account, password) = pendingIdentify else { return }
+        pendingIdentify = nil
+        emit(.clientNotice("identifying to NickServ as \(account)"))
+        await connection?.send(
+            IRCMessage(
+                verb: "PRIVMSG",
+                parameters: ["NickServ", "IDENTIFY \(account) \(password)"]
+            )
+        )
     }
 
     /// 004 is `<client> <server> <version> <user modes> <channel modes>`.

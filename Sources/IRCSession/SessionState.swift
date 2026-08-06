@@ -44,6 +44,13 @@ public enum DisconnectReason: Sendable, Equatable {
     case transportFailed(TransportError)
     /// Registration could not complete.
     case registrationFailed(String)
+
+    /// Authentication was refused, or could not be completed.
+    ///
+    /// Its own case, and never reconnected from: a wrong password does not become right on
+    /// the second attempt, and a client that keeps trying one is how an account gets
+    /// locked out and an IP gets throttled.
+    case authenticationFailed(String)
     /// Nothing arrived and our own `PING` went unanswered.
     case timedOut
     /// Neither the TCP connection nor registration finished in time.

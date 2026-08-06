@@ -30,15 +30,31 @@ public enum IRCEvent: Sendable, Equatable {
     /// is no line marking the end of that burst, so waiting for one would mean guessing.
     case registered(ServerInfo)
 
+    /// One `PRIVMSG` or `NOTICE`.
+    ///
+    /// `tags` is the message's own tag section, carried because two capabilities put
+    /// something there that only the consumer can use: `server-time`'s `time` says when
+    /// the line was *said* rather than when it arrived, and `msgid` is what prompt 12 will
+    /// de-duplicate a replayed log against. Carried whole rather than picked apart here —
+    /// this module has no clock and no date formatter, and inventing one to parse a
+    /// timestamp it does not itself use would be the wrong layer.
     case message(
         target: Target,
         sender: IRCSource,
         text: String,
         kind: MessageKind,
-        isAction: Bool
+        isAction: Bool,
+        tags: IRCTags
     )
 
-    case joined(channel: IRCChannelName, who: IRCSource)
+    /// A `JOIN`. `account` and `realName` are populated only under `extended-join`, and
+    /// `account` is `nil` for someone who is not logged in — the wire's `*`.
+    case joined(
+        channel: IRCChannelName,
+        who: IRCSource,
+        account: String?,
+        realName: String?
+    )
     case parted(channel: IRCChannelName, who: IRCSource, reason: String?)
     case quit(who: IRCSource, reason: String?)
     case nickChanged(who: IRCSource, newNick: String)
@@ -95,6 +111,50 @@ public enum IRCEvent: Sendable, Equatable {
 
     /// Our own diagnostic, addressed to the user rather than to the server.
     case clientError(String)
+
+    /// Something the client wants to say that is not a failure.
+    ///
+    /// Separate from ``clientError(_:)`` because the red reserved for failures is worth
+    /// keeping: "this server has no SASL, identifying to NickServ instead" is the client
+    /// doing its job, not the client failing at it.
+    case clientNotice(String)
+
+    // MARK: - IRCv3
+
+    /// Capability negotiation settled, or moved: also fires for `CAP NEW` and `CAP DEL`,
+    /// which is the whole point of `cap-notify`.
+    case capabilitiesChanged(NegotiatedCapabilities)
+
+    /// We are logged in to services, from 900 or from a successful SASL exchange.
+    case authenticated(account: String)
+
+    /// A `FAIL`, `WARN` or `NOTE` under `standard-replies`.
+    case standardReply(StandardReply)
+
+    /// Someone became away or came back, under `away-notify`. `message` is `nil` for a
+    /// return, and an away reason otherwise.
+    case awayChanged(who: IRCSource, message: String?)
+
+    /// Someone logged in to or out of services, under `account-notify`. `account` is `nil`
+    /// for a logout — the wire's `*`.
+    case accountChanged(who: IRCSource, account: String?)
+
+    /// Someone's user@host changed without a reconnect, under `chghost`.
+    case hostChanged(who: IRCSource, user: String, host: String)
+
+    /// Someone changed their real name, under `setname`.
+    case realNameChanged(who: IRCSource, realName: String)
+
+    /// An invitation, whether ours (341) or someone else's seen under `invite-notify`.
+    case invited(by: IRCSource?, nick: String, channel: IRCChannelName)
+
+    /// A `BATCH` opening or closing.
+    ///
+    /// Carried rather than acted on: nothing needs to group lines until prompt 4 replays
+    /// `chathistory` into a buffer. Surfacing them means the reference is already in the
+    /// event stream when it does, rather than only in `.raw`.
+    case batchStarted(reference: String, type: String, parameters: [String])
+    case batchEnded(reference: String)
 }
 
 /// Why a `JOIN` was refused.
