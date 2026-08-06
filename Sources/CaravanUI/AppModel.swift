@@ -576,7 +576,29 @@ public final class AppModel {
     /// than a delta, so this reconciles rather than applying edits. Called whenever that
     /// list changes: once for `BOUNCER LISTNETWORKS`, and again per `BOUNCER NETWORK` under
     /// `soju.im/bouncer-networks-notify`.
+    ///
+    /// **Serialized per bouncer, and re-run if the list moved while it was working.**
+    /// Opening a network suspends, and a `BOUNCER NETWORK` arriving during that suspension
+    /// would otherwise be reconciled against a list that is already stale — with the
+    /// visible symptom that a network removed while another was being opened comes back.
     func reconcileBouncerNetworks(of control: ConnectionViewModel) async {
+        guard !reconcilingBouncers.contains(control.id) else {
+            bouncersNeedingReconcile.insert(control.id)
+            return
+        }
+        reconcilingBouncers.insert(control.id)
+        defer { reconcilingBouncers.remove(control.id) }
+        repeat {
+            bouncersNeedingReconcile.remove(control.id)
+            await applyBouncerNetworks(of: control)
+        } while bouncersNeedingReconcile.contains(control.id)
+    }
+
+    /// Bouncers whose reconcile is in flight, and those that changed while it was.
+    @ObservationIgnored private var reconcilingBouncers: Set<UUID> = []
+    @ObservationIgnored private var bouncersNeedingReconcile: Set<UUID> = []
+
+    private func applyBouncerNetworks(of control: ConnectionViewModel) async {
         let wanted = control.bouncerNetworks
         let existing = connections.filter {
             $0.bouncerNetworkID != nil && $0.host == control.host && $0.port == control.port

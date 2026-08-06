@@ -28,17 +28,20 @@ public struct RootView: View {
             ToolbarItem(placement: .primaryAction) {
                 closeChannelButton
             }
+            // **Both, not one or the other.** They used to alternate, which was right when
+            // there could be one connection: "connect" meant "connect *this*". Now it means
+            // "open another network", so hiding it while one is connected leaves no way to
+            // reach the second one — which is the entire feature. Found by the live run.
             ToolbarItem(placement: .primaryAction) {
-                // Acts on the network you are looking at, not on "the" connection — there
-                // is no such thing now. Connecting is always available, because it means
-                // "open another network".
-                if model.activeConnection?.isConnected == true {
-                    Button("Disconnect") {
-                        Task { await model.disconnect() }
-                    }
-                } else {
-                    Button("Connect…") { model.isShowingConnectSheet = true }
+                Button("Disconnect") {
+                    Task { await model.disconnect() }
                 }
+                .disabled(model.activeConnection?.isConnected != true)
+                .help("Disconnect the selected network")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("Connect…") { model.isShowingConnectSheet = true }
+                    .help("Open another network")
             }
         }
         .sheet(isPresented: $model.isShowingConnectSheet) {

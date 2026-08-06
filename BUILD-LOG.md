@@ -2903,3 +2903,35 @@ acceptance and it is now a test.
 that finally needs it — so bouncer mode is proven against a scripted server that speaks the
 extension, and against the spec, but not against soju itself. And the machine was locked
 again, so the tree was not looked at. Both are on the PR.
+
+## Stage 2, prompt 4 — what the live run found
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+The screen came back mid-PR, so the tree got looked at after all. It found two things, one
+of them the whole feature.
+
+**There was no way to open a second network.** The toolbar alternated between "Connect…"
+and "Disconnect" — correct when there could be one connection, since "connect" then meant
+"connect *this*". This prompt changed it to mean "open another network", and hiding it while
+one is connected left multi-network unreachable from the UI: the empty-state button is gone
+once a network exists, and the toolbar showed only Disconnect. Both buttons now, with
+Disconnect disabled rather than absent. Every test passed; nothing but looking would have
+found it, which is the third time this project has written that sentence.
+
+**A stale reconcile could resurrect a removed network.** `reconcileBouncerNetworks` read the
+network list, then suspended in `open()` to bring a connection up. A `BOUNCER NETWORK <id> *`
+arriving during that suspension was reconciled against a list that was already stale, and
+the removed network came back. It is now serialized per bouncer and re-runs while the list
+keeps moving. This one *did* show up as a test failure — but intermittently, and only after
+the toolbar rebuild happened to change the timing, which is the kind of failure it is very
+tempting to re-run and call a flake.
+
+**Verified live, in the app, against Libera and OFTC at once.** Both rows named from their
+own `ISUPPORT` — `Libera.Chat` and `OFTC`, not their hostnames. A channel joined on each,
+deliberately near-identically named (`##caravan-multi` and `#caravan-multi`), and a line
+sent in each: both landed in the right buffer, each window's subtitle naming its network.
+Collapsing Libera left OFTC expanded, which is stage 1 prompt 8's carry-forward doing what
+it was asked for.
+
+**Still outstanding: soju.** The bouncer half of the acceptance has nothing to run against.
