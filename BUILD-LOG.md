@@ -2324,3 +2324,67 @@ happened and were not missed — `CaravanUI` holds both, and splitting them now 
 abstraction ahead of a second consumer. The `UserDefaults` stopgap ran five prompts longer
 than intended; naming the keys in one enum is what kept the eventual move to one afternoon,
 and that trick is worth reusing for anything else deliberately deferred.
+
+## Stage 2, formatting codes — rendering
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+**Shipped:** a new pure module, `IRCFormat` — `IRCFormatting` (the code parser),
+`InlineStyle`/`InlineColour`/`RGB`, `MIRCPalette` (both base tables and the fixed 16–98
+range), `NickColour`. `CaravanUI` — `Palette` (index → `NSColor`, appearance resolution,
+per-index and per-nick overrides), `InlineTraits` and its attribute, the render path in
+`LineRenderer`, and a rebuilt `applyFont`/`restyle` in `MessageLogController`. 418 tests
+across 42 suites; the authoring half is now its own `PLAN.md` item.
+
+**Decisions:**
+
+- **`IRCFormat` is a pure module, in the Linux job.** The code table and the colour tables
+  are tables, and a colour table exercised only through a text view is one nobody
+  exercises. Putting it in the Linux manifest makes purity mechanical rather than a
+  promise, the same trade `IRCProtocol` already makes. Colours come out as *indices*, not
+  colours: which red index 4 is depends on the window, and that is not this module's
+  business.
+- **Two nick palettes, one per appearance — because one was arithmetically impossible.**
+  §6 asks for the palette to be contrast-checked against both backgrounds. Clearing 4.5:1
+  against near-white needs relative luminance ≤ 0.183; against near-black, ≥ 0.234. No
+  colour satisfies both, and the best any single colour manages is about 4.08:1. So the
+  hash picks a *hue* and the appearance picks its lightness: a nick keeps its identity
+  across a theme switch and both variants clear AA properly. `oneTableWasImpossible` is
+  the test that records why, so nobody collapses the two tables back into one.
+- **A sender who named both colours gets both literally.** `^C1,0` is black on white, and
+  it stays that way on a dark window because the white is actually drawn behind it.
+  Adjusting the foreground there would put light grey on white — destroying the one case
+  the sender got unambiguously right. Only a lone foreground is re-tuned, which is exactly
+  the case the alternate palette exists for.
+- **The light table stays mIRC's literal sixteen.** Yellow on white is unreadable in mIRC
+  too; silently darkening it invents a colour the sender did not ask for. Only the dark
+  table is ours, so only it has to answer a legibility test.
+- **`^D` hex colours are parsed although the item did not ask.** A code left unparsed does
+  not disappear — it renders as a control picture and six stray characters mid-sentence.
+  Hex is never re-tuned or overridden: there the sender named a value rather than a slot.
+
+**Learned — three ways to silently lose bold, all found by one test:**
+
+- **`AttributedString` → `NSAttributedString` drops custom attributes** unless the scope is
+  named: `NSAttributedString(line, including: \.caravan)`. The plain initializer threw away
+  every `InlineTraits` on the way into the text storage.
+- **Adding `.bold` to a resolved font's descriptor returns a font that is not bold.** The
+  descriptor names a specific face and the name beats the added trait.
+  `NSFontManager.convert` fails the same way once the font carries a cascade list. Going
+  back to the *family* is what actually produces Menlo-Bold — and it keeps the fallback
+  cascade, which a bold run needs as much as a plain one.
+- **A test that asserts the call returned something asserts nothing.** All three of these
+  passed a "did we get a font back" check. Asserting the glyphs were bold is what found
+  them.
+
+**Consumed** prompt 10's two carry-forward notes on this item, and prompt 11's: `restyle()`
+now rebuilds each run's font from its traits instead of blanket-setting it, so changing the
+font size no longer flattens every bold run in the buffer. That is a test now.
+
+**Deferred, and why:** the authoring half — Ctrl+K/B/U/I and the colour strip — is its own
+`PLAN.md` item rather than more of this one. Reading and writing share only the code table:
+reading is a parser plus a palette, writing is input-field key handling. The rendering half
+went first because a client that writes codes it cannot read is the wrong way round. Also
+outstanding for that item: the settings-form rows for palette mode and nick colouring, and
+a live run — this branch has had none, so `Palette` is still constructed with defaults at
+every call site and `auto` does not yet follow the system appearance in the running app.

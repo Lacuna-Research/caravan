@@ -62,17 +62,26 @@ public enum ChatFont {
     /// Falls back to the system monospaced font only if the requested family and every
     /// fallback are absent, which on macOS means something is very wrong — but a client
     /// that renders nothing is worse than one that renders in the wrong font.
+    /// - Parameter traits: Bold and italic, for the runs that ask for them.
+    ///   Applied to a descriptor built from the *family* rather than to one taken off an
+    ///   already-resolved font: a resolved descriptor names a specific face, the name wins
+    ///   over the added trait, and you get a font back that is simply not bold.
     @MainActor
-    public static func nsFont(family: String = defaultFamily, size: Double = defaultSize)
-        -> NSFont
-    {
+    public static func nsFont(
+        family: String = defaultFamily,
+        size: Double = defaultSize,
+        traits: NSFontDescriptor.SymbolicTraits = []
+    ) -> NSFont {
         let cascade = fallbackFamilies.map {
             NSFontDescriptor(fontAttributes: [.family: $0])
         }
-        let descriptor = NSFontDescriptor(fontAttributes: [
+        var descriptor = NSFontDescriptor(fontAttributes: [
             .family: family,
             .cascadeList: cascade,
         ])
+        if !traits.isEmpty {
+            descriptor = descriptor.withSymbolicTraits(traits)
+        }
         return NSFont(descriptor: descriptor, size: size)
             ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }

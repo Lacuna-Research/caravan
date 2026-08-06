@@ -139,7 +139,7 @@ public final class MessageLogController {
         var appendedLengths: [Int] = []
         appendedLengths.reserveCapacity(pending.count)
         for line in pending {
-            let attributed = NSAttributedString(line)
+            let attributed = Self.converted(line)
             batch.append(attributed)
             batch.append(Self.newline)
             appendedLengths.append(attributed.length + 1)
@@ -175,18 +175,38 @@ public final class MessageLogController {
     /// column 0 rather than hanging under the message column, and a clamped line height so
     /// pasted Zalgo cannot blow one line to hundreds of points.
     private func applyChatAttributes(to batch: NSMutableAttributedString) {
-        let font = chatFont
         let whole = NSRange(location: 0, length: batch.length)
         batch.addAttributes(
             [
                 .ligature: 0,
-                .paragraphStyle: ChatFont.paragraphStyle(for: font),
+                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
             ],
             range: whole
         )
-        batch.enumerateAttribute(.font, in: whole) { existing, range, _ in
-            guard existing == nil else { return }
-            batch.addAttribute(.font, value: font, range: range)
+        applyFont(to: batch, in: whole)
+    }
+
+    /// Converts a rendered line for the text storage, **naming our own attribute scope**.
+    ///
+    /// `NSAttributedString(someAttributedString)` carries only the scopes it knows about,
+    /// and silently drops everything else — so the plain initializer threw away every
+    /// ``InlineTraits`` on the way in, and bold text arrived unbold with nothing to show
+    /// for it. Naming the scope is what keeps a custom attribute alive across the bridge.
+    private static func converted(_ line: AttributedString) -> NSAttributedString {
+        (try? NSAttributedString(line, including: \.caravan)) ?? NSAttributedString(line)
+    }
+
+    /// Fills in the chat font, wearing whatever traits each run asked for.
+    ///
+    /// The renderer cannot do this: an `NSFont` is not `Sendable`, so it cannot go into an
+    /// `AttributedString`. It leaves ``InlineTraits`` behind instead, and this is the one
+    /// place that knows both the traits and the current chat font — which is what lets a
+    /// font change restyle bold text back into bold text.
+    private func applyFont(to text: NSMutableAttributedString, in range: NSRange) {
+        let font = chatFont
+        text.enumerateAttribute(.inlineTraits, in: range) { value, subrange, _ in
+            let traits = (value as? NSNumber).map { InlineTraits(rawValue: $0.uint8Value) } ?? []
+            text.addAttribute(.font, value: traits.applied(to: font), range: subrange)
         }
     }
 
@@ -221,10 +241,10 @@ public final class MessageLogController {
 
     /// Reapplies the chat font and the grid rules to everything already on screen.
     ///
-    /// Blanket-sets the font, which is right while every run carries the chat font and
-    /// nothing else. Stage 2's formatting codes introduce bold and italic runs, and this
-    /// will then have to rebuild each run's font from its traits rather than overwrite it
-    /// — noted against that item in `PLAN.md`.
+    /// **Rebuilds each run's font from its traits rather than overwriting it.** A blanket
+    /// `addAttribute(.font:)` was correct only while every run wore the plain chat font;
+    /// with inline formatting on the wire it would flatten every bold and italic run in
+    /// the buffer the moment somebody nudged the font size.
     private func restyle() {
         guard let textStorage = textView?.textStorage, textStorage.length > 0 else { return }
         let wasPinned = isPinnedToBottom
@@ -232,12 +252,12 @@ public final class MessageLogController {
         textStorage.beginEditing()
         textStorage.addAttributes(
             [
-                .font: chatFont,
                 .ligature: 0,
                 .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
             ],
             range: whole
         )
+        applyFont(to: textStorage, in: whole)
         // The unread rule is deliberately wider than the window and clipped rather than
         // wrapped, so the blanket pass above has to be undone for its one line.
         if let index = unreadMarkerLine, index < lineLengths.count {

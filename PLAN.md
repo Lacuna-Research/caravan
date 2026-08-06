@@ -102,9 +102,9 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 
 ## Stage 2 — Intermediate (a mIRC daily driver)
 
-10. **mIRC formatting codes.** Parse/render bold, italic, underline, strikethrough,
-    monospace, reverse, reset, and `^C` colors including the extended 16–98 palette.
-    Ctrl+K/B/U/I in the input box, plus a color picker strip. Palettes per
+10. **mIRC formatting codes — rendering.** Parse/render bold, italic, underline,
+    strikethrough, monospace, reverse, reset, and `^C` colors including the extended
+    16–98 palette. Palettes per
     GUI-DESIGN-NOTES.md §5: an explicit three-state Auto / Light / Dark toggle (Auto
     follows the system appearance), a full alternate 16-colour palette for dark
     backgrounds — not a 0↔1 swap; the fixed 16–98 range mostly survives unchanged —
@@ -127,6 +127,20 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       nothing else. This item is where it stops being correct: restyle has to rebuild each
       run's font from its own traits rather than overwrite it, or the first bold word in a
       buffer loses its bold the moment someone changes the font size.
+
+10a. **mIRC formatting codes — authoring.** Ctrl+K/B/U/I in the input box and a colour
+    picker strip, so codes can be *written* and not only read. Split out of the item
+    above once it was clear that reading and writing share only the code table: reading
+    is a parser plus a palette, writing is input-field key handling and a control. The
+    rendering half shipped first because a client that writes codes it cannot read is
+    the wrong way round.
+
+    ### Carry-forward
+
+    - From the rendering half: `IRCFormatting` already names every control character and
+      `InlineStyle` already models the switches, so authoring is inserting the characters
+      the parser round-trips. `InputTextView.doCommand(by:)` is the seam prompt 9 built
+      and prompt 15's tab completion also wants.
 
 11. **Multi-window model.** The tree's shape shipped with stage 1
     (GUI-DESIGN-NOTES.md §12); this item adds activity and navigation at scale

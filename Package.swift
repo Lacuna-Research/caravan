@@ -16,11 +16,12 @@ let strict: [SwiftSetting] = [
     .swiftLanguageMode(.v6)
 ]
 
-// Message parsing and serialization. Pure: no I/O, no Foundation networking, no
-// Darwin APIs. This is the only target that builds on Linux, and CI runs its tests
-// there — so an accidental `import AppKit` or `os.Logger` fails a build rather than
-// slipping past review.
-let ircProtocol: [Target] = [
+// The pure modules. No I/O, no Darwin, no AppKit — CI builds exactly these on Linux, so
+// purity fails a build rather than depending on review. `IRCFormat` is here for the same
+// reason `IRCProtocol` is: it is a table, tables are worth testing exhaustively, and a
+// colour table that has to be exercised through a text view is a colour table nobody
+// exercises.
+let pureModules: [Target] = [
     .target(name: "IRCProtocol", swiftSettings: strict),
     .testTarget(
         name: "IRCProtocolTests",
@@ -28,6 +29,8 @@ let ircProtocol: [Target] = [
         resources: [.copy("Fixtures")],
         swiftSettings: strict
     ),
+    .target(name: "IRCFormat", swiftSettings: strict),
+    .testTarget(name: "IRCFormatTests", dependencies: ["IRCFormat"], swiftSettings: strict),
 ]
 
 // Everything else needs Darwin: os.Logger, Network.framework, AppKit.
@@ -48,7 +51,7 @@ let darwinOnly: [Target] = [
     // nothing in an `.xcodeproj` app target is reachable from `swift test`.
     .target(
         name: "CaravanUI",
-        dependencies: ["Diagnostics", "IRCProtocol", "IRCSession"],
+        dependencies: ["Diagnostics", "IRCFormat", "IRCProtocol", "IRCSession"],
         swiftSettings: strict
     ),
     .testTarget(
@@ -78,6 +81,11 @@ let darwinOnly: [Target] = [
     ),
 ]
 
+let pureProducts: [Product] = [
+    .library(name: "IRCProtocol", targets: ["IRCProtocol"]),
+    .library(name: "IRCFormat", targets: ["IRCFormat"]),
+]
+
 let darwinProducts: [Product] = [
     .library(name: "Diagnostics", targets: ["Diagnostics"]),
     .library(name: "IRCTransport", targets: ["IRCTransport"]),
@@ -92,12 +100,11 @@ let darwinProducts: [Product] = [
 // purity. Shrinking the manifest instead lets that job actually *run* the parser
 // tests cross-platform rather than merely compiling the module.
 #if os(Linux)
-    let allTargets = ircProtocol
-    let allProducts: [Product] = [.library(name: "IRCProtocol", targets: ["IRCProtocol"])]
+    let allTargets = pureModules
+    let allProducts: [Product] = pureProducts
 #else
-    let allTargets = ircProtocol + darwinOnly
-    let allProducts: [Product] =
-        [.library(name: "IRCProtocol", targets: ["IRCProtocol"])] + darwinProducts
+    let allTargets = pureModules + darwinOnly
+    let allProducts: [Product] = pureProducts + darwinProducts
 #endif
 
 let package = Package(
