@@ -4,8 +4,15 @@ set -euo pipefail
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 
+# The name EnterWorktree would have generated for *this* worktree, which is exactly
+# `worktree-<directory>`. Matching that rather than the bare `worktree-*` prefix: a branch
+# genuinely about worktrees is not an unrenamed one, and this hook refused to push
+# `worktree-hygiene` from the directory `worktree-hygiene` — where the generated name
+# would have been `worktree-worktree-hygiene`.
+generated="worktree-$(basename "$(git rev-parse --show-toplevel)")"
+
 case "$branch" in
-worktree-*)
+"$generated")
 	echo "pre-push: refusing to push '$branch'." >&2
 	echo >&2
 	echo "  EnterWorktree names its branch 'worktree-<name>'. Rename it first:" >&2

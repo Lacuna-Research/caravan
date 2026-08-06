@@ -1,4 +1,4 @@
-.PHONY: all hooks check build test fmt lint app
+.PHONY: all hooks check build test fmt lint app worktrees worktrees-prune
 
 # Zero-warnings is a rule, so the compiler enforces it. Set here rather than in
 # Package.swift: as a package setting it conflicts with the -suppress-warnings
@@ -16,6 +16,15 @@ hooks:
 # Documentation discipline over staged changes. CI runs the same script.
 check:
 	./Scripts/check-docs.sh
+
+# What worktrees exist, and which are provably merged and so safe to remove.
+worktrees:
+	@./Scripts/worktrees.sh
+
+# Remove the merged ones and delete their branches. Never touches a worktree with
+# uncommitted work or with commits that are not already on main.
+worktrees-prune:
+	@./Scripts/worktrees.sh --prune
 
 build:
 	swift build $(SWIFTFLAGS)
