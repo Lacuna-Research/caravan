@@ -2936,6 +2936,83 @@ it was asked for.
 
 **Still outstanding: soju.** The bouncer half of the acceptance has nothing to run against.
 
+## Retrospective — the prompt system, four prompts into stage 2
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+Written at the end of a session that ran prompts 3 and 4 back to back, while the detail was
+still recoverable. Stage 1's retrospective is above; this one is about the *process* rather
+than the code, and it is deliberately more critical than complimentary, because the parts
+that work need no attention.
+
+### What is carrying the weight
+
+**`check-docs.sh` is the best thing in the setup.** Across both prompts it caught the status
+line, the README badge, the README table row count and stale carry-forwards — every time,
+without anyone having to remember. `CLAUDE.md`'s "make it mechanical rather than writing it
+more emphatically" is the principle the whole discipline rests on, and it held under two
+large prompts and a five-hour CI outage.
+
+**Carry-forward notes earned their keep twice in one day.** Prompt 3's note told prompt 4
+exactly where to start — two cases in `ClientCapability`, machinery already generic — and
+stage 1 prompt 8's note about `AppModel.isNetworkExpanded` was written a long way back and
+was still precisely right when it came due. The rule that makes them work is "name the seam,
+not the topic". Every note that named a file and a symbol was actionable on sight.
+
+**Just-in-time prompt detail was vindicated hard.** Prompt 4's brief described bouncer mode
+as "a single connection to soju where `soju.im/bouncer-networks` enumerates the upstream
+networks". That is *wrong*: `BOUNCER BIND` must be sent on the connection being registered,
+so a bouncer is a control connection plus one per network. Reading the spec caught it in
+twenty minutes. Had prompts 5–17 been written out in full detail at the start of the stage,
+that error would have been followed rather than caught — which is exactly the failure the
+just-in-time rule exists to prevent, observed in the wild rather than argued about.
+
+### Where it needs work
+
+**The carry-forward check rewards deletion, not consumption.** It verifies only that no
+`Carry-forward` heading survives on a prompt numbered at or below the completed count —
+which is satisfied by deleting the block unread. Prompt 4 consumed two of its three notes,
+declined the third deliberately (the `IRCTags` widening, since soju replays only messages)
+and moved it to prompt 12; that was recorded, but nothing required it. A cheap fix: require
+the `BUILD-LOG.md` entry for a prompt that had carry-forwards to mention them, which is one
+more `grep` in the script. Recorded here rather than made mechanical in the same breath,
+which is itself an instance of the problem.
+
+**"Run it live" and "a green PR is authorisation to land it" are in tension when the live
+run cannot happen.** The machine was locked for most of this session. The improvised
+substitutes were good — headless live tests against Libera and against a real self-signed
+handshake, and hosting the SwiftUI sheets in an offscreen `NSHostingView` to measure them —
+but nothing in the finishing checklist asked for a substitute or required naming one. The
+cost was concrete and immediate: **the trust-refusal reconnect loop shipped to `main` and
+was found an hour later**, by the acceptance run that had been deferred. The checklist wants
+an explicit branch: if step 5 cannot happen, say so in the `Status:` line, name the
+substitute, and treat the prompt as provisionally done.
+
+**Prompts 3 and 4 were each arguably two prompts.** Prompt 3 was CAP negotiation, three SASL
+mechanisms, NickServ, the Keychain, TLS trust-on-first-use, `echo-message`, `server-time` and
+eleven new `IRCEvent` cases. Prompt 4 was a multi-network model refactor plus the bouncer
+extension plus `chathistory`. Both landed in a session, but near the limit, and the queue's
+own escape hatch — "a large item may span two" — went unused. Worth a sizing pass over the
+remaining thirteen before starting them.
+
+**The `Status:` line is drifting into a paragraph.** Prompts 3 and 4 both now carry an
+outstanding-items narrative in a field `check-docs.sh` parses for a completion count. The
+information is right and belongs somewhere; that field was not designed to hold it.
+
+### The thing worth remembering
+
+**Every defect that mattered today came from looking, not from testing.** 571 tests passed
+while multi-network had no way to open a second network from the toolbar — the feature's own
+front door, missing, with full green CI. The trust-refusal loop likewise. And the offscreen
+layout test written as a *poor substitute* for looking turned out to be the most durable
+artifact of the session, because it encodes prompt 2's defect class permanently: a form row
+that collapses or explodes is now caught by a number rather than by an eye that happens to
+be available.
+
+The suggestion that follows: make "what did an eye actually check?" a named line in the
+finishing checklist, separate from the test count. A prompt that answers "nothing" is not
+wrong, but it should have to say so.
+
 ## Stage 2, prompt 4 — a red main, and a harness that lied
 
 **Commit:** see PR  **Date:** 2026-08-06
