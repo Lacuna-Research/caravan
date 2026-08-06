@@ -2,6 +2,7 @@ import Diagnostics
 import Foundation
 import IRCProtocol
 import IRCSession
+import IRCTransport
 import Observation
 
 /// One connection, as the UI sees it: a status window, a channel window per channel, a
@@ -47,15 +48,26 @@ public final class ConnectionViewModel: Identifiable {
     /// carry one. Starts at the `ISUPPORT` default, as the session's own does.
     @ObservationIgnored private var caseMapping: IRCCaseMapping = .rfc1459
 
+    /// What `CAP` negotiation settled on, mirrored from the session's own.
+    ///
+    /// Read on the send path, which is synchronous with respect to the user's keystroke —
+    /// so it is kept here rather than `await`ed off the actor for every line typed.
+    public private(set) var capabilities = NegotiatedCapabilities()
+
     @ObservationIgnored private let session: IRCSession
     @ObservationIgnored private var pump: Task<Void, Never>?
 
     public init(
         configuration: SessionConfiguration,
         trace: TraceBuffer,
-        settings: ChatSettings = ChatSettings()
+        settings: ChatSettings = ChatSettings(),
+        credentials: TLSCredentials = TLSCredentials()
     ) {
-        self.session = IRCSession(configuration: configuration, trace: trace)
+        self.session = IRCSession(
+            configuration: configuration,
+            trace: trace,
+            credentials: credentials
+        )
         self.currentNick = configuration.nick
         self.displayName = configuration.host
         self.settings = settings
@@ -125,16 +137,23 @@ public final class ConnectionViewModel: Identifiable {
 
     /// Sends a message, echoing what we said into the window it came from.
     ///
-    /// **Local echo, because there is no `echo-message` yet.** Without the capability the
-    /// server does not send our own messages back, so a client that only rendered inbound
-    /// traffic would never show what you typed. The line is marked `own*`, which is the
-    /// one bit stage 2 needs to suppress the duplicate once the capability is negotiated.
+    /// **Local echo only where the server is not doing it for us.** Without
+    /// `echo-message` the server never sends our own messages back, so a client rendering
+    /// only inbound traffic would show nothing of what you typed. With it, the server's
+    /// copy is the better one — it carries the `server-time` the message was actually
+    /// accepted at and its message id, and it arrives in the order everyone else sees —
+    /// so the local line is the one that goes.
+    ///
+    /// This is the filter `LineKind.isSelfEcho` was built for: one condition on the way
+    /// out, rather than trying to recognise our own words coming back.
     ///
     /// The wire form goes to the status window instead, and only when the raw-traffic
     /// toggle is on — that is where `>>` markers belong.
     public func send(_ message: IRCMessage, from target: Target?) async {
         appendRaw(message.wireForm, kind: .rawOutbound)
-        if let echo = selfEchoLine(for: message, in: target) {
+        if !capabilities.isEnabled(.echoMessage),
+            let echo = selfEchoLine(for: message, in: target)
+        {
             log(for: target).append([echo])
         }
         await session.send(message)
@@ -291,6 +310,8 @@ public final class ConnectionViewModel: Identifiable {
             removeBuffer(name)
         case .numeric(let code, let parameters):
             collectMOTD(code: code, parameters: parameters)
+        case .capabilitiesChanged(let negotiated):
+            capabilities = negotiated
         default:
             break
         }
@@ -305,7 +326,8 @@ public final class ConnectionViewModel: Identifiable {
         }
         let context = RenderContext(
             ownNick: currentNick,
-            senderPrefix: senderPrefix(for: event)
+            senderPrefix: senderPrefix(for: event),
+            now: serverTime(of: event) ?? Date()
         )
         guard let line = renderer.line(for: event, context: context) else { return }
         for destination in destinations(for: event) {
@@ -313,12 +335,47 @@ public final class ConnectionViewModel: Identifiable {
         }
     }
 
+    /// When a line was *said*, under `server-time`, or `nil` for one that has no such tag.
+    ///
+    /// This is what the capability is for: a line replayed out of a bouncer's backlog was
+    /// said an hour ago, and stamping it with the moment it happened to arrive is a client
+    /// telling the user something untrue. `RenderContext.now` is where it lands, so nothing
+    /// below the renderer has to know the difference.
+    ///
+    /// Only messages carry their tags today. Prompt 4 replays joins and topics through
+    /// `chathistory` and will want the same for those.
+    private func serverTime(of event: IRCEvent) -> Date? {
+        guard case .message(_, _, _, _, _, let tags) = event,
+            let value = tags.value(for: "time")
+        else { return nil }
+        return Self.parseServerTime(value)
+    }
+
+    /// IRCv3's timestamp is `2011-10-19T16:40:51.620Z`, but the fractional part is
+    /// optional in practice and several servers omit it — so both are accepted rather than
+    /// silently falling back to the arrival time for half the networks.
+    static func parseServerTime(_ value: String) -> Date? {
+        withFractionalSeconds.date(from: value) ?? withoutFractionalSeconds.date(from: value)
+    }
+
+    private static let withFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let withoutFractionalSeconds: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     /// The prefix the sender of a channel message holds there, e.g. `@`.
     ///
     /// Only messages have a nick column, and a message has exactly one channel, so there
     /// is no ambiguity about which buffer to ask.
     private func senderPrefix(for event: IRCEvent) -> Character? {
-        guard case .message(let target, let sender, _, _, _) = event,
+        guard case .message(let target, let sender, _, _, _, _) = event,
             case .channel(let name) = target,
             let buffer = buffersByName[name],
             let nick = sender.nick
@@ -356,7 +413,7 @@ public final class ConnectionViewModel: Identifiable {
     /// window, so nothing is silently dropped.
     private func destinations(for event: IRCEvent) -> [MessageLogController] {
         switch event {
-        case .joined(let channel, let who):
+        case .joined(let channel, let who, _, _):
             // The only event that opens a window: the server tells us we joined, and mIRC
             // has opened the window on that line for thirty years.
             if who.nick.map({ isOwn(nick: $0) }) == true {
@@ -372,7 +429,7 @@ public final class ConnectionViewModel: Identifiable {
             .joinFailed(let channel, _, _):
             return [existing(channel) ?? log]
 
-        case .modeChanged(let target, _, _), .message(let target, _, _, _, _):
+        case .modeChanged(let target, _, _), .message(let target, _, _, _, _, _):
             guard case .channel(let name) = target else { return [log] }
             return [existing(name) ?? log]
 
@@ -385,8 +442,22 @@ public final class ConnectionViewModel: Identifiable {
             let isOwnRename = who.nick.map { isOwn(nick: $0) } == true
             return isOwnRename || shared.isEmpty ? [log] + shared : shared
 
-        case .stateChanged, .registered, .numeric, .clientError, .raw,
-            .namesReply, .endOfNames, .channelChanged, .channelClosed:
+        case .awayChanged(let who, _), .accountChanged(let who, _),
+            .hostChanged(let who, _, _), .realNameChanged(let who, _):
+            // These describe a person, not a channel, so they land wherever that person
+            // is visible — the same rule a `QUIT` follows, and for the same reason.
+            return buffersContaining(nick: who.nick).map(\.log)
+
+        case .invited(_, _, let channel):
+            // An invitation to a channel we already have a window for belongs there; one
+            // to a channel we have never seen has nowhere else to go but the status
+            // window, which is exactly where an offer to join something should appear.
+            return [existing(channel) ?? log]
+
+        case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
+            .namesReply, .endOfNames, .channelChanged, .channelClosed,
+            .capabilitiesChanged, .authenticated, .standardReply,
+            .batchStarted, .batchEnded:
             return [log]
         }
     }
@@ -414,17 +485,21 @@ public final class ConnectionViewModel: Identifiable {
     /// default stands, which is what the session assumes too.
     private func noteCaseMapping(in event: IRCEvent) {
         switch event {
-        case .joined(let channel, _), .parted(let channel, _, _),
+        case .joined(let channel, _, _, _), .parted(let channel, _, _),
             .kicked(let channel, _, _, _), .topicChanged(let channel, _, _),
             .topicAuthor(let channel, _, _), .channelModes(let channel, _),
             .namesReply(let channel, _), .endOfNames(let channel),
-            .joinFailed(let channel, _, _), .channelClosed(let channel):
+            .joinFailed(let channel, _, _), .channelClosed(let channel),
+            .invited(_, _, let channel):
             caseMapping = channel.mapping
         case .channelChanged(let channel):
             caseMapping = channel.mapping
-        case .message(let target, _, _, _, _), .modeChanged(let target, _, _):
+        case .message(let target, _, _, _, _, _), .modeChanged(let target, _, _):
             if case .channel(let name) = target { caseMapping = name.mapping }
-        case .raw, .stateChanged, .registered, .quit, .nickChanged, .numeric, .clientError:
+        case .raw, .stateChanged, .registered, .quit, .nickChanged, .numeric,
+            .clientError, .clientNotice, .capabilitiesChanged, .authenticated,
+            .standardReply, .awayChanged, .accountChanged, .hostChanged, .realNameChanged,
+            .batchStarted, .batchEnded:
             break
         }
     }

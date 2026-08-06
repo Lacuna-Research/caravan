@@ -43,16 +43,25 @@ public actor IRCConnection {
 
     private let certificateBox = CertificateBox()
 
+    private let credentials: TLSCredentials
+
+    /// The hostname this connection asked for, so the trust evaluator can say which host
+    /// a certificate is being judged for.
+    private var requestedHost = ""
+
     /// What the peer presented, once a TLS handshake with a verify block has run.
     ///
-    /// Only populated for `.enabled(allowSelfSigned: true)`: the default path uses stock
-    /// system validation, which we do not intercept.
+    /// Only populated for `.enabled(.trustOnFirstUse)`: the default path uses stock system
+    /// validation, which we do not intercept.
     public var acceptedCertificate: TLSCertificate? { certificateBox.value }
 
-    /// - Parameter trace: Every line in and out is recorded here. Redaction happens on
-    ///   insert inside the buffer, so this transport never handles a redacted string.
-    public init(trace: TraceBuffer) {
+    /// - Parameters:
+    ///   - trace: Every line in and out is recorded here. Redaction happens on insert
+    ///     inside the buffer, so this transport never handles a redacted string.
+    ///   - credentials: The trust evaluator and client certificate, if there are any.
+    public init(trace: TraceBuffer, credentials: TLSCredentials = TLSCredentials()) {
         self.trace = trace
+        self.credentials = credentials
         let inboundStream = AsyncStream<IRCMessage>.makeStream(bufferingPolicy: .unbounded)
         self.inbound = inboundStream.stream
         self.inboundContinuation = inboundStream.continuation
@@ -76,6 +85,7 @@ public actor IRCConnection {
             return
         }
         hasConnected = true
+        requestedHost = host
 
         // `NWEndpoint.Port` accepts 0 — it means "any port", which is meaningful for a
         // listener and meaningless for us. Rejected here rather than opening a socket
@@ -275,47 +285,95 @@ public actor IRCConnection {
         switch tls {
         case .disabled:
             return NWParameters(tls: nil, tcp: tcp)
-        case .enabled(let allowSelfSigned):
+        case .enabled(let trust):
             let options = NWProtocolTLS.Options()
-            if allowSelfSigned {
+            if let clientIdentity = credentials.clientIdentity,
+                let secIdentity = sec_identity_create(clientIdentity.identity)
+            {
+                // CertFP: the certificate is presented on every TLS connection, and SASL
+                // `EXTERNAL` then asks the server to look up whose fingerprint it is.
+                sec_protocol_options_set_local_identity(
+                    options.securityProtocolOptions,
+                    secIdentity
+                )
+                Log.transport.info("presenting a client certificate")
+            }
+            if trust == .trustOnFirstUse {
                 installVerifyBlock(on: options)
             }
             return NWParameters(tls: options, tcp: tcp)
         }
     }
 
-    /// Installed *only* for `allowSelfSigned`, so the ordinary path keeps stock system
-    /// validation rather than our reimplementation of it.
+    /// Installed *only* for ``TLSTrust/trustOnFirstUse``, so the ordinary path keeps stock
+    /// system validation rather than our reimplementation of it.
     ///
-    /// Even here the certificate is evaluated and recorded rather than waved through
-    /// unseen: ``acceptedCertificate`` carries the fingerprint out to the caller, and
-    /// the log says plainly that trust was not established. A UI that asks the user
-    /// before accepting is stage 2's — see the note on PLAN.md.
+    /// A certificate the system validates is accepted without anyone being asked — the
+    /// question this exists for is the one system validation could not answer. Where it
+    /// fails, the decision goes to ``TLSCredentials/trustEvaluator``, and with no evaluator
+    /// to ask, the handshake **fails**. That is the whole difference from the flag this
+    /// replaced, which accepted silently and left the asking to a later prompt.
     private func installVerifyBlock(on options: NWProtocolTLS.Options) {
         let certificateBox = self.certificateBox
+        let evaluator = credentials.trustEvaluator
+        let host = requestedHost
         sec_protocol_options_set_verify_block(
             options.securityProtocolOptions,
             { _, trustRef, complete in
                 let trust = sec_trust_copy_ref(trustRef).takeRetainedValue()
                 let systemTrusted = SecTrustEvaluateWithError(trust, nil)
+                // Summarized synchronously: `SecTrust` cannot cross a concurrency
+                // boundary, and `TLSCertificate` is the `Sendable` shadow of it that can.
                 let certificate = TLSCertificate(leafOf: trust, systemTrusted: systemTrusted)
                 certificateBox.store(certificate)
 
                 if systemTrusted {
                     Log.transport.info("TLS certificate validated by the system")
-                } else {
-                    Log.transport.error(
-                        """
-                        accepting an unvalidated TLS certificate because self-signed \
-                        certificates were allowed: \
-                        \(certificate?.sha256Fingerprint ?? "no certificate", privacy: .public)
-                        """
-                    )
+                    complete(true)
+                    return
                 }
-                complete(true)
+                guard let evaluator, let certificate else {
+                    Log.transport.error(
+                        "refusing an unvalidated TLS certificate: nobody could be asked about it"
+                    )
+                    complete(false)
+                    return
+                }
+                Log.transport.error(
+                    """
+                    the system would not validate this server's certificate; asking: \
+                    \(certificate.sha256Fingerprint, privacy: .public)
+                    """
+                )
+                let completion = VerifyCompletion(complete)
+                Task {
+                    let accepted = await evaluator(certificate, host)
+                    Log.transport.info(
+                        "unvalidated certificate \(accepted ? "accepted" : "refused", privacy: .public)"
+                    )
+                    completion(accepted)
+                }
             },
             queue
         )
+    }
+}
+
+/// The verify block's completion handler, carried into the `Task` that answers it.
+///
+/// @unchecked Sendable: `sec_protocol_verify_complete_t` is an Objective-C block that
+/// Network.framework documents as callable once, from any queue — the whole reason the
+/// verify block hands one over rather than taking a return value. One task owns one of
+/// these and calls it exactly once.
+private final class VerifyCompletion: @unchecked Sendable {
+    private let complete: sec_protocol_verify_complete_t
+
+    init(_ complete: @escaping sec_protocol_verify_complete_t) {
+        self.complete = complete
+    }
+
+    func callAsFunction(_ accepted: Bool) {
+        complete(accepted)
     }
 }
 
@@ -360,7 +418,8 @@ extension TLSMode {
     fileprivate var logDescription: String {
         switch self {
         case .disabled: "off"
-        case .enabled(let allowSelfSigned): allowSelfSigned ? "on (self-signed allowed)" : "on"
+        case .enabled(.system): "on"
+        case .enabled(.trustOnFirstUse): "on (trust on first use)"
         }
     }
 }

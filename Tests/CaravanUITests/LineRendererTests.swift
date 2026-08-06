@@ -42,7 +42,8 @@ struct LineRendererTests {
             sender: user(nick),
             text: body,
             kind: kind,
-            isAction: isAction
+            isAction: isAction,
+            tags: IRCTags()
         )
     }
 
@@ -90,7 +91,14 @@ struct LineRendererTests {
     @Test("membership events read like mIRC")
     func membership() {
         #expect(
-            text(.joined(channel: IRCChannelName("#swift"), who: user("bob")))
+            text(
+                .joined(
+                    channel: IRCChannelName("#swift"),
+                    who: user("bob"),
+                    account: nil,
+                    realName: nil
+                )
+            )
                 == "*** Joins: bob (u@example.org) #swift"
         )
         #expect(

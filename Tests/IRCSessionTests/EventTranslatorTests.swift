@@ -74,7 +74,8 @@ struct EventTranslatorTests {
                     sender: user("bob"),
                     text: "hello there",
                     kind: .privmsg,
-                    isAction: false
+                    isAction: false,
+                    tags: IRCTags()
                 )
             ]
         )
@@ -89,7 +90,8 @@ struct EventTranslatorTests {
                     sender: user("bob"),
                     text: "psst",
                     kind: .privmsg,
-                    isAction: false
+                    isAction: false,
+                    tags: IRCTags()
                 )
             ]
         )
@@ -98,7 +100,7 @@ struct EventTranslatorTests {
     @Test("NOTICE is distinguished from PRIVMSG")
     func notice() throws {
         guard
-            case .message(_, _, _, let kind, _) = try #require(
+            case .message(_, _, _, let kind, _, _) = try #require(
                 try events(":bob!u@h NOTICE #swift :heads up").last
             )
         else {
@@ -117,7 +119,8 @@ struct EventTranslatorTests {
                     sender: user("bob"),
                     text: "waves",
                     kind: .privmsg,
-                    isAction: true
+                    isAction: true,
+                    tags: IRCTags()
                 )
             ]
         )
@@ -146,7 +149,7 @@ struct EventTranslatorTests {
     @Test("a STATUSMSG prefix does not turn a channel into a nick")
     func statusMessagePrefix() throws {
         guard
-            case .message(let target, _, _, _, _) = try #require(
+            case .message(let target, _, _, _, _, _) = try #require(
                 try events(":bob!u@h PRIVMSG @#swift :ops only").last
             )
         else {
@@ -163,7 +166,7 @@ struct EventTranslatorTests {
     func join() throws {
         #expect(
             try events(":bob!u@h JOIN #swift").dropFirst() == [
-                .joined(channel: channel("#swift"), who: user("bob"))
+                .joined(channel: channel("#swift"), who: user("bob"), account: nil, realName: nil)
             ]
         )
     }
@@ -429,7 +432,10 @@ struct EventTranslatorTests {
     /// consumer keying a dictionary by it cannot accidentally create two windows.
     @Test("names in events use the server's casemapping")
     func casemappingApplies() throws {
-        guard case .joined(let joined, _) = try #require(try events(":bob!u@h JOIN #Swift").last)
+        guard
+            case .joined(let joined, _, _, _) = try #require(
+                try events(":bob!u@h JOIN #Swift").last
+            )
         else {
             Issue.record("expected a join event")
             return

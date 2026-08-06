@@ -50,7 +50,8 @@ struct InlineFormattingTests {
             sender: IRCSource(prefix: "\(nick)!u@h"),
             text: text,
             kind: .privmsg,
-            isAction: false
+            isAction: false,
+            tags: IRCTags()
         )
     }
 
@@ -249,7 +250,9 @@ struct InlineFormattingTests {
             renderer.line(
                 for: .joined(
                     channel: IRCChannelName("#swift", mapping: .ascii),
-                    who: IRCSource(prefix: "bob!u@h")
+                    who: IRCSource(prefix: "bob!u@h"),
+                    account: nil,
+                    realName: nil
                 ),
                 context: RenderContext()
             )

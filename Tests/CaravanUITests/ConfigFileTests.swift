@@ -256,9 +256,13 @@ struct ConfigFileTests {
             realName: "Alice Example",
             password: "s3cr3t-not-real"
         )
-        settings.rememberAsLastUsed(in: config)
+        let credentials = EphemeralCredentialStore()
+        settings.rememberAsLastUsed(in: config, credentials: credentials)
 
-        let loaded = ConnectionSettings.lastUsed(from: ConfigFile(url: url))
+        let loaded = ConnectionSettings.lastUsed(
+            from: ConfigFile(url: url),
+            credentials: credentials
+        )
         #expect(loaded.host == "irc.example.net")
         #expect(loaded.port == 6667)
         #expect(loaded.useTLS == false)
@@ -267,18 +271,82 @@ struct ConfigFileTests {
         #expect(loaded.realName == "Alice Example")
     }
 
-    /// The rule the whole settings story rests on: credentials go to the Keychain, and
-    /// until that exists they are written nowhere at all.
+    /// The rule the whole settings story rests on: credentials go to the credential store
+    /// and the config file never sees one.
+    ///
+    /// Both passwords, because there are two of them now and only one of them was ever the
+    /// obvious risk — the SASL password is the more valuable of the two.
     @Test("a password never reaches the config file")
     func passwordIsNeverWritten() throws {
         let url = temporaryFile()
-        var settings = ConnectionSettings.lastUsed(from: ConfigFile(url: url))
+        let credentials = EphemeralCredentialStore()
+        var settings = ConnectionSettings.lastUsed(
+            from: ConfigFile(url: url),
+            credentials: credentials
+        )
         settings.nick = "alice"
         settings.password = "s3cr3t-not-real"
-        settings.rememberAsLastUsed(in: ConfigFile(url: url))
+        settings.authentication = .saslPlain
+        settings.account = "alice"
+        settings.accountPassword = "hunter2"
+        settings.rememberAsLastUsed(in: ConfigFile(url: url), credentials: credentials)
 
         let written = try String(contentsOf: url, encoding: .utf8)
         #expect(!written.contains("s3cr3t-not-real"))
-        #expect(ConnectionSettings.lastUsed(from: ConfigFile(url: url)).password.isEmpty)
+        #expect(!written.contains("hunter2"))
+        // The *shape* of the credential does belong in the file: which account, and which
+        // mechanism. That is what makes the sheet come back filled in.
+        #expect(written.contains("server.authentication = sasl-plain"))
+        #expect(written.contains("server.account = alice"))
+    }
+
+    /// The other half of the same rule: what the file does not hold, the store does — so
+    /// the password field arrives filled in rather than being re-typed every session.
+    @Test("both passwords come back from the credential store")
+    func passwordsRoundTripThroughTheStore() {
+        let url = temporaryFile()
+        let credentials = EphemeralCredentialStore()
+        var settings = ConnectionSettings.lastUsed(
+            from: ConfigFile(url: url),
+            credentials: credentials
+        )
+        settings.host = "irc.example.net"
+        settings.nick = "alice"
+        settings.password = "s3cr3t-not-real"
+        settings.accountPassword = "hunter2"
+        settings.rememberAsLastUsed(in: ConfigFile(url: url), credentials: credentials)
+
+        let loaded = ConnectionSettings.lastUsed(
+            from: ConfigFile(url: url),
+            credentials: credentials
+        )
+        #expect(loaded.password == "s3cr3t-not-real")
+        #expect(loaded.accountPassword == "hunter2")
+    }
+
+    /// Credentials are keyed on the host, so pointing `/server` somewhere new must not
+    /// carry the previous network's password along with it.
+    @Test("changing the host does not carry the old host's password")
+    func secretsAreKeyedOnHost() {
+        let credentials = EphemeralCredentialStore()
+        credentials.setPassword("s3cr3t-not-real", .serverPassword, host: "irc.example.net")
+
+        var settings = ConnectionSettings(host: "irc.example.net")
+        settings.loadSecrets(from: credentials)
+        #expect(settings.password == "s3cr3t-not-real")
+
+        settings.host = "irc.elsewhere.org"
+        settings.loadSecrets(from: credentials)
+        #expect(settings.password.isEmpty)
+    }
+
+    /// Clearing the field has to mean forgetting, not storing an empty string that then
+    /// reads back as "there is no password" while the old one sits in the store.
+    @Test("emptying a password removes it from the store")
+    func emptyingForgets() {
+        let credentials = EphemeralCredentialStore()
+        credentials.setPassword("s3cr3t-not-real", .account, host: "irc.example.net")
+        credentials.setPassword("", .account, host: "irc.example.net")
+        #expect(credentials.password(.account, host: "irc.example.net") == nil)
     }
 }

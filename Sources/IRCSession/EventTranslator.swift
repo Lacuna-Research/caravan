@@ -50,13 +50,77 @@ public enum EventTranslator {
                     sender: sender,
                     text: text,
                     kind: verb.uppercased() == "PRIVMSG" ? .privmsg : .notice,
-                    isAction: isAction
+                    isAction: isAction,
+                    tags: message.tags
                 )
             ]
 
         case "JOIN":
             guard let who = message.source, let channel = parameters.first else { return [] }
-            return [.joined(channel: IRCChannelName(channel, mapping: mapping), who: who)]
+            // `extended-join` widens the line to `JOIN <channel> <account> :<realname>`,
+            // where `*` is the server's way of saying "logged in to nothing".
+            let account = parameters.count > 1 ? nilIfUnset(parameters[1]) : nil
+            let realName = parameters.count > 2 ? nilIfEmpty(parameters[2]) : nil
+            return [
+                .joined(
+                    channel: IRCChannelName(channel, mapping: mapping),
+                    who: who,
+                    account: account,
+                    realName: realName
+                )
+            ]
+
+        case "AWAY":
+            // `away-notify`. A reason means away; no parameter at all means back.
+            guard let who = message.source else { return [] }
+            return [.awayChanged(who: who, message: parameters.first.flatMap(nilIfEmpty))]
+
+        case "ACCOUNT":
+            guard let who = message.source, let account = parameters.first else { return [] }
+            return [.accountChanged(who: who, account: nilIfUnset(account))]
+
+        case "CHGHOST":
+            guard let who = message.source, parameters.count >= 2 else { return [] }
+            return [.hostChanged(who: who, user: parameters[0], host: parameters[1])]
+
+        case "SETNAME":
+            guard let who = message.source, let realName = parameters.first else { return [] }
+            return [.realNameChanged(who: who, realName: realName)]
+
+        case "INVITE":
+            guard parameters.count >= 2 else { return [] }
+            return [
+                .invited(
+                    by: message.source,
+                    nick: parameters[0],
+                    channel: IRCChannelName(parameters[1], mapping: mapping)
+                )
+            ]
+
+        case "FAIL", "WARN", "NOTE":
+            guard let severity = StandardReply.Severity(rawValue: verb.uppercased()),
+                let reply = StandardReply(message: parameters, severity: severity)
+            else { return [] }
+            return [.standardReply(reply)]
+
+        case "BATCH":
+            // `BATCH +<ref> <type> [params]` opens one, `BATCH -<ref>` closes it.
+            guard let reference = parameters.first, reference.count > 1 else { return [] }
+            let identifier = String(reference.dropFirst())
+            guard reference.hasPrefix("+") else { return [.batchEnded(reference: identifier)] }
+            return [
+                .batchStarted(
+                    reference: identifier,
+                    type: parameters.count > 1 ? parameters[1] : "",
+                    parameters: Array(parameters.dropFirst(2))
+                )
+            ]
+
+        case "CAP", "AUTHENTICATE":
+            // Negotiation, which the session drives and reports as
+            // `.capabilitiesChanged`/`.authenticated`. Visible as `.raw` either way, which
+            // is where someone debugging a failed handshake goes looking.
+            return []
 
         case "PART":
             guard let who = message.source, let channel = parameters.first else { return [] }
@@ -211,10 +275,35 @@ public enum EventTranslator {
             if parameters.count >= 2 {
                 return [.endOfNames(channel: IRCChannelName(parameters[1], mapping: mapping))]
             }
+        case 341:
+            // `<client> <nick> <channel>` — our own `/invite` was accepted.
+            if parameters.count >= 3 {
+                return [
+                    .invited(
+                        by: nil,
+                        nick: parameters[1],
+                        channel: IRCChannelName(parameters[2], mapping: mapping)
+                    )
+                ]
+            }
+        case 900:
+            // `<client> <nick!user@host> <account> :You are now logged in as ...`
+            if parameters.count >= 3 {
+                return [.authenticated(account: parameters[2])]
+            }
         default:
             break
         }
         return [.numeric(code: code, parameters: parameters)]
+    }
+
+    /// `*` is the wire's "none" for an account name, and is not a nick anyone can hold.
+    private static func nilIfUnset(_ value: String) -> String? {
+        value == "*" || value.isEmpty ? nil : value
+    }
+
+    private static func nilIfEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
     }
 
     /// Unwraps a CTCP `ACTION`, returning the text without its wrapper.

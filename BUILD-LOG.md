@@ -2615,3 +2615,121 @@ start, `/j` → `/j ` → `/join ` cycling through the aliases, `##ca` completin
 with a space rather than a colon, and the strip opening, dismissing on the digits, reopening,
 and inserting `04` from a clicked swatch. The suffix setting was changed to `, ` in the form,
 checked in `caravan.conf` as `,_`, and then watched completing `carav` to `caravanin1, `.
+
+## Stage 2, prompt 3 — capabilities and authentication
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+IRCv3 capability negotiation, SASL, NickServ, the Keychain, and the TLS trust decision
+stage 1 deferred. One prompt because SASL *is* a capability: it rides on CAP LS/REQ/END,
+and splitting them means building the negotiation state machine twice. 549 tests.
+
+**Shipped:** `ClientCapability`/`NegotiatedCapabilities`/`CapabilityCommand`, `SASLExchange`
+and `SASLWire`, `AuthenticationMethod`, `StandardReply`, the phase machine in `IRCSession`,
+`TLSTrust`/`TLSCredentials`/`TLSClientIdentity`, `CredentialStore`/`Keychain`, `KnownHosts`,
+`ClientCertificate`, `TrustSheet`, and eleven new `IRCEvent` cases.
+
+**Decisions:**
+
+- **A rejected credential ends the attempt and does not reconnect.** IRCv3 allows a client
+  to carry on unauthenticated after a 904, and several clients do. Against Libera that
+  means silently connecting with your IP exposed and no access to `+r` channels — the
+  client having decided, on your behalf, that authentication was optional. `.authentication
+  Failed` is its own `DisconnectReason` and is never retried: a wrong password does not
+  become right on the second attempt, and a client that loops on one is how an account gets
+  locked and an IP gets throttled. Revisit if a network turns out to send 904 transiently.
+- **NickServ is the fallback for a server that *cannot* do SASL, never for a credential the
+  server refused.** Those are different failures wearing the same word. `Authentication
+  Method.nickServFallback` is consulted only when `sasl` was never enabled, and the client
+  says out loud that it is about to identify the worse way — the password crosses a
+  registered but unauthenticated connection, and anything arriving before it happens as a
+  stranger.
+- **`echo-message` suppresses the *local* echo, not the server's copy.** Either would give
+  "exactly once". The server's is the better line: it carries the `server-time` the message
+  was actually accepted at, its `msgid`, and the ordering everyone else sees. One condition
+  in `ConnectionViewModel.send`, which is what `LineKind.isSelfEcho` was built for in stage
+  1 — a filter on the way out rather than recognising our own words coming back.
+- **`server-time` reaches the renderer as `IRCTags` on `IRCEvent.message`, not as a `Date`.**
+  `IRCSession` has no Foundation dependency and no clock; parsing a timestamp it does not
+  itself use would be the wrong layer. Carrying the whole tag section rather than one field
+  also hands prompt 12 the `msgid` it needs to de-duplicate a replayed log. Only `.message`
+  carries them — prompt 4 replays joins and topics and will want the same for those.
+- **`allowSelfSigned` is gone, replaced by `TLSTrust.trustOnFirstUse`.** The flag accepted
+  an unvalidated certificate silently on the promise that a UI would eventually ask; nothing
+  enforced the promise. Trust is now a *decision*: system validation first, and where it
+  fails, `TLSCredentials.trustEvaluator` is asked across a suspension while the handshake
+  waits. **With no evaluator the handshake fails.** That is strictly less permissive than
+  what it replaced and strictly more permissive than refusing outright, which is why it is
+  now the default for every TLS connection rather than an option.
+- **`known_hosts` is a plain-text file, not a Keychain item.** A fingerprint is public
+  information, so it goes in `$XDG_DATA_HOME/caravan/known_hosts` in SSH's format —
+  deleting a line has to be how you forget a decision, and that means a file a person can
+  open.
+- **`CredentialStore` is a protocol with one production implementation.** Not speculative:
+  the first run of the suite after the Keychain landed wrote `s3cr3t-not-real` into the
+  developer's login keychain, and "remember to delete it afterwards" is not a mechanism.
+  `ConfigFile` takes a URL for the same reason. `EphemeralCredentialStore` is what tests and
+  previews get.
+- **`labeled-response` is negotiated without being exercised.** It is inert without an
+  outbound `label` tag, and the two things that want one — `chathistory` in prompt 4,
+  command replies in prompt 8 — do not exist yet. One token now against a rewrite of the
+  negotiation later. Recorded because it is exactly the kind of thing that looks like an
+  oversight when read cold.
+- **Caravan does not generate or import client certificates.** `ClientCertificate.identity
+  (labelled:)` looks one up by its Keychain label and nothing more. Keychain Access and
+  `openssl` already do the rest well, and a client growing a half-version of them would be a
+  worse place to keep a private key.
+
+**Surprises:**
+
+- **`CAP LS` has to go out before `PASS`, not after `USER`.** The obvious order — keep
+  registration as it was, append the CAP exchange — races a server that answers `CAP LS`
+  immediately. Registration is held open until `CAP END` either way, so the first line on
+  the wire is now `CAP LS 302`.
+- **The whole failure mode of this prompt is a *hang*, not an error.** Every path that loses
+  track of `CapabilityPhase` — a `NAK`, a server that ignores `CAP` entirely, a `sasl`
+  requested for a mechanism the server does not offer — ends with no `CAP END` and a
+  connection that sits there until the 30-second connect deadline. Four of the ten tests in
+  `AuthenticationTests` exist only to pin that, including the one where a server that never
+  answers `CAP LS` must still register and must *not* then emit a stray `CAP END`.
+- **`sec_protocol_verify_complete_t` cannot cross into a `Task` without help.** It is an
+  Objective-C block, not `Sendable`, and answering the trust question asynchronously is the
+  entire point. `VerifyCompletion` is an `@unchecked Sendable` box with the justification at
+  the conformance: Network.framework documents the block as callable once from any queue.
+  `SecTrust` is summarised into a `TLSCertificate` synchronously, before the hop.
+
+**Measured, against Libera over TLS.** `CAP LS 302` comes back multiline; `multi-prefix`,
+`server-time`, `echo-message` and `extended-join` all negotiate; `sasl` is offered with
+`PLAIN,EXTERNAL,SCRAM-SHA-256`. A SASL PLAIN attempt with a nonexistent account produced
+`904`, ended the attempt with `.authenticationFailed`, never reached `.connected`, and left
+`AUTHENTICATE <redacted>` in the trace with `AUTHENTICATE PLAIN` intact beside it. Joining
+`##caravan-caps` and sending a line produced **exactly one** copy in the buffer, rendered
+`<@caravan143247> ...` — with the prefix, because we are opped in a channel we just created,
+which is what caught an over-strict assertion in the live test rather than a bug.
+
+**SCRAM-SHA-256 is checked against RFC 7677's published exchange**, not against itself. A
+client and a server that make the same mistake agree with each other perfectly; the vector
+is the only thing that says the arithmetic is right. `Hi` is PBKDF2-HMAC-SHA-256 written out
+in fifteen lines rather than reached for in CommonCrypto — the derived key is exactly one
+hash long, so the multi-block form is not needed and the mechanism stays inside CryptoKit.
+The server signature is compared in constant time; the timing of `==` over `Data` is a
+function of how many leading bytes matched.
+
+**The self-signed TLS path has a fixture, and it earned one.** `SelfSignedTLSTests` runs
+against `openssl s_server` with a throwaway certificate (the invocation is in the suite's
+doc comment) and is the only thing that executes the *asynchronous* half of the verify
+block — the suspension the handshake waits across. It confirmed all three answers: asked
+and accepted, asked and refused (handshake fails), and no evaluator at all (handshake
+fails, rather than the silent accept the old flag did). With
+`CARAVAN_SELF_SIGNED_FINGERPRINT` set it also pins that the digest the user would be shown
+is the server's own, which is the one way a trust prompt can be actively harmful.
+
+**Not done, and why: the GUI acceptance run.** The machine was locked for the whole session
+— `screencapture` returned black and `System Events` reported zero windows for a running
+Caravan — so the three things only a screen can confirm were not confirmed: that the Connect
+sheet's Authentication section lays out (a `Picker` plus conditional rows, and prompt 2's
+build log records a form row that every test passed and no eye had seen), that `TrustSheet`
+presents and is readable, and that the two password fields arrive pre-filled from the
+Keychain. Everything below the pixels was checked headlessly instead, including against a
+real ircd and a real self-signed handshake. **This is the outstanding item for this prompt**
+and it is on the PR.

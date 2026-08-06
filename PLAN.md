@@ -58,7 +58,20 @@ approaching a thousand lines, so questions buried in it are questions nobody fin
 Delete an item from this list when it is answered, and record the answer as a
 decision entry.
 
-*Empty. Everything raised so far has been decided and recorded in `BUILD-LOG.md`.*
+- **Does any network send `904` transiently?** *(not blocking)* Stage 2 prompt 3 decided
+  that a refused SASL credential ends the attempt with no reconnect, on the grounds that a
+  wrong password does not become right on retry. That is wrong if some ircd or bouncer ever
+  answers `904` for a reason that clears — services being down, say. Nothing observed so
+  far; the answer would be a narrow "retry once, with the ordinary backoff, only for a
+  server that was previously authenticating".
+- **Where does a live GUI acceptance run happen when the machine is locked?**
+  *(not blocking, but it will recur)* Prompt 3 could confirm nothing on screen:
+  `screencapture` returns black and `System Events` reports zero windows for a running app
+  when the display is locked, so the three sheet-and-layout items went unchecked. The
+  headless substitutes were good — a real ircd, a real self-signed handshake — but prompt 2
+  shipped a form row that every test passed and no eye had seen. Either the runs have to be
+  scheduled when someone is at the machine, or something has to render the views offscreen
+  and diff the image.
 
 ### Testing strategy
 
@@ -268,17 +281,11 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       arriving *before* 001 is far more likely to be a ban or a throttle than a dropped
       link.
 28. **Authentication.** SASL PLAIN, EXTERNAL (CertFP), SCRAM-SHA-256; NickServ
-    auto-identify fallback; all secrets in Keychain.
-
-    ### Carry-forward
-
-    - From prompt 4: TLS self-signed acceptance needs a user-facing trust decision.
-      `IRCConnection` evaluates the certificate in a verify block, records subject and
-      SHA-256 fingerprint in `acceptedCertificate`, and logs loudly when trust was not
-      established — but with no UI to ask, `allowSelfSigned: true` still accepts. Turn
-      that into trust-on-first-use: show the fingerprint, remember the decision per
-      host, and warn when a remembered fingerprint changes. The transport already
-      surfaces everything such a prompt needs.
+    auto-identify fallback; all secrets in Keychain. *Done in stage 2 prompt 3, along with
+    trust-on-first-use for TLS. Two things it deliberately does not do: Caravan neither
+    generates nor imports client certificates — `ClientCertificate` looks one up by its
+    Keychain label and nothing more — and accepted TLS fingerprints can be forgotten only by
+    editing `$XDG_DATA_HOME/caravan/known_hosts` by hand, which prompt 10 gives a UI.*
 29. **IRCv3 capabilities.** `cap-notify`, `multi-prefix`, `away-notify`, `account-notify`,
     `extended-join`, `userhost-in-names`, `server-time`, `message-tags`, `echo-message`,
     `batch`, `chghost`, `invite-notify`, `setname`, `standard-replies`,
@@ -287,7 +294,10 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     work needs that settled before building on top of it:
     `soju.im/bouncer-networks` to enumerate and switch upstream networks over one
     connection, and `draft/chathistory` to backfill what was missed while detached.
-    `BouncerServ` needs nothing special — it is a query window.
+    `BouncerServ` needs nothing special — it is a query window. *The standard set landed in
+    stage 2 prompt 3; the two soju ones are prompt 4's, and the negotiation machinery is
+    generic — they are two cases in `ClientCapability`. `labeled-response` is negotiated but
+    not yet exercised, since nothing sends a `label` until prompts 4 and 8.*
 30. **Buffer utilities.** ⌘F find-in-buffer with highlight, copy with/without
     formatting. (Scroll-lock and jump-to-latest shipped in prompt 7; the unread
     marker moved to prompt 10.)

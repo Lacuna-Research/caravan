@@ -18,7 +18,7 @@ struct CommandLineTests {
     @MainActor
     private final class Harness {
         let server: ScriptedIRCServer
-        let model = AppModel()
+        let model = temporaryModel()
         private var readers: [ObjectIdentifier: NSTextView] = [:]
 
         init(server: ScriptedIRCServer) {

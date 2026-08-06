@@ -112,7 +112,11 @@ public struct LineRenderer: Sendable {
             // where these land; `.raw` has the raw-traffic toggle.
             return nil
 
-        case .message(_, let sender, let text, let kind, let isAction):
+        case .batchStarted, .batchEnded:
+            // Grouping, not content. The lines inside the batch are what gets rendered.
+            return nil
+
+        case .message(_, let sender, let text, let kind, let isAction, _):
             let isOwn = isOwn(sender.nick, context: context)
             fields.nick = decorated(sender, context: context)
             fields.text = text
@@ -143,7 +147,11 @@ public struct LineRenderer: Sendable {
             fields.text = text
             return (.clientError, fields)
 
-        case .joined(let channel, let who):
+        case .clientNotice(let text):
+            fields.text = text
+            return (.status, fields)
+
+        case .joined(let channel, let who, _, _):
             fields.nick = who.nick ?? who.wireForm
             fields.userhost = userHost(who)
             fields.channel = channel.raw
@@ -205,6 +213,61 @@ public struct LineRenderer: Sendable {
         case .joinFailed(let channel, let reason, let text):
             fields.text = "Cannot join \(channel): \(text.isEmpty ? reason.summary : text)"
             return (.clientError, fields)
+
+        case .capabilitiesChanged(let capabilities):
+            // Worth a line, once per connection: which capabilities are on decides whether
+            // your own messages come from the server, whether timestamps are the server's,
+            // and whether the nick list knows who is away. When something later behaves
+            // unexpectedly this line is the first thing to check.
+            let names = capabilities.enabledNames
+            fields.text =
+                names.isEmpty
+                ? "No IRCv3 capabilities negotiated"
+                : "Capabilities: \(names.joined(separator: " "))"
+            return (.status, fields)
+
+        case .authenticated(let account):
+            fields.text = "Authenticated as \(account)"
+            return (.status, fields)
+
+        case .standardReply(let reply):
+            fields.text = "\(reply.command): \(reply.summary)"
+            return (reply.severity == .fail ? .clientError : .serverNotice, fields)
+
+        case .awayChanged(let who, let message):
+            fields.nick = who.nick ?? who.wireForm
+            fields.text = message.map { "is away: \($0)" } ?? "is back"
+            return (.away, fields)
+
+        case .accountChanged(let who, let account):
+            fields.nick = who.nick ?? who.wireForm
+            fields.text = account.map { "is logged in as \($0)" } ?? "logged out"
+            return (.account, fields)
+
+        case .hostChanged(let who, let user, let host):
+            fields.nick = who.nick ?? who.wireForm
+            fields.userhost = "\(user)@\(host)"
+            return (.hostChange, fields)
+
+        case .realNameChanged(let who, let realName):
+            fields.nick = who.nick ?? who.wireForm
+            fields.text = realName
+            return (.realNameChange, fields)
+
+        case .invited(let by, let nick, let channel):
+            // Two sentences, one kind: an invitation aimed at us reads as an offer, and
+            // one we merely witnessed reads as news about someone else.
+            let isOurs = isOwn(nick, context: context)
+            if let by {
+                let inviter = by.nick ?? by.wireForm
+                fields.text =
+                    isOurs
+                    ? "\(inviter) invites you to \(channel)"
+                    : "\(inviter) invites \(nick) to \(channel)"
+            } else {
+                fields.text = "Invited \(nick) to \(channel)"
+            }
+            return (.invite, fields)
         }
     }
 
@@ -421,6 +484,7 @@ public struct LineRenderer: Sendable {
             case .serverError(let text): return "Disconnected: server said \(text)"
             case .transportFailed(let error): return "Disconnected: \(error)"
             case .registrationFailed(let text): return "Registration failed: \(text)"
+            case .authenticationFailed(let text): return "Authentication failed: \(text)"
             case .timedOut: return "Disconnected: the connection stopped responding"
             case .connectTimedOut: return "Could not connect: timed out"
             }

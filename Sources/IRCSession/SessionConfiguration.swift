@@ -16,9 +16,12 @@ public struct SessionConfiguration: Sendable {
     /// Server password, sent as `PASS` before `NICK`.
     ///
     /// A live credential. It reaches the wire and nowhere else: `TraceBuffer` redacts
-    /// `PASS` on insert, and nothing here is ever logged. Its long-term home is the
-    /// Keychain, wired up when there is a UI to collect it.
+    /// `PASS` on insert, and nothing here is ever logged. Its durable home is the macOS
+    /// Keychain — `CaravanUI.Keychain` — and never `caravan.conf`.
     public var password: String?
+
+    /// How to prove who we are: SASL, NickServ, or neither. Also a live credential.
+    public var authentication: AuthenticationMethod
 
     /// How long the whole of connecting *and* registering may take.
     ///
@@ -39,12 +42,13 @@ public struct SessionConfiguration: Sendable {
     public init(
         host: String,
         port: UInt16,
-        tls: TLSMode = .enabled(allowSelfSigned: false),
+        tls: TLSMode = .enabled(.system),
         nick: String,
         altNick: String? = nil,
         ident: String? = nil,
         realName: String? = nil,
         password: String? = nil,
+        authentication: AuthenticationMethod = .none,
         connectTimeout: Duration = .seconds(30),
         idleInterval: Duration = .seconds(120),
         idleResponseTimeout: Duration = .seconds(60),
@@ -58,6 +62,7 @@ public struct SessionConfiguration: Sendable {
         self.ident = ident ?? nick
         self.realName = realName ?? nick
         self.password = password
+        self.authentication = authentication
         self.connectTimeout = connectTimeout
         self.idleInterval = idleInterval
         self.idleResponseTimeout = idleResponseTimeout

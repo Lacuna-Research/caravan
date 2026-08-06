@@ -89,13 +89,16 @@ struct IRCSessionTests {
 
     // MARK: - Registration
 
-    @Test("registers with PASS, NICK and USER, then reports connected")
+    /// `CAP LS` comes first, before `PASS`. A server holds 001 until `CAP END`, and asking
+    /// after `USER` races a server that answers registration immediately.
+    @Test("registers with CAP LS, PASS, NICK and USER, then reports connected")
     func happyPath() async throws {
         let harness = try await registeredHarness(password: "hunter2")
 
         #expect(
             await harness.server.receivedLines() == [
-                "PASS hunter2", "NICK alice", "USER alice 0 * :Alice Example",
+                "CAP LS 302", "PASS hunter2", "NICK alice",
+                "USER alice 0 * :Alice Example",
             ]
         )
         #expect(await harness.states().prefix(2) == [.connecting, .registering])

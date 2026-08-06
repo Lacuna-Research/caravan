@@ -31,8 +31,21 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case channelMode
     case topic
     case nickChange
+    /// `away-notify`: someone went away or came back.
+    case away
+    /// `account-notify` and `extended-join`: someone logged in to or out of services.
+    case account
+    /// `chghost`: someone's user@host changed under them.
+    case hostChange
+    /// `setname`: someone changed their real name.
+    case realNameChange
+    /// An invitation, ours or — under `invite-notify` — somebody else's.
+    case invite
     case numeric
     case clientError
+    /// A `WARN` or `NOTE` under `standard-replies`. A `FAIL` is a ``clientError``: it
+    /// says the command did not happen, which is what red is for.
+    case serverNotice
     case status
     /// A line the server sent, shown by the raw-traffic toggle.
     case rawInbound
@@ -172,6 +185,18 @@ public struct LineFormatTable: Sendable {
             template: "$timestamp*** $nick is now known as $text",
             colour: .event
         ),
+        .away: LineFormat(template: "$timestamp*** $nick $text", colour: .event),
+        .account: LineFormat(template: "$timestamp*** $nick $text", colour: .event),
+        .hostChange: LineFormat(
+            template: "$timestamp*** $nick is now $userhost",
+            colour: .event
+        ),
+        .realNameChange: LineFormat(
+            template: "$timestamp*** $nick is now known as \"$text\"",
+            colour: .event
+        ),
+        .invite: LineFormat(template: "$timestamp*** $text", colour: .event),
+        .serverNotice: LineFormat(template: "$timestamp*** $text", colour: .notice),
         .numeric: LineFormat(template: "$timestamp$text", colour: .dim),
         .clientError: LineFormat(template: "$timestamp*** $text", colour: .error),
         .status: LineFormat(template: "$timestamp*** $text", colour: .event),

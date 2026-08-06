@@ -46,11 +46,47 @@ public enum TransportError: Error, Sendable, Equatable, CustomStringConvertible 
 /// Whether and how to wrap the connection in TLS.
 public enum TLSMode: Sendable, Equatable {
     case disabled
+    case enabled(TLSTrust)
+}
 
-    /// - Parameter allowSelfSigned: When true, a certificate the system will not
-    ///   validate is accepted and recorded in ``IRCConnection/acceptedCertificate``
-    ///   instead of failing the handshake.
-    case enabled(allowSelfSigned: Bool)
+/// Which certificates to believe.
+public enum TLSTrust: Sendable, Equatable {
+    /// Stock system validation. A certificate that fails it fails the connection, and
+    /// nothing is asked of the user.
+    case system
+
+    /// System validation, and where that fails, ask — SSH's model.
+    ///
+    /// Replaces the `allowSelfSigned` flag this used to be. That flag accepted an
+    /// unvalidated certificate silently, on the promise that a UI would eventually ask;
+    /// a promise nothing enforced. Trust here is a *decision*, and with no evaluator
+    /// supplied to make it the handshake fails closed rather than open.
+    case trustOnFirstUse
+}
+
+/// The parts of a TLS setup that are objects rather than values.
+///
+/// Kept out of ``TLSMode`` so that stays `Equatable` and cheap to compare, and so a
+/// `SessionConfiguration` remains a description of *what* to connect to rather than a
+/// bundle of callbacks.
+public struct TLSCredentials: Sendable {
+    /// Consulted when system validation fails under ``TLSTrust/trustOnFirstUse``.
+    ///
+    /// Called with the certificate and the hostname asked for. `nil` means nobody can be
+    /// asked, and an unvalidated certificate is then refused.
+    public var trustEvaluator: (@Sendable (TLSCertificate, String) async -> Bool)?
+
+    /// The client certificate to present, which is the whole of CertFP: SASL `EXTERNAL`
+    /// says "I am whoever this certificate's fingerprint is registered to".
+    public var clientIdentity: TLSClientIdentity?
+
+    public init(
+        trustEvaluator: (@Sendable (TLSCertificate, String) async -> Bool)? = nil,
+        clientIdentity: TLSClientIdentity? = nil
+    ) {
+        self.trustEvaluator = trustEvaluator
+        self.clientIdentity = clientIdentity
+    }
 }
 
 /// What the peer presented, recorded so the caller can show it rather than having to
@@ -63,8 +99,8 @@ public struct TLSCertificate: Sendable, Equatable {
     /// compare against a fingerprint published elsewhere.
     public let sha256Fingerprint: String
 
-    /// Whether the system trust evaluation passed. False means it was accepted only
-    /// because the caller asked for `allowSelfSigned`.
+    /// Whether the system trust evaluation passed. False means the connection continued
+    /// only because something answered the trust question.
     public let systemTrusted: Bool
 
     public init(subject: String?, sha256Fingerprint: String, systemTrusted: Bool) {
