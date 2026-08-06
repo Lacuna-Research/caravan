@@ -94,17 +94,29 @@ struct StatusWindowTests {
         await harness.shutDown()
     }
 
-    /// A `JOIN` or a `MODE` gets no echo — the server will tell us about it in a moment,
+    /// A `WHO` or a `MODE` gets no echo — the server will tell us about it in a moment,
     /// and echoing it here would show it twice.
+    ///
+    /// Asserted as "no line attributed to us" rather than "the buffer did not change":
+    /// the buffer *does* change, because `WHO`'s numeric replies land in it, and the first
+    /// version of this test only passed on a machine slow enough for them not to have
+    /// arrived yet.
     @Test("only messages are echoed, not every command")
     func onlyMessagesEcho() async throws {
         let harness = try await harness()
-        let before = harness.text(of: harness.connection.log)
 
         await harness.model.submit("/who alice", from: nil)
-        try await Task.sleep(for: .milliseconds(120))
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(!harness.text(of: harness.connection.log).contains("<alice>"))
 
-        #expect(harness.text(of: harness.connection.log) == before)
+        // The contrast, in the same window: a message does echo.
+        await harness.model.submit("/msg bob hi there", from: nil)
+        #expect(
+            await waitUntil {
+                harness.text(of: harness.connection.log).contains("<alice> hi there")
+            }
+        )
+
         await harness.shutDown()
     }
 

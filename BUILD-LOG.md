@@ -2170,3 +2170,26 @@ is now zero call sites: `grep` for that modifier returns nothing, and the chat f
 by environment value. Prompt 8's two and prompt 9's two were each acted on as written; the
 `>>` echo is gone from the buffer and lives only behind the toggle, and the input box's
 six-line measurement still measures six in Menlo. Raised: three notes on prompt 11.
+
+## Correction — two flaky tests, one mistake
+
+**Date:** 2026-08-05
+
+Both found while landing prompt 10, and both the same error: **comparing a snapshot of a
+live stream against something that is still moving.**
+
+One was new. `StatusWindowTests` asserted that `/who` left the status window *unchanged*,
+to prove that only messages are echoed locally. The window does change — `WHO`'s numeric
+replies land in it — and the test only passed on a machine slow enough that they had not
+arrived yet. CI is not that machine. It now asserts the property it meant: no line
+attributed to us, contrasted in the same test with a `/msg` that does produce one.
+
+The other was prompt 6's, and had been latent since. `SessionEventTests` compared two
+consumers' whole event logs after waiting for `.registered` to appear in each — but the
+feed keeps running between the two `snapshot()` calls, so the second can hold an extra
+005. It now compares the events up to and including registration, which is what the
+multicast actually promises: every consumer sees the same events in the same order.
+
+The general rule, since this is twice now: **wait on the thing being asserted, and assert
+a property rather than an equality against a moving target.** A test that says "nothing
+else happened" about a live connection is a test that will fail on someone else's machine.
