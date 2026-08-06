@@ -136,7 +136,9 @@ prune)
 		# --delete-branch` gets wrong, which is why landing a PR keeps reporting a
 		# failure after it has already merged.
 		git worktree remove "$path" --force
-		[ -n "$branch" ] && git branch -D "$branch" >/dev/null 2>&1 || true
+		if [ -n "$branch" ]; then
+			git branch -D "$branch" >/dev/null 2>&1 || true
+		fi
 		echo "  removed    $(basename "$path") ($state)"
 	done < <(paths)
 	git worktree prune
