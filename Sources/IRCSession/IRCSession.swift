@@ -89,6 +89,12 @@ public actor IRCSession {
     /// configured method or the fallback for a server with no SASL.
     private var pendingIdentify: (account: String, password: String)?
 
+    /// Upstream networks, when this is the unbound connection to a bouncer.
+    ///
+    /// In the order the bouncer first named them, so the tree does not reshuffle every
+    /// time one network's state changes.
+    public private(set) var bouncerNetworks: [BouncerNetwork] = []
+
     /// The trust evaluator and client certificate, carried across reconnects because each
     /// attempt builds a fresh ``IRCConnection`` and both belong to the *identity* rather
     /// than to any one socket.
@@ -186,6 +192,7 @@ public actor IRCSession {
         sasl = nil
         saslChunks = SASLWire.Accumulator()
         pendingIdentify = nil
+        bouncerNetworks = []
         serverInfo = nil
         attemptedNicks = []
         setCurrentNick(configuration.nick)
@@ -438,6 +445,13 @@ public actor IRCSession {
             await handleAuthenticate(message)
             return
         }
+        if message.command.isVerb("BOUNCER") {
+            handleBouncer(message)
+            return
+        }
+        if message.command.isVerb("JOIN") {
+            await requestHistoryIfOurJoin(message)
+        }
 
         switch message.command.numericCode {
         case 1: await handleWelcome(message)
@@ -575,9 +589,30 @@ public actor IRCSession {
     }
 
     /// Sends `CAP END`, once, and works out whether NickServ has to stand in for SASL.
+    ///
+    /// `BOUNCER BIND` goes out just before it, which is the only window the extension
+    /// allows: the capability must already be acknowledged, and binding after registration
+    /// completes is refused with `REGISTRATION_IS_COMPLETED`.
     private func endCapabilityNegotiation() async {
         guard capabilityPhase != .ended else { return }
         capabilityPhase = .ended
+
+        if let networkID = configuration.bouncerNetworkID {
+            guard negotiated.isEnabled(.bouncerNetworks) else {
+                // Binding is the whole purpose of this connection. Carrying on would
+                // register us against the bouncer itself and silently show the wrong
+                // network's traffic under this network's name.
+                await endAttempt(
+                    reason: .registrationFailed(
+                        "the server does not support soju.im/bouncer-networks, so network "
+                            + "\(networkID) cannot be reached"
+                    ),
+                    allowingReconnect: false
+                )
+                return
+            }
+            await connection?.send(IRCMessage(verb: "BOUNCER", parameters: ["BIND", networkID]))
+        }
 
         switch configuration.authentication {
         case .none:
@@ -669,6 +704,68 @@ public actor IRCSession {
         // a connection that is already registered.
         capabilityPhase = .ended
         await identifyToNickServIfNeeded()
+        await listBouncerNetworksIfNeeded()
+    }
+
+    /// Asks a bouncer what it is holding, on the one connection allowed to ask.
+    ///
+    /// Only the *unbound* connection may enumerate: a bound one is talking to an upstream
+    /// network, which knows nothing about the bouncer's other networks.
+    private func listBouncerNetworksIfNeeded() async {
+        guard configuration.bouncerNetworkID == nil, negotiated.isEnabled(.bouncerNetworks) else {
+            return
+        }
+        await connection?.send(IRCMessage(verb: "BOUNCER", parameters: ["LISTNETWORKS"]))
+    }
+
+    // MARK: - Backfill
+
+    /// Asks for what was said in a channel we have just joined.
+    ///
+    /// Against a bouncer this is the difference between reattaching into a conversation and
+    /// reattaching into a blank window. `LATEST <target> * <limit>` is "the most recent
+    /// messages, however far back that is" — the right question on a first join, where
+    /// there is nothing in the buffer to be more specific than.
+    ///
+    /// **Our own join only.** Everyone else joining a channel is not an occasion to ask the
+    /// server for its history again, and a busy channel would otherwise produce one request
+    /// per arrival.
+    private func requestHistoryIfOurJoin(_ message: IRCMessage) async {
+        guard negotiated.isEnabled(.chatHistory), configuration.chatHistoryLimit > 0,
+            let channel = message.parameters.first,
+            let who = message.source?.nick,
+            capabilities.caseMapping.equal(who, currentNick)
+        else { return }
+        await connection?.send(
+            IRCMessage(
+                verb: "CHATHISTORY",
+                parameters: ["LATEST", channel, "*", String(configuration.chatHistoryLimit)]
+            )
+        )
+    }
+
+    /// Applies one `BOUNCER NETWORK`, whether from the `LISTNETWORKS` batch or from a
+    /// later notification.
+    ///
+    /// Both spellings land here, and both emit the whole list rather than a delta —
+    /// reconciling a list is much easier to get right in the consumer than applying a
+    /// stream of edits, and the list is a dozen entries at most.
+    private func handleBouncer(_ message: IRCMessage) {
+        guard case .network(let id, let attributes)? = BouncerReply(message: message) else {
+            return
+        }
+        guard let attributes else {
+            bouncerNetworks.removeAll { $0.id == id }
+            emit(.bouncerNetworks(bouncerNetworks))
+            return
+        }
+        if let index = bouncerNetworks.firstIndex(where: { $0.id == id }) {
+            // An update carries only what changed, so it is merged rather than replacing.
+            bouncerNetworks[index].apply(attributes: attributes)
+        } else {
+            bouncerNetworks.append(BouncerNetwork(id: id, attributes: attributes))
+        }
+        emit(.bouncerNetworks(bouncerNetworks))
     }
 
     /// `PRIVMSG NickServ :IDENTIFY <account> <password>`, once, after registration.

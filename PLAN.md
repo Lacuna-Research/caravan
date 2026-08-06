@@ -58,6 +58,13 @@ approaching a thousand lines, so questions buried in it are questions nobody fin
 Delete an item from this list when it is answered, and record the answer as a
 decision entry.
 
+- **Where does a soju come from?** *(not blocking, but it blocks an acceptance)* The testing
+  strategy below has wanted a local soju since stage 1, and stage 2 prompt 4 is the first
+  thing that genuinely cannot be accepted without one: bouncer mode is proven against a
+  scripted server that speaks `soju.im/bouncer-networks` and against the spec, but nothing
+  has confirmed it against soju itself. Installing and configuring one — it needs a
+  database, an account and upstream credentials — is the user's call rather than something
+  to do to their machine unasked.
 - **Does any network send `904` transiently?** *(not blocking)* Stage 2 prompt 3 decided
   that a refused SASL credential ends the attempt with no reconnect, on the grounds that a
   wrong password does not become right on retry. That is wrong if some ircd or bouncer ever
@@ -196,7 +203,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     `soju.im/bouncer-networks` enumerates the upstream networks. The UI must not care
     which is in play. Fallback for the bouncer case is one connection per network
     with the network in the username (`<user>/<network>`), which is also how a
-    stage-1 client reaches soju before capabilities exist.
+    stage-1 client reaches soju before capabilities exist. *Done in stage 2 prompt 4.
+    The "single connection" above turned out to be half right: `BOUNCER BIND` must be sent
+    on the connection being registered, so a bouncer is one control connection **plus one
+    per network** — which is why the UI does not have to care, since both modes are then a
+    flat list of networks. The bouncer keeps a row of its own, so the tree is not
+    byte-identical between the modes; `BUILD-LOG.md` argues that one.*
 13. **Queries & CTCP.** PM windows — sorted after channels in the same per-network
     list, bullet sigil, per GUI-DESIGN-NOTES.md §12, each with its header band
     showing conversational context: first and last message, and similar (§14);
@@ -309,9 +321,10 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     `soju.im/bouncer-networks` to enumerate and switch upstream networks over one
     connection, and `draft/chathistory` to backfill what was missed while detached.
     `BouncerServ` needs nothing special — it is a query window. *The standard set landed in
-    stage 2 prompt 3; the two soju ones are prompt 4's, and the negotiation machinery is
-    generic — they are two cases in `ClientCapability`. `labeled-response` is negotiated but
-    not yet exercised, since nothing sends a `label` until prompts 4 and 8.*
+    stage 2 prompt 3 and the two soju ones in prompt 4. `labeled-response` is negotiated but
+    still not exercised — nothing sends a `label` yet, and prompt 8's command replies are
+    now the first thing that would. `BouncerServ` waits for prompt 5's query windows; until
+    then it lands in the bouncer's status window.*
 30. **Buffer utilities.** ⌘F find-in-buffer with highlight, copy with/without
     formatting. (Scroll-lock and jump-to-latest shipped in prompt 7; the unread
     marker moved to prompt 10.)

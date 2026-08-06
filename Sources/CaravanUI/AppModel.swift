@@ -33,6 +33,19 @@ public struct ConnectionSettings: Sendable, Equatable {
     /// The Keychain label of the client certificate SASL `EXTERNAL` presents.
     public var certificateLabel = ""
 
+    /// The bouncer network to reach through this connection, for a bouncer that cannot do
+    /// `soju.im/bouncer-networks`.
+    ///
+    /// **The documented fallback, and the older way every bouncer supports:** the network
+    /// goes in the username as `<user>/<network>`, so one connection per network is opened
+    /// by hand rather than discovered. `ZNC` and an old soju both work this way, and it is
+    /// how a stage-1 client reached soju at all.
+    ///
+    /// Empty for a direct connection, and for a bouncer that *can* enumerate — there the
+    /// networks are found rather than typed, and `SessionConfiguration.bouncerNetworkID`
+    /// carries the binding instead.
+    public var bouncerNetwork = ""
+
     /// The authentication methods the Connect sheet offers.
     ///
     /// A flat list rather than SASL-with-a-mechanism-underneath: what a user picks is one
@@ -110,11 +123,22 @@ public struct ConnectionSettings: Sendable, Equatable {
             tls: useTLS ? .enabled(.trustOnFirstUse) : .disabled,
             nick: nick,
             altNick: altNick.isEmpty ? nil : altNick,
-            ident: ident.isEmpty ? nil : ident,
+            ident: bouncerIdent,
             realName: realName.isEmpty ? nil : realName,
             password: password.isEmpty ? nil : password,
             authentication: authenticationMethod
         )
+    }
+
+    /// The `<user>` of `USER`, with the bouncer network appended when there is one.
+    ///
+    /// `alice/libera` is how a bouncer without `soju.im/bouncer-networks` is told which
+    /// upstream to attach this connection to. It goes in the *ident* rather than anywhere
+    /// else because that is where every bouncer looks for it.
+    var bouncerIdent: String? {
+        let user = ident.isEmpty ? nick : ident
+        guard !bouncerNetwork.isEmpty else { return ident.isEmpty ? nil : ident }
+        return "\(user)/\(bouncerNetwork)"
     }
 
     var authenticationMethod: AuthenticationMethod {
@@ -158,6 +182,7 @@ public struct ConnectionSettings: Sendable, Equatable {
         public static let authentication = "server.authentication"
         public static let account = "server.account"
         public static let certificateLabel = "server.client-certificate"
+        public static let bouncerNetwork = "server.bouncer-network"
     }
 
     /// The last values the Connect sheet was used with.
@@ -189,6 +214,7 @@ public struct ConnectionSettings: Sendable, Equatable {
             ?? .none
         settings.account = config.string(Key.account) ?? ""
         settings.certificateLabel = config.string(Key.certificateLabel) ?? ""
+        settings.bouncerNetwork = config.string(Key.bouncerNetwork) ?? ""
         settings.loadSecrets(from: credentials)
         return settings
     }
@@ -230,6 +256,7 @@ public struct ConnectionSettings: Sendable, Equatable {
             certificateLabel.isEmpty ? nil : certificateLabel,
             forKey: Key.certificateLabel
         )
+        config.set(bouncerNetwork.isEmpty ? nil : bouncerNetwork, forKey: Key.bouncerNetwork)
 
         credentials.setPassword(password, .serverPassword, host: host)
         credentials.setPassword(accountPassword, .account, host: host)
@@ -245,7 +272,15 @@ public struct ConnectionSettings: Sendable, Equatable {
 @MainActor
 @Observable
 public final class AppModel {
-    public private(set) var connection: ConnectionViewModel?
+    /// Every network, in the order it was opened.
+    ///
+    /// **One entry per network, whichever mode put it there.** A direct connection is one
+    /// entry; a bouncer is one entry for the bouncer itself plus one per upstream network
+    /// it is holding. Nothing below this line can tell the two apart, which is the whole
+    /// test of the design — the tree, the selection, the command layer and the completion
+    /// sources all see a flat list of networks.
+    public private(set) var connections: [ConnectionViewModel] = []
+
     public var isShowingConnectSheet = false
 
     /// One trace buffer for the process. Redacted on insert, exported by "Copy
@@ -302,10 +337,6 @@ public final class AppModel {
         didSet { markUnread(leaving: oldValue) }
     }
 
-    /// Whether the network's children are showing. One network at this stage, so one
-    /// flag; stage 2's multi-network tree gives each its own.
-    public var isNetworkExpanded = true
-
     /// One selectable row in the tree.
     ///
     /// There is no separate status row: the network row *is* the status buffer's entry,
@@ -350,17 +381,38 @@ public final class AppModel {
         self.debug = DebugController(trace: trace, settings: settings)
     }
 
+    /// The connection a row belongs to.
+    public func connection(id: UUID) -> ConnectionViewModel? {
+        connections.first { $0.id == id }
+    }
+
+    /// The network the selection is in — the one a typed line goes to.
+    ///
+    /// Everything that used to reach for "the connection" now asks this, because with two
+    /// networks open the question "which one" has an answer only the selection knows. The
+    /// canvas has no network, and neither does an empty selection.
+    public var activeConnection: ConnectionViewModel? {
+        switch selection {
+        case .status(let id): connection(id: id)
+        case .channel(let id, _): connection(id: id)
+        case .settingsAndDebug, nil: nil
+        }
+    }
+
     /// The channel the selection names, when it names one.
     public var selectedChannel: ChannelBuffer? {
         guard case .channel(let connectionID, let name) = selection,
-            let connection, connection.id == connectionID
+            let connection = connection(id: connectionID)
         else { return nil }
         return connection.buffer(named: name)
     }
 
     /// Closes the selected channel buffer, parting the channel. ⌘W's action.
     public func closeSelectedChannel() async {
-        guard let buffer = selectedChannel, let connection else { return }
+        guard case .channel(let connectionID, let name) = selection,
+            let connection = connection(id: connectionID),
+            let buffer = connection.buffer(named: name)
+        else { return }
         await connection.closeChannel(buffer.name)
         selection = .status(connection.id)
     }
@@ -373,7 +425,7 @@ public final class AppModel {
     /// *app* at a new host, and a connection cannot replace itself. Everything else is
     /// the connection's, and this hands it straight over.
     public func submit(_ text: String, from target: Target?) async {
-        guard let connection else { return }
+        guard let connection = activeConnection else { return }
         for action in await connection.actions(for: text, activeTarget: target) {
             switch action {
             case .send(let message):
@@ -426,7 +478,7 @@ public final class AppModel {
         guard settings.isValid else {
             // The one thing `/server` cannot supply. Said out loud rather than failing
             // quietly, which is the same rule every other argument error follows.
-            connection?.showError(
+            activeConnection?.showError(
                 "/server has no nickname to use — set one in the Connect sheet first",
                 in: target
             )
@@ -435,18 +487,159 @@ public final class AppModel {
         await connect(using: settings)
     }
 
-    public func connect(using settings: ConnectionSettings) async {
+    /// Opens a network. **Adds, rather than replacing.**
+    ///
+    /// It used to replace, because there could only be one. Now that there can be several,
+    /// "connect" means "open another network" — the same thing the Connect sheet and
+    /// `/server` have always looked like they meant. A host and port already open is
+    /// selected rather than opened twice, which is what stops a second `/server` on the
+    /// same network producing two identical rows.
+    @discardableResult
+    public func connect(using settings: ConnectionSettings) async -> ConnectionViewModel? {
         settings.rememberAsLastUsed(in: config, credentials: credentials)
-        await connection?.disconnect()
+        // The ident is part of what makes two connections the same network: against a
+        // bouncer without `bouncer-networks`, `alice/libera` and `alice/oftc` are the same
+        // host and port and are emphatically not the same network.
+        if let existing = connections.first(where: {
+            $0.host == settings.host && $0.port == settings.port
+                && $0.configuration.ident == settings.sessionConfiguration.ident
+                && $0.bouncerNetworkID == nil
+        }) {
+            selection = .status(existing.id)
+            if case .disconnected = existing.state { await existing.connect() }
+            return existing
+        }
+        return await open(configuration: settings.sessionConfiguration, settings: settings)
+    }
+
+    /// Builds a connection, adds it to the tree, selects it and connects.
+    ///
+    /// The one place a `ConnectionViewModel` is created, so a bouncer-bound network is put
+    /// together exactly as a direct one is — which is what makes "the UI must not care"
+    /// true rather than merely intended.
+    @discardableResult
+    private func open(
+        configuration: SessionConfiguration,
+        settings: ConnectionSettings,
+        name: String? = nil,
+        selecting: Bool = true
+    ) async -> ConnectionViewModel {
         let connection = ConnectionViewModel(
-            configuration: settings.sessionConfiguration,
+            configuration: configuration,
             trace: trace,
             settings: self.settings,
-            credentials: credentials(for: settings)
+            credentials: credentials(for: settings),
+            name: name
         )
-        self.connection = connection
-        selection = .status(connection.id)
+        // Only the unbound connection can enumerate, so only it needs the hook.
+        if configuration.bouncerNetworkID == nil {
+            connection.bouncerNetworksDidChange = { [weak self] control in
+                Task { await self?.reconcileBouncerNetworks(of: control) }
+            }
+        }
+        connections.append(connection)
+        if selecting { selection = .status(connection.id) }
         await connection.connect()
+        return connection
+    }
+
+    /// Closes a network and takes its row out of the tree.
+    ///
+    /// A bouncer's control connection takes its bound networks with it: they are reached
+    /// *through* it, and leaving them behind would leave rows that cannot reconnect.
+    public func close(_ connection: ConnectionViewModel) async {
+        let dependents = connections.filter {
+            $0.bouncerNetworkID != nil && $0.host == connection.host && $0.port == connection.port
+                && $0.id != connection.id
+        }
+        for dependent in connection.bouncerNetworkID == nil ? dependents : [] {
+            await dependent.disconnect()
+            connections.removeAll { $0.id == dependent.id }
+        }
+        await connection.disconnect()
+        connections.removeAll { $0.id == connection.id }
+        if activeConnection == nil { selection = connections.first.map { .status($0.id) } }
+    }
+
+    // MARK: - The bouncer
+
+    /// Opens a network row for every network the bouncer is holding, and closes the ones
+    /// it has let go.
+    ///
+    /// **This is the whole of bouncer mode.** Each upstream network gets its own
+    /// connection, bound with `BOUNCER BIND` during registration — which is what the
+    /// extension requires, since binding after registration is refused — and each is built
+    /// by the same `open` that a direct connection goes through. From here down nothing
+    /// knows the difference.
+    ///
+    /// Driven off ``ConnectionViewModel/bouncerNetworks``, which is the whole list rather
+    /// than a delta, so this reconciles rather than applying edits. Called whenever that
+    /// list changes: once for `BOUNCER LISTNETWORKS`, and again per `BOUNCER NETWORK` under
+    /// `soju.im/bouncer-networks-notify`.
+    ///
+    /// **Serialized per bouncer, and re-run if the list moved while it was working.**
+    /// Opening a network suspends, and a `BOUNCER NETWORK` arriving during that suspension
+    /// would otherwise be reconciled against a list that is already stale — with the
+    /// visible symptom that a network removed while another was being opened comes back.
+    func reconcileBouncerNetworks(of control: ConnectionViewModel) async {
+        guard !reconcilingBouncers.contains(control.id) else {
+            bouncersNeedingReconcile.insert(control.id)
+            return
+        }
+        reconcilingBouncers.insert(control.id)
+        defer { reconcilingBouncers.remove(control.id) }
+        repeat {
+            bouncersNeedingReconcile.remove(control.id)
+            await applyBouncerNetworks(of: control)
+        } while bouncersNeedingReconcile.contains(control.id)
+    }
+
+    /// Bouncers whose reconcile is in flight, and those that changed while it was.
+    @ObservationIgnored private var reconcilingBouncers: Set<UUID> = []
+    @ObservationIgnored private var bouncersNeedingReconcile: Set<UUID> = []
+
+    private func applyBouncerNetworks(of control: ConnectionViewModel) async {
+        let wanted = control.bouncerNetworks
+        let existing = connections.filter {
+            $0.bouncerNetworkID != nil && $0.host == control.host && $0.port == control.port
+        }
+
+        // Networks the bouncer has dropped. Closed rather than left disconnected: the row
+        // is gone from the bouncer, so a row that could never reconnect would be a lie.
+        for connection in existing
+        where !wanted.contains(where: { $0.id == connection.bouncerNetworkID }) {
+            await connection.disconnect()
+            connections.removeAll { $0.id == connection.id }
+        }
+
+        for network in wanted {
+            if let already = existing.first(where: { $0.bouncerNetworkID == network.id }) {
+                already.rename(to: network.displayName)
+                continue
+            }
+            var configuration = control.configuration
+            configuration.bouncerNetworkID = network.id
+            // Never steals the selection: networks appear as the bouncer names them, which
+            // may be seconds after connecting and several at once. Yanking the user into
+            // the last one to arrive would be its own small hostility.
+            await open(
+                configuration: configuration,
+                settings: bouncerSettings(for: control),
+                name: network.displayName,
+                selecting: false
+            )
+        }
+        if activeConnection == nil { selection = connections.first.map { .status($0.id) } }
+    }
+
+    /// The settings a bound connection is built with: the control connection's, since it is
+    /// the same host, the same TLS decision and the same credentials.
+    private func bouncerSettings(for control: ConnectionViewModel) -> ConnectionSettings {
+        var settings = ConnectionSettings.lastUsed(from: config, credentials: credentials)
+        settings.host = control.host
+        settings.port = control.port
+        settings.loadSecrets(from: credentials)
+        return settings
     }
 
     // MARK: - TLS
@@ -498,7 +691,7 @@ public final class AppModel {
     /// live on `MessageLogController`s that no view owns — so this is the one push, and
     /// it is explicit rather than a chain of observers to reason about.
     public func applySettings() {
-        connection?.applySettings()
+        for connection in connections { connection.applySettings() }
         debug.applySettings()
     }
 
@@ -514,7 +707,9 @@ public final class AppModel {
         CompletionSources(
             // The nick list's own order, which is rank then casemapped alphabetical.
             nicks: buffer?.members.map(\.nick.raw) ?? [],
-            channels: connection?.channels.map(\.name.raw) ?? [],
+            // This network's channels only. With two open, offering the other one's would
+            // complete to a channel this connection cannot join.
+            channels: activeConnection?.channels.map(\.name.raw) ?? [],
             commands: CompletionSources.allCommands
         )
     }
@@ -535,19 +730,29 @@ public final class AppModel {
     /// you are looking at, marking nothing; drawn on the way out it marks the last thing
     /// you saw, and it stays there until the next time you leave.
     private func markUnread(leaving previous: SidebarItem?) {
-        guard let previous, previous != selection, let connection else { return }
+        guard let previous, previous != selection else { return }
         let renderer = settings.renderer
         switch previous {
-        case .status(let id) where id == connection.id:
-            connection.log.markUnreadPosition(with: renderer.unreadRule())
-        case .channel(let id, let name) where id == connection.id:
-            connection.buffer(named: name)?.log.markUnreadPosition(with: renderer.unreadRule())
-        default:
+        case .status(let id):
+            connection(id: id)?.log.markUnreadPosition(with: renderer.unreadRule())
+        case .channel(let id, let name):
+            connection(id: id)?.buffer(named: name)?.log
+                .markUnreadPosition(with: renderer.unreadRule())
+        case .settingsAndDebug:
             break
         }
     }
 
+    /// Disconnects the selected network, leaving its row in the tree.
+    ///
+    /// The toolbar's button, which acts on what you are looking at. Closing a network
+    /// entirely is ``close(_:)``, from the tree's context menu.
     public func disconnect() async {
-        await connection?.disconnect()
+        await activeConnection?.disconnect()
+    }
+
+    /// Disconnects every network, for application shutdown.
+    public func disconnectAll() async {
+        for connection in connections { await connection.disconnect() }
     }
 }
