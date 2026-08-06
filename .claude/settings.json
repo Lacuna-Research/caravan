@@ -8,6 +8,12 @@
             "command": "bash \"$(git rev-parse --show-toplevel)/Scripts/check-worktree.sh\" 2>/dev/null || true",
             "timeout": 10,
             "statusMessage": "Checking for a stale worktree"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)/Scripts/worktrees.sh\" --hook 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Checking for merged worktrees left on disk"
           }
         ]
       }
