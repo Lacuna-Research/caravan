@@ -273,132 +273,115 @@
   <div class="timeline">
     <div class="entry decision">
       <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>Scrollback will be AppKit, not SwiftUI</h3>
-      <p>Before any code, the chat scrollback was settled as an AppKit
-      <code>NSTextView</code> — a pure SwiftUI list degrades badly past a few thousand
-      rich-text rows. The same session fixed the security posture: credentials are
-      redacted the moment they enter the trace buffer, never at export.</p>
+      <h3>Your passwords live in the Keychain</h3>
+      <p>Every credential goes in the macOS Keychain, never a config file — a file is
+      readable by any process on the machine and lands unencrypted in backups. Passwords
+      are also scrubbed from the debug trace the instant they arrive, so even a
+      &ldquo;log everything&rdquo; diagnostic mode can never show one in plaintext.</p>
     </div>
     <div class="entry decision">
       <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>Every project rule becomes a failing check</h3>
-      <p>A review found seven weaknesses in the project&rsquo;s tracking, all with one root
-      cause: every rule was a promise audited by the person who made it. The fix was a
-      script that fails the build on a stale doc, an edited log line, or an undeclared
-      dependency — important conventions get made mechanical, not written more emphatically.</p>
-    </div>
-    <div class="entry decision">
-      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>Credentials go in the Keychain, full stop</h3>
-      <p>A config file is readable by any process and lands unencrypted in backups — and
-      TLS client certificates must be Keychain items anyway, so splitting stores made no
-      sense. The same day, the zero-dependency rule quietly killed GRDB: persistence wraps
-      the system SQLite directly.</p>
-    </div>
-    <div class="entry decision">
-      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>MQTT rejected: IRC is one ordered stream</h3>
-      <p>The idea of an MQTT broker between bouncer and client died on a single fact:
-      IRC&rsquo;s state machine depends on one totally-ordered stream, and MQTT only orders
-      within a topic. Fan out and you get rare, unreproducible state corruption; use one
-      topic and it is a worse TCP with a broker in the middle.</p>
-    </div>
-    <div class="entry decision">
-      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>Scripting is JavaScript, not the mIRC language</h3>
-      <p>JavaScriptCore ships with macOS, costing zero dependencies. Verified before
-      choosing: a bare <code>JSContext</code> exposes no network, no filesystem, no ambient
-      authority at all — the sandbox is the default state, not a restriction bolted on
-      afterwards.</p>
+      <h3>Scripting will be JavaScript, sandboxed by default</h3>
+      <p>Instead of reimplementing mIRC&rsquo;s quirky scripting language, Caravan will
+      embed JavaScript via a framework that ships with macOS. Verified before choosing: a
+      bare context has no network, no filesystem, no ambient authority at all — scripts get
+      only the capabilities the client deliberately hands them, closing the door mIRC
+      scripts once used to spread malware.</p>
     </div>
     <div class="entry milestone">
       <div class="meta"><span>2026-08-04</span><span class="kind-milestone">milestone</span></div>
-      <h3>Parser corpus passes; CRLF is one Character</h3>
-      <p>The message parser landed with the full community parser-tests corpus passing —
-      which caught a genuinely nasty Swift gotcha: Swift treats a CR LF pair as a single
-      <code>Character</code>, so a character-by-character escaping loop silently let line
-      terminators through. Protocol code now iterates raw unicode scalars.</p>
+      <h3>The parser passes the community test corpus</h3>
+      <p>The message parser passes every case in the community-maintained parser-tests
+      corpus — the shared suite IRC software uses to prove it handles the protocol&rsquo;s
+      edge cases. Caravan reads the wire the way well-behaved servers and clients expect,
+      including the malformed corners.</p>
     </div>
     <div class="entry decision">
       <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
-      <h3>Homebrew cask beats the App Store</h3>
-      <p>DCC needs incoming connections and identd wants port 113, both
-      painful-to-impossible in the App Store sandbox. A happy accident surfaced too: XDG
-      paths mean clean uninstall is a three-line <code>zap</code> stanza instead of a
-      scavenger hunt through <code>~/Library</code>.</p>
+      <h3>Install with Homebrew, uninstall cleanly</h3>
+      <p>Caravan will ship as a Homebrew cask rather than through the App Store, whose
+      sandbox makes DCC file transfers painful to impossible. Settings live in tidy
+      XDG-style directories rather than scattered through <code>~/Library</code>, so a
+      full uninstall — app, settings, caches — is genuinely complete.</p>
     </div>
     <div class="entry milestone">
       <div class="meta"><span>2026-08-05</span><span class="kind-milestone">milestone</span></div>
-      <h3>First real connection — and a wrong theory</h3>
-      <p>Transport and session registered live against Libera.Chat over TLS for the first
-      time. Careful measurement overturned the previous day&rsquo;s claim: a refused
-      connection fails in milliseconds — it&rsquo;s an unroutable address that hangs
-      forever with no error, which is why the client owns its own connect deadline.</p>
+      <h3>First real connection to Libera.Chat</h3>
+      <p>Caravan registered live on Libera.Chat over TLS for the first time. The work also
+      uncovered why some clients hang forever on a bad address — macOS never reports
+      certain connection failures — so Caravan enforces its own connect deadline: a dead
+      server means a clear error in seconds, not an eternal spinner.</p>
     </div>
     <div class="entry decision">
       <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
-      <h3>A 50,000-line benchmark picks the text engine</h3>
-      <p>A benchmark appended 50,000 lines and scrolled every viewport: TextKit&nbsp;1 used
-      25&nbsp;MB where TextKit&nbsp;2 used ten times more. A follow-up honestly re-ran the
-      comparison fairly, concluded the choice was safe rather than forced — and the engine
-      remains a one-line change to revisit.</p>
-    </div>
-    <div class="entry surprise">
-      <div class="meta"><span>2026-08-05</span><span class="kind-surprise">surprise</span></div>
-      <h3>The live run finds what tests can&rsquo;t</h3>
-      <p>The first multi-channel build passed all 254 unit tests, then failed in the first
-      minute of real use: switching channels blanked the scrollback, and one channel&rsquo;s
-      messages appeared under another&rsquo;s topic bar. Both were view-lifecycle behaviour
-      no headless test could see — so every unit of work now ends with a live run against a
-      real network.</p>
-    </div>
-    <div class="entry surprise">
-      <div class="meta"><span>2026-08-05</span><span class="kind-surprise">surprise</span></div>
-      <h3>Shift+Return is indistinguishable from Return</h3>
-      <p>The multi-line input box could not be built as designed: AppKit delivers
-      Shift+Return through the exact same selector as plain Return, so every attempt at a
-      soft line break sent the message instead. The fix reads modifiers through an
-      injectable seam — bought, as the log puts it, &ldquo;with a bug that shipped once&rdquo;.</p>
+      <h3>50,000 lines of scrollback in 25&nbsp;MB</h3>
+      <p>A benchmark appended 50,000 chat lines and scrolled through every screenful to
+      choose the text engine. The winner renders a huge backlog in 25&nbsp;MB — where the
+      alternative needed ten times more — and its slowest frame took a hundredth of a
+      millisecond, so a busy channel scrolls without a stutter.</p>
     </div>
     <div class="entry decision">
       <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
-      <h3>Menlo wins the font shootout, by measurement</h3>
-      <p>A script measured glyph coverage across monospace fonts: SF&nbsp;Mono is missing
-      eleven of the forty-four classic CP437 art characters, which CoreText silently
-      substitutes at up to 1.8&times; cell width — wrecking ASCII art. Menlo covers all of
-      them, and the measurement became a permanent regression test.</p>
+      <h3>A paste never sends</h3>
+      <p>Pasting multi-line text lands in the input box for you to review — it is never
+      sent automatically, even with a trailing newline. mIRC itself fires each pasted line
+      straight onto the wire, which is exactly how a clipboard accident broadcasts a
+      password to a channel; Caravan makes you press Enter on something you can see.
+      Shift+Enter composes multi-line messages, and Up-arrow recalls your whole entry.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>ASCII art renders perfectly, by measurement</h3>
+      <p>A font-coverage script found SF&nbsp;Mono missing eleven of the forty-four classic
+      CP437 art characters, which macOS silently substitutes at up to 1.8&times; cell
+      width — shredding channel ASCII art. Caravan ships Menlo, which covers all of them,
+      with ligatures off so <code>-&gt;</code> stays exactly the characters someone typed.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>A config file you can actually edit</h3>
+      <p>Settings live in one plain-text file, and the app rewrites only the specific line
+      it is changing — your comments, your formatting, and even options from a newer
+      version all survive. The file stays as short as what you have actually changed, and
+      deleting a line is how you reset a setting to default.</p>
     </div>
     <div class="entry milestone">
       <div class="meta"><span>2026-08-05</span><span class="kind-milestone">milestone</span></div>
-      <h3>Stage 1 complete: 372 tests, zero dependencies</h3>
-      <p>Eleven prompts, one PR each, a working IRC client — connect, join, chat, commands,
-      debug console — with zero external packages. The retrospective&rsquo;s sharpest
-      finding: all three defects that escaped to live runs were about what the user sees,
-      never about state.</p>
+      <h3>Stage 1 complete: a working IRC client</h3>
+      <p>Eleven units of work produced a real client: connect over TLS, join channels,
+      chat, a full command line with mIRC-style passthrough, timestamps, an unread marker,
+      and a raw-traffic debug view that redacts credentials even on screen. All of it with
+      zero external dependencies — nothing in the app but Apple&rsquo;s frameworks and
+      Caravan&rsquo;s own code.</p>
     </div>
-    <div class="entry surprise">
-      <div class="meta"><span>2026-08-06</span><span class="kind-surprise">surprise</span></div>
-      <h3>One nick palette was arithmetically impossible</h3>
-      <p>Colouring nicknames accessibly in both appearances has no single-palette solution
-      — the contrast maths proves no colour clears 4.5:1 against both near-white and
-      near-black. So a nick&rsquo;s hash picks a hue, the appearance picks its lightness,
-      and a test named <code>oneTableWasImpossible</code> records the proof.</p>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-06</span><span class="kind-milestone">milestone</span></div>
+      <h3>mIRC colours, readable in light and dark</h3>
+      <p>Bold, italic, underline, and the full mIRC colour range now render — including a
+      subtlety with proof behind it: no single nickname palette can be readable against
+      both light and dark backgrounds, so a nick keeps its hue across theme switches while
+      the shade adapts. Text a sender explicitly coloured black-on-white stays
+      black-on-white, because that is what they asked for.</p>
     </div>
-    <div class="entry surprise">
-      <div class="meta"><span>2026-08-06</span><span class="kind-surprise">surprise</span></div>
-      <h3>Screenshots lie; sample the pixels</h3>
-      <p>A one-line attribute conversion had been silently discarding every colour,
-      underline and link before they reached the screen — every unit test asserted the
-      renderer&rsquo;s output, which was correct, while the text storage sat empty.
-      Verification switched from eyeballing screenshots to sampling pixel values.</p>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-06</span><span class="kind-decision">decision</span></div>
+      <h3>Tab completion, and formatting you can see</h3>
+      <p>Tab completes nicks, channels, and commands — with the right punctuation for each,
+      so a channel name never gets addressed like a person. Formatting chords (Ctrl+B for
+      bold, Ctrl+K for a sixteen-swatch colour strip) style your text live as you type, and
+      unlike mIRC the control codes stay visible as dim markers: the input box never hides
+      what it is about to send.</p>
     </div>
-    <div class="entry surprise">
-      <div class="meta"><span>2026-08-06</span><span class="kind-surprise">surprise</span></div>
-      <h3>Refusing a certificate has to mean no</h3>
-      <p>The first GUI run of the TLS trust prompt caught it within the hour: declining a
-      self-signed certificate triggered a reconnect that re-presented the same dialog every
-      few seconds. A prompt that won&rsquo;t take no for an answer trains people to click
-      yes — refusal is now terminal, as is a rejected password.</p>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-06</span><span class="kind-decision">decision</span></div>
+      <h3>SASL login, and &ldquo;no&rdquo; means no</h3>
+      <p>Caravan now authenticates with SASL — including the modern SCRAM mechanism,
+      verified against the RFC&rsquo;s published test vectors — with passwords pre-filled
+      from the Keychain. The posture is deliberate: a wrong password ends the connection
+      rather than silently continuing logged-out, an unknown server certificate gets a
+      fingerprint prompt in the trust-on-first-use style of SSH, and declining that
+      certificate ends the matter — a first build that nagged again on reconnect was
+      caught live and fixed the same day.</p>
     </div>
   </div>
 </section>
