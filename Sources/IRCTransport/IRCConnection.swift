@@ -41,6 +41,17 @@ public actor IRCConnection {
     /// arrive on a dispatch queue and must not race an actor hop to get here.
     private let terminated = Mutex(false)
 
+    /// Set when the verify block refused a certificate.
+    ///
+    /// The refusal and the failure arrive by different routes: we answer `complete(false)`
+    /// in the verify block, and TLS then fails the handshake through the ordinary error
+    /// path with `-9808: bad certificate format`. Nothing in that error says the client
+    /// chose it, so the reason is latched here and substituted in ``finish(_:)``.
+    ///
+    /// A reference type for the same reason ``CertificateBox`` is one: `Mutex` is
+    /// non-copyable, and the verify block needs a handle it can capture.
+    private let refusedTrust = RefusalFlag()
+
     private let certificateBox = CertificateBox()
 
     private let credentials: TLSCredentials
@@ -166,6 +177,12 @@ public actor IRCConnection {
             return true
         }
         guard isFirst else { return false }
+        // A handshake that failed after we refused the certificate failed *because* we
+        // refused it, whatever TLS calls the resulting error.
+        var terminal = terminal
+        if case .failed = terminal, refusedTrust.isSet {
+            terminal = .failed(.trustRefused)
+        }
         stateContinuation.yield(terminal)
         inboundContinuation.finish()
         stateContinuation.finish()
@@ -317,6 +334,7 @@ public actor IRCConnection {
         let certificateBox = self.certificateBox
         let evaluator = credentials.trustEvaluator
         let host = requestedHost
+        let refusedTrust = self.refusedTrust
         sec_protocol_options_set_verify_block(
             options.securityProtocolOptions,
             { _, trustRef, complete in
@@ -336,6 +354,7 @@ public actor IRCConnection {
                     Log.transport.error(
                         "refusing an unvalidated TLS certificate: nobody could be asked about it"
                     )
+                    refusedTrust.set()
                     complete(false)
                     return
                 }
@@ -351,6 +370,9 @@ public actor IRCConnection {
                     Log.transport.info(
                         "unvalidated certificate \(accepted ? "accepted" : "refused", privacy: .public)"
                     )
+                    // Latched *before* answering: the handshake failure races back the
+                    // moment `complete(false)` returns, and it has to find this already set.
+                    if !accepted { refusedTrust.set() }
                     completion(accepted)
                 }
             },
@@ -365,6 +387,17 @@ public actor IRCConnection {
 /// Network.framework documents as callable once, from any queue — the whole reason the
 /// verify block hands one over rather than taking a return value. One task owns one of
 /// these and calls it exactly once.
+/// A one-way flag the verify block can set from whatever queue it runs on.
+private final class RefusalFlag: Sendable {
+    private let storage = Mutex(false)
+
+    var isSet: Bool { storage.withLock { $0 } }
+
+    func set() {
+        storage.withLock { $0 = true }
+    }
+}
+
 private final class VerifyCompletion: @unchecked Sendable {
     private let complete: sec_protocol_verify_complete_t
 

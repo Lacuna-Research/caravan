@@ -152,12 +152,18 @@ struct SelfSignedTLSTests {
         await connection.disconnect()
     }
 
-    @Test("refusing fails the handshake rather than connecting anyway")
+    /// **The failure has to say it was a decision.**
+    ///
+    /// TLS reports a refused certificate as `-9808: bad certificate format`, which reads as
+    /// a broken server and — because it looks transient — got the session reconnecting,
+    /// so declining a certificate popped the same dialog again a few seconds later. Found
+    /// by a live run of stage 2 prompt 3; `.trustRefused` is what stops it.
+    @Test("refusing fails the handshake, and says it was refused")
     func refusing() async throws {
         let (connection, states, _) = await connect(accepting: false)
         #expect(
             await waitUntil(timeout: .seconds(20)) {
-                await states.snapshot().contains { if case .failed = $0 { true } else { false } }
+                await states.snapshot().contains(.failed(.trustRefused))
             }
         )
         #expect(await !states.snapshot().contains(.ready))
@@ -165,13 +171,14 @@ struct SelfSignedTLSTests {
     }
 
     /// **Fails closed.** The flag this replaced accepted an unvalidated certificate when
-    /// there was no UI to ask; with nobody to ask, the right answer is no.
+    /// there was no UI to ask; with nobody to ask, the right answer is no — and it is the
+    /// same answer, so it carries the same reason.
     @Test("with no evaluator the handshake fails rather than accepting silently")
     func noEvaluator() async throws {
         let (connection, states, _) = await connect(accepting: nil)
         #expect(
             await waitUntil(timeout: .seconds(20)) {
-                await states.snapshot().contains { if case .failed = $0 { true } else { false } }
+                await states.snapshot().contains(.failed(.trustRefused))
             }
         )
         #expect(await !states.snapshot().contains(.ready))

@@ -129,3 +129,69 @@ struct LiveRegistrationTests {
         await session.disconnect()
     }
 }
+
+/// What the *session* does when a certificate is refused.
+///
+/// Needs the same `openssl s_server` fixture as `SelfSignedTLSTests`; the invocation is in
+/// that suite's doc comment.
+///
+///     CARAVAN_SELF_SIGNED_ENDPOINT=127.0.0.1:16697 \
+///         CARAVAN_LIVE_TESTS=1 swift test --filter LiveTrustRefusalTests
+@Suite(
+    "live trust refusal",
+    .enabled(
+        if: ProcessInfo.processInfo.environment["CARAVAN_LIVE_TESTS"] != nil
+            && ProcessInfo.processInfo.environment["CARAVAN_SELF_SIGNED_ENDPOINT"] != nil
+    )
+)
+struct LiveTrustRefusalTests {
+    /// **The regression test for a defect a live run found.**
+    ///
+    /// Declining a certificate used to surface as an ordinary transport failure, which the
+    /// session reconnected from — so the trust sheet reappeared a couple of seconds after
+    /// the user dismissed it, and again after that. Saying no has to mean no.
+    @Test("refusing a certificate ends the attempt and schedules no reconnect")
+    func refusalDoesNotReconnect() async throws {
+        let raw = ProcessInfo.processInfo.environment["CARAVAN_SELF_SIGNED_ENDPOINT"] ?? ""
+        let parts = raw.split(separator: ":")
+        let configuration = SessionConfiguration(
+            host: String(parts.first ?? "127.0.0.1"),
+            port: UInt16(parts.last ?? "16697") ?? 16697,
+            tls: .enabled(.trustOnFirstUse),
+            nick: "caravan\(Int.random(in: 100_000...999_999))",
+            connectTimeout: .seconds(10),
+            // Short enough that a reconnect would certainly have happened by the time this
+            // test finishes looking for one.
+            backoff: BackoffPolicy(
+                initialDelay: .milliseconds(100),
+                multiplier: 1,
+                maximumDelay: .milliseconds(100),
+                jitterFraction: 0
+            )
+        )
+        let session = IRCSession(
+            configuration: configuration,
+            trace: TraceBuffer(capacity: 256),
+            credentials: TLSCredentials(trustEvaluator: { _, _ in false })
+        )
+        let events = StreamLog<IRCEvent>()
+        events.drain(session.events())
+
+        await session.connect()
+        #expect(
+            await waitUntil(timeout: .seconds(20)) {
+                await events.snapshot().contains {
+                    if case .stateChanged(.disconnected(.trustRefused)) = $0 { true } else { false }
+                }
+            }
+        )
+        // Well past several backoff windows.
+        try await Task.sleep(for: .seconds(1))
+        #expect(
+            await !events.snapshot().contains {
+                if case .stateChanged(.reconnecting) = $0 { true } else { false }
+            }
+        )
+        await session.disconnect()
+    }
+}
