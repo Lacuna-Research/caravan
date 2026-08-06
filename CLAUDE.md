@@ -1,8 +1,8 @@
 # Caravan — Project Instructions
 
 A native macOS IRC client loosely inspired by the good ol' days of mIRC.
-`PLAN.md` roadmap and work queue · `BUILD-LOG.md` history. Stage 1 is complete;
-`STAGE1-PROMPTS.md` is its finished queue, kept for the record.
+`PLAN.md` roadmap · `STAGE2-PROMPTS.md` work queue · `BUILD-LOG.md` history.
+`STAGE1-PROMPTS.md` is stage 1's finished queue, kept for the record.
 
 ## Build standards
 
@@ -17,31 +17,32 @@ A native macOS IRC client loosely inspired by the good ol' days of mIRC.
 
 ## Working method
 
-One item from the current stage's queue per branch, per PR. Never commit to `main`
-directly. Stage 1's queue was `STAGE1-PROMPTS.md`, branch `prompt-NN-slug`; from
-stage 2 the queue is the numbered items in `PLAN.md`, branch `item-slug`.
+One prompt from the current stage's queue per branch (`prompt-NN-slug`), per PR. Never
+commit to `main` directly. Every `PLAN.md` item is attached to a prompt; a prompt may
+carry several items, and a large item may span two.
 
 **You merge your own PRs.** Squash-merge and delete the branch once CI is green; a
 green PR is authorisation to land it, not a checklist to hand back. Stop and ask only
 if CI is red, the work diverged from its prompt, or a decision is genuinely the user's.
 
-**Starting an item:** re-read it in the queue rather than working from memory of it,
-including any `### Carry-forward` block on it.
+**Starting a prompt:** re-read it in the queue, including any `### Carry-forward` block.
+Later prompts carry scope but not detail by design — write the detail immediately before
+starting it, never long in advance.
 
-**Finishing an item, before reporting done:**
+**Finishing a prompt, before reporting done:**
 
 1. Append a `BUILD-LOG.md` entry — deviations, deferrals, surprises, measurements.
    Not a restatement of the diff; git already has the diff.
-2. Raise `### Carry-forward` notes on later items for anything learned that changes
+2. Raise `### Carry-forward` notes on later prompts for anything learned that changes
    them, naming the file and symbol — a note that says "think about X" is worth little.
-3. Consume notes addressed to this item: act on them, delete them, record that.
+3. Consume notes addressed to this prompt: act on them, delete them, record that.
 4. Push anything deferred into `PLAN.md` at the stage where it belongs.
 5. Run it live against a real network, under its own `XDG_CONFIG_HOME`. Three stage 1
    defects passed every unit test and failed in the first minute of a live run.
-6. `make check` must pass, then merge the PR and `ExitWorktree` with `remove` — an
-   item ends at the repo root, not in its worktree.
+6. Bump the `**Status:**` line in the queue, then `make check`, merge, and `ExitWorktree`
+   with `remove` — a prompt ends at the repo root, not in its worktree.
 
-**Between items.** Record decisions *at the moment they are made*, never deferred:
+**Between prompts.** Record decisions *at the moment they are made*, never deferred:
 
 - A choice with a rejected alternative → a decision entry in `BUILD-LOG.md`, with the
   reasoning and what would justify revisiting it.
@@ -53,24 +54,23 @@ including any `### Carry-forward` block on it.
 ## Enforced mechanically
 
 `make check` (pre-commit + CI) enforces: the cap on this file, `BUILD-LOG.md`
-append-only, a build-log entry for every `Sources/` change, the status line, the
+append-only, a build-log entry for every `Sources/` change, both status lines, the
 `README.md` progress badge/table and ASCII art agreeing with their sources,
 carry-forward notes not outliving their prompt, and zero SwiftPM dependencies. Two
 git hooks and a Stop hook guard the rest: no commits to `main`, no pushing a
 `worktree-*` branch before renaming it, no worktree left behind after its PR merged.
-
-When a convention here proves important, make it mechanical rather than writing it
-more emphatically.
+When a convention here proves important, make it mechanical rather than writing it more
+emphatically.
 
 ## Maintaining these documents
 
 Keep docs current without being asked; fix a stale doc in the same commit as the code
-that staled it. Reasoning belongs in `BUILD-LOG.md`, not here — this file holds
-operative rules, and that split is what keeps it under the cap.
+that staled it. Reasoning belongs in `BUILD-LOG.md`, not here — this file holds operative
+rules, and that split is what keeps it under the cap.
 
-`BUILD-LOG.md` is long and append-only: read its last entries, or search it, rather
-than front to back. Open questions live in one list in `PLAN.md`, never there — a
-question buried in an append-only log is a question nobody finds.
+`BUILD-LOG.md` is long and append-only: read its last entries, or search it, rather than
+front to back. Open questions live in one list in `PLAN.md`, never there — a question
+buried in an append-only log is a question nobody finds.
 
 Revisit this file at every stage boundary and **prune as readily as you add** — the
 100-line cap is deliberate and is not to be raised. `PLAN.md` is a living roadmap:

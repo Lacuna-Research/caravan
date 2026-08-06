@@ -11,6 +11,7 @@ set -euo pipefail
 
 CLAUDE_MAX_LINES=100
 TOTAL_PROMPTS=11
+STAGE2_TOTAL_PROMPTS=17
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -100,6 +101,28 @@ else
 	fi
 fi
 
+# 6b. Stage 2 carries the same two rules: a machine-readable status line, and no
+# carry-forward note outliving the prompt it was addressed to. Deliberately *not* wired to
+# the README badge — that badge tracks stage 1, which is finished and will not move again.
+stage2=$(sed -n "s/^\*\*Status:\*\* \([0-9]\{1,\}\)\/$STAGE2_TOTAL_PROMPTS complete.*/\1/p" \
+	STAGE2-PROMPTS.md | head -1)
+if [ -z "$stage2" ]; then
+	err "STAGE2-PROMPTS.md needs a line of exactly the form: **Status:** N/$STAGE2_TOTAL_PROMPTS complete. Next: prompt M."
+else
+	ok "STAGE2-PROMPTS.md status $stage2/$STAGE2_TOTAL_PROMPTS"
+
+	stale2=$(awk -v done="$stage2" '
+		/^## Prompt [0-9]+ / { n = $3 + 0; next }
+		/^\*\*Carry-forward\*\*/ { if (n > 0 && n <= done) printf "%d ", n }
+		/^### Carry-forward/ { if (n > 0 && n <= done) printf "%d ", n }
+	' STAGE2-PROMPTS.md)
+	if [ -n "$stale2" ]; then
+		err "Unconsumed carry-forward notes on completed stage 2 prompt(s): ${stale2% }"
+	else
+		ok "no stage 2 carry-forward notes outliving their prompt"
+	fi
+fi
+
 # 7. README ASCII art must match its generator.
 # Hand-editing box-drawn art is how it silently loses a column. The generator pads
 # every cell to an exact width and places connectors by coordinate, so if the README
@@ -120,6 +143,22 @@ if [ -f Package.swift ]; then
 		err "Package.swift declares an external dependency. Justify it in BUILD-LOG.md and amend this check."
 	else
 		ok "Package.swift has no external dependencies"
+	fi
+fi
+
+# 9. Every stage 2 item in PLAN.md must be attached to a prompt.
+# A roadmap item nobody scheduled is an item that quietly does not get built.
+if [ -f STAGE2-PROMPTS.md ]; then
+	unattached=$(awk '/^## Stage 2/,/^## Stage 3/' PLAN.md |
+		sed -n 's/^[0-9]\{1,\}[a-z]\{0,\}\. \*\*\([^*]*\)\*\*.*/\1/p' |
+		sed 's/\.$//' |
+		while IFS= read -r item; do
+			grep -qF "$item" STAGE2-PROMPTS.md || printf '%s; ' "$item"
+		done)
+	if [ -n "$unattached" ]; then
+		err "PLAN.md stage 2 items not attached to any prompt: $unattached"
+	else
+		ok "every stage 2 item is attached to a prompt"
 	fi
 fi
 
