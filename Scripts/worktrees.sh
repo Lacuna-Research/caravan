@@ -30,6 +30,12 @@ set -euo pipefail
 # `--show-toplevel`, which answers with whichever worktree you happen to be standing in
 # and would therefore exclude the wrong one from the inventory.
 MAIN_ROOT=$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -1)
+
+# Where we were *called* from, captured before the `cd` below moves us. The hook mode
+# needs it to tell "standing at the root" from "standing in a worktree", and reading $PWD
+# after the cd makes that test answer yes always — which had the hook firing from inside a
+# worktree, on top of check-worktree.sh, about the worktree being worked in.
+CALLED_FROM="$PWD"
 cd "$MAIN_ROOT"
 
 mode="${1:-list}"
@@ -139,7 +145,7 @@ prune)
 --hook | hook)
 	# Only from the main checkout: inside a worktree, check-worktree.sh already has
 	# the floor and two hooks arguing about the same turn is how a hook gets ignored.
-	[ "$PWD" = "$MAIN_ROOT" ] || exit 0
+	[ "$CALLED_FROM" = "$MAIN_ROOT" ] || exit 0
 	stale=""
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
