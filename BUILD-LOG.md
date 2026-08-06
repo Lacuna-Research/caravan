@@ -2193,3 +2193,134 @@ multicast actually promises: every consumer sees the same events in the same ord
 The general rule, since this is twice now: **wait on the thing being asserted, and assert
 a property rather than an equality against a moving target.** A test that says "nothing
 else happened" about a live connection is a test that will fail on someone else's machine.
+
+## Prompt 11 — Debug & Settings canvas
+
+**Commit:** see PR  **Date:** 2026-08-05
+
+**Shipped:** `CaravanUI` — `ConfigFile` (the plain-text config), `DebugController`,
+`SettingsDebugCanvas`, the `settingsAndDebug` sidebar row, `restyle()` and an eager
+`lineCap` trim in `MessageLogController`, and `ownPrivateMessage`/`ownPrivateNotice` in the
+format table. `Diagnostics` — `TraceBuffer.feed(includingRetained:)` and `TraceFileWriter`.
+`IRCSession` — `/debug` and `CommandAction.debug`. `ChatSettings` and `ConnectionSettings`
+moved off `UserDefaults`. 372 tests across 38 suites; `make all` clean.
+
+**Decisions:**
+
+- **The config file is line-preserving, not serialize-the-whole-model.** `ConfigFile` keeps
+  the file as lines and rewrites only the line belonging to the key being set, so comments
+  and keys from a later version survive a write. The alternative — decode, mutate, encode —
+  is less code and silently eats anything it does not understand, which makes
+  "user-editable" a claim rather than a property. Revisit if the format ever grows
+  structure that lines cannot express.
+- **An absent key means the default; it is not written out eagerly.** So the file stays as
+  short as what the user actually changed, and a default that improves later improves for
+  everyone who never touched it. `set(nil)` deletes the line, which is what makes "reset to
+  default" expressible.
+- **No migration from `UserDefaults`.** The app is unreleased and the stranded values are a
+  host, a nick and a font size, re-entered once. A migration path is code that must then be
+  carried and eventually deleted; the trade is worth it only for shipped software.
+- **`/debug` gained a sink watermark rather than a replay-and-hope.** One rule covers the
+  live feed and `-i`: a sink is only given events newer than the newest it has. So `-i`
+  fills exactly the gap left while output was off, asking twice adds nothing, and clearing
+  the canvas — which resets the mark — lets `-i` bring the whole ring back. The first
+  version replayed the snapshot unconditionally and duplicated whatever was already there.
+- **`TraceBuffer.feed` returns retained events *and* the live stream under one lock.**
+  Snapshot-then-subscribe has a window in which an event is dropped or delivered twice; one
+  atomic call has none. The retained events come back as an array rather than being replayed
+  through the stream, so their order is the caller's rather than a race.
+- **Both the canvas and `/debug` drive one piece of state.** The Streaming switch *is*
+  `/debug window` / `/debug off`. A UI and a command that each held their own idea of where
+  output was going would eventually disagree, and the user would be right either way.
+- **⌘, and ⌘0 are two menu items, not one.** SwiftUI allows one shortcut per button, so the
+  app menu carries "Settings & Debug…" (⌘,, replacing `.appSettings`) and View carries
+  "Settings & Debug" (⌘0). Two items in *different* menus is findable; two in the same menu
+  would not be.
+
+**Learned:**
+
+- **`didSet` that assigns to its own property is a stack overflow under `@Observable`.**
+  The macro turns a stored property into a computed one, so the self-assignment re-enters
+  the setter rather than being the no-op it is on a plain stored property. It crashed the
+  whole test binary with SIGSEGV and no failing-test name. Clamping now writes back once and
+  `return`s, which terminates because clamping a clamped value is a fixed point.
+- **A font setting has to restyle text that is already on screen.** `MessageLogController`
+  filled the font at flush time only, so changing it left the buffer in two fonts. `restyle()`
+  reapplies over the whole storage — and has to put the clipping paragraph style back on the
+  unread rule, which is deliberately wider than the window.
+- **macOS will not foreground a second instance of the same bundle**, so `keystroke` cannot
+  be aimed at one. The acceptance run's second party is a 60-line Python TLS client instead,
+  which was both more reliable and able to cover the join/quit case prompt 10 could not.
+
+**Live acceptance, against Libera over TLS:** connected; the Connect sheet pre-filled from
+the seeded plain-text config, which is the `UserDefaults` move proved end to end; joined two
+channels; held a conversation; sent an action; sent a PM and received one; **watched a real
+third party join, speak and quit** — the gap prompt 10's run left open; `/whois` through the
+raw passthrough; ⌘, and ⌘0 both opened the canvas with the tree still visible; `/debug`,
+`/debug off`, `/debug -i window` and `/debug -i <file>` all behaved, the file carrying its
+banner, the whole ring from before `/debug` was issued, and then live traffic; raised the
+font size in the form and watched every buffer restyle live; confirmed the config file had
+gained exactly one line and kept its hand-written comment; `/quit` and `/connect`, with the
+channel buffer surviving greyed, the header band saying "You are not in", and the unread
+rule where it was left.
+
+**The run found one defect, fixed here.** `/msg bob hi` typed in `#swift` echoed as
+`<@you> hi` — indistinguishable from something said in the channel. The message went to bob;
+rendering it as a channel line is the client lying about where your words went. Now
+`-> *bob* hi`, mIRC's form, with the recipient in the nick column; `/notice` likewise. The
+echo stays in the window you typed in, which is mIRC's behaviour and the only way to see
+that it sent without leaving the window. Stage 2's query buffers change the destination, not
+this rendering.
+
+**Carry-forward:** consumed all three notes on this prompt. Prompt 10's first — move *both*
+`ChatSettings` and `ConnectionSettings`, or the Connect sheet's values stay behind — was
+acted on, and then some: a grep for the note's two names left a *third* store behind, the
+nick list's width and visibility in `@AppStorage`, so those moved too. One persistence
+mechanism is the point of the move; a second store left behind is a second place to look
+when a setting does not stick. `UserDefaults` and `@AppStorage` now appear nowhere in
+`Sources/` or `App/` outside two comments explaining what they used to be. Its second and third
+were right that the debug half's rendering and the redacted export were already built, so
+this prompt added destinations and `-i` rather than rendering. Raised: two notes on stage 2
+items in `PLAN.md`.
+
+## Decision — stage 1 retrospective
+
+**Date:** 2026-08-05
+
+Eleven prompts, one PR each, 372 tests, zero external dependencies. What the stage actually
+taught, as opposed to what the plan assumed:
+
+**The mechanical checks earned their keep, and they earned it by failing.** `check-docs.sh`
+caught a stale README badge, an unconsumed carry-forward note and a missing build-log entry
+across the stage — each one a promise that a human reviewer had already read past. The rule
+worth keeping: when a convention proves important, make it mechanical rather than writing it
+more emphatically. The corollary this stage found is that the *cheap* checks are the ones
+that keep working; every check here is a `grep` or a line count.
+
+**Carry-forward notes were the highest-leverage documentation invention.** Nine of the
+eleven prompts either raised or consumed one, and in the two cases where a note was
+specific enough to name a symbol (`LineKind` is the seam; move *both* settings stores) the
+downstream prompt was materially shorter for it. A note that says "remember to think about
+X" is worth little; one that names the file and the function is worth a session.
+
+**Purity paid, and it paid at the point of testing.** `IRCProtocol` and `CommandParser` hold
+the two biggest tables in the codebase, and both are exhaustively tested without a socket
+because neither can do I/O. The Linux CI job is the reason that stayed true rather than
+eroding — it fails mechanically the moment an `import` slips in.
+
+**Three defects reached a live run rather than a test, and all three were about *what the
+user sees*, not about state:** prompt 8's scrollback drawn under the wrong channel's chrome,
+prompt 10's `>>` echo in the wrong buffer, and this prompt's `/msg` echo rendered as a
+channel line. The state machine underneath was correct in all three. The lesson for stage 2:
+a live run is not a formality at the end of a prompt, it is the only test that looks at the
+window — budget it, and script the second party rather than needing a human.
+
+**Two tests were flaky, both for the same reason**, recorded in their own correction entry:
+comparing a snapshot against a live stream. Both were caught by CI rather than locally,
+which is an argument for CI being noisier than a developer's machine, not quieter.
+
+**What the plan got wrong.** `ChatModel` and `Persistence` as separate modules never
+happened and were not missed — `CaravanUI` holds both, and splitting them now would be
+abstraction ahead of a second consumer. The `UserDefaults` stopgap ran five prompts longer
+than intended; naming the keys in one enum is what kept the eventual move to one afternoon,
+and that trick is worth reusing for anything else deliberately deferred.

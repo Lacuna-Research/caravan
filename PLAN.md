@@ -37,7 +37,10 @@ at a point where the app is genuinely usable.
   logs in parallel for user-facing logs. Nothing is written inside the source tree:
   settings in `~/.config/caravan/`, data in `~/.local/share/caravan/`, caches in
   `~/.cache/caravan/` (all honouring the matching `XDG_*` variables), and every
-  credential in the macOS Keychain rather than any file.
+  credential in the macOS Keychain rather than any file. Settings shipped in stage 1 as
+  `caravan.conf` — `key = value`, one per line, comments and unknown keys preserved
+  across a write, an absent key meaning the default. That file's path *and* format are
+  public API; the server list and bindings extend it rather than replacing it.
 
 ### Settled
 
@@ -67,6 +70,14 @@ decision entry.
   at Libera while iterating on the state machine — reconnecting a few hundred times
   against a real network during debugging is antisocial, and soju is a primary
   target we need to exercise anyway.
+- **A scripted live run per prompt, with a scripted second party.** Stage 1 shipped three
+  defects that every unit test passed and a live run caught within a minute, and all three
+  were about what the window showed rather than what the state was. So a live run is not a
+  formality at the end of a prompt. Two things make it cheap enough to actually do: driving
+  the app under its own `XDG_CONFIG_HOME`, so a run neither reads nor writes real settings
+  and the Connect sheet can be pre-seeded; and a small TLS client as the other person in
+  the channel, since macOS will not foreground a second instance of the same bundle and so
+  cannot be typed at.
 
 ### Carry-forward notes
 
@@ -110,6 +121,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     - From prompt 10: bold and italic runs already have room. `MessageLogController`
       fills the chat font only into runs that do not set one, precisely so a formatted
       run can carry its own — blanket-setting the font over the batch would undo them.
+    - From prompt 11: `MessageLogController.restyle()` **does** blanket-set the font, over
+      the whole storage, because changing the font in the settings form has to reach text
+      already on screen. That is correct only while every run carries the chat font and
+      nothing else. This item is where it stops being correct: restyle has to rebuild each
+      run's font from its own traits rather than overwrite it, or the first bold word in a
+      buffer loses its bold the moment someone changes the font size.
 
 11. **Multi-window model.** The tree's shape shipped with stage 1
     (GUI-DESIGN-NOTES.md §12); this item adds activity and navigation at scale
@@ -133,7 +150,9 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       stays reserved for Settings & Debug.
     - Detachable windows: one eject affordance shared by buffers and canvases
       (§1, §10) — this is where the Settings & Debug canvas gains its
-      standalone-window mode.
+      standalone-window mode. Once ejected, ⌘0 and ⌘, focus that window instead of
+      taking over the chat area; both shortcuts land on `AppModel.showSettingsAndDebug()`
+      today, which is the one place that has to learn the difference.
     - Manual drag-to-reorder within a network, persisted, on top of join order.
     - `NSToolbar`, not a hand-rolled bar (§8): menu bar always; the icon toolbar
       optional but visible on first launch with a minimal set — connection state,
@@ -180,6 +199,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     - From prompt 8: `HeaderBand` is general and already built — never hidden,
       shrink-to-two-lines, expand-into-a-scroller. The query case is content and a
       placeholder, not new behaviour.
+    - From prompt 11: an outgoing `/msg bob hi` typed in a channel currently echoes *in
+      that channel* as `-> *bob* hi` — mIRC's form, and deliberately marked as leaving the
+      window, because the live acceptance run caught it rendering as an ordinary channel
+      line. Query buffers change where that echo goes, not how it reads: a message to a
+      window that *is* the query renders `<you> hi`, and the `-> *nick*` form stays for
+      messages aimed somewhere other than the window you typed in. `LineKind
+      .ownPrivateMessage` / `.ownPrivateNotice` and `ConnectionViewModel.isThisWindow` are
+      the two places.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
     /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.
@@ -199,7 +226,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     in stage 3.
 18. **Options.** mIRC-shaped tabbed prefs — Connect, IRC, Display, Colors, Sounds,
     Logging, Mouse, Other — built out on the Settings & Debug canvas from prompt 11,
-    not a separate window (GUI-DESIGN-NOTES.md §10). Display gets the density and
+    not a separate window (GUI-DESIGN-NOTES.md §10). Two properties of the stage 1 form
+    are requirements rather than accidents, and the tabs must not lose them: **every
+    control writes straight through to `caravan.conf`** — no Apply button, nothing to
+    cancel, no in-memory pending state to get out of step — and **the file survives being
+    hand-edited**, so a tab that rewrites the whole file instead of the lines it owns is a
+    regression. Display gets the density and
     zoom model from §15.5: density is line height, not point size — a line-height
     multiplier with Compact / Normal / Comfortable presets as multipliers over the
     user's text-size preference (never clamping a requested size downward), zero

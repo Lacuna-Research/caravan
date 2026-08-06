@@ -39,7 +39,7 @@ public struct RootView: View {
             }
         }
         .sheet(isPresented: $model.isShowingConnectSheet) {
-            ConnectSheet { settings in
+            ConnectSheet(config: model.config) { settings in
                 Task { await model.connect(using: settings) }
             }
         }
@@ -47,7 +47,11 @@ public struct RootView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let connection = model.connection {
+        // The canvas replaces the chat area, and takes precedence over whatever buffer
+        // was selected — which is what makes selecting a buffer bring the chat area back.
+        if model.isShowingCanvas {
+            SettingsDebugCanvas(model: model)
+        } else if let connection = model.connection {
             if let buffer = model.selectedChannel {
                 ChannelBufferView(model: model, buffer: buffer)
             } else {
@@ -68,11 +72,12 @@ public struct RootView: View {
     /// to — the same "always say which network" rule the tree follows, since `#music` on
     /// two networks are different rooms.
     private var title: String {
-        model.selectedChannel?.name.raw ?? model.connection?.displayName ?? "Caravan"
+        if model.isShowingCanvas { return "Settings & Debug" }
+        return model.selectedChannel?.name.raw ?? model.connection?.displayName ?? "Caravan"
     }
 
     private var subtitle: String {
-        guard let connection = model.connection else { return "" }
+        guard !model.isShowingCanvas, let connection = model.connection else { return "" }
         return model.selectedChannel == nil ? connection.statusSummary : connection.displayName
     }
 

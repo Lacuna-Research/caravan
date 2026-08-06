@@ -111,6 +111,9 @@ public struct CommandParser: Sendable {
             }
             return server(rest)
 
+        case "debug":
+            return debug(rest)
+
         case "raw", "quote":
             guard let message = IRCMessage(line: rest) else {
                 return [.error(CommandError.usage("/raw <IRC line>").message)]
@@ -245,6 +248,54 @@ public struct CommandParser: Sendable {
                 password: password.isEmpty ? nil : password
             )
         ]
+    }
+
+    /// `/debug [-i] [window | <file> | off]`, following mIRC.
+    ///
+    /// The destination is the **rest of the line**, not the next token: a path may contain
+    /// spaces, and a client that silently truncated `~/Debug Logs/caravan.log` at the
+    /// space would write to somewhere the user never named.
+    ///
+    /// `on` and `@anything` are accepted as `window` because that is what mIRC users type;
+    /// `-i` on its own means the canvas, since it is the only destination that could be
+    /// meant by a flag with nothing after it.
+    private func debug(_ rest: String) -> [CommandAction] {
+        var remainder = Substring(rest)
+        var includesExistingTrace = false
+
+        while remainder.hasPrefix("-") {
+            let (flag, afterFlag) = split(String(remainder))
+            for character in flag.dropFirst() where character != "i" {
+                return [
+                    .error(
+                        CommandError.unknownFlag(command: "/debug", flag: "-\(character)").message
+                    )
+                ]
+            }
+            includesExistingTrace = true
+            remainder = Substring(afterFlag)
+        }
+
+        let destination = String(remainder).trimmingCharacters(in: .whitespaces)
+        switch destination.lowercased() {
+        case "":
+            return [
+                .debug(includesExistingTrace ? .toCanvas(includingExistingTrace: true) : .report)
+            ]
+        case "off":
+            return [.debug(.off)]
+        case "window", "on":
+            return [.debug(.toCanvas(includingExistingTrace: includesExistingTrace))]
+        default:
+            if destination.hasPrefix("@") {
+                return [.debug(.toCanvas(includingExistingTrace: includesExistingTrace))]
+            }
+            return [
+                .debug(
+                    .toFile(path: destination, includingExistingTrace: includesExistingTrace)
+                )
+            ]
+        }
     }
 
     /// Plain text, to the window's target.

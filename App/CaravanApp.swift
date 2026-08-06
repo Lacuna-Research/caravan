@@ -23,6 +23,22 @@ struct CaravanApp: App {
         }
         .defaultSize(width: 900, height: 600)
         .commands {
+            // ⌘, opens the canvas rather than a Settings *window*. Forty years of muscle
+            // memory makes a dead ⌘, conspicuous, and macOS's own convention — Settings is
+            // a separate window, always — is the thing being departed from deliberately
+            // here (GUI-DESIGN-NOTES.md §10).
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings & Debug…") { model.showSettingsAndDebug() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+            // ⌘0 is the canvas's place in the buffer-navigation numbering: ⌘1…⌘9 reach
+            // buffers, and the canvas is the one that is not one. Listed in View rather
+            // than duplicated into the app menu's item, because two menu items with the
+            // same name in the same menu is how you make both unfindable.
+            CommandGroup(after: .sidebar) {
+                Button("Settings & Debug") { model.showSettingsAndDebug() }
+                    .keyboardShortcut("0", modifiers: .command)
+            }
             CommandGroup(after: .pasteboard) {
                 // The redacted wire trace plus the app and OS version. Safe to paste into
                 // a public issue, because the trace was redacted on insert rather than on

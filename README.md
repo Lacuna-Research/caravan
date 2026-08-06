@@ -21,7 +21,7 @@
 [![macOS 15+](https://img.shields.io/badge/macOS-15%2B-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
-[![stage 1: 10/11](https://img.shields.io/badge/stage%201-10%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
+[![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-blue)](STAGE1-PROMPTS.md)
 
 </div>
 
@@ -154,7 +154,7 @@ Stage 1 is eleven prompts. [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) is authorita
 | 8 | Channel and user state | ✅ done |
 | 9 | Command line | ✅ done |
 | 10 | Status window, timestamps, line rendering | ✅ done |
-| 11 | Debug & Settings canvas | ⬜ next |
+| 11 | Debug & Settings canvas | ✅ done |
 
 **Stage 1 is done when** you can idle in a channel on Libera and hold a conversation.
 
@@ -172,6 +172,7 @@ Full detail in [`PLAN.md`](PLAN.md).
 - `/join /part /msg /me /nick /quit /raw`, unknown commands passed straight through
 - Status window with raw traffic, timestamps, mIRC-style event lines
 - Debug & Settings canvas — `/debug` and the live wire trace, not shaped like a chat window
+- Settings in a plain-text config you can edit by hand without the app clobbering it
 
 </details>
 
@@ -264,12 +265,15 @@ Nothing is ever written inside the source tree — not even under a gitignored p
 
 | What | Where |
 |---|---|
-| Settings | `$XDG_CONFIG_HOME/caravan/`, default `~/.config/caravan/` |
+| Settings | `caravan.conf` in `$XDG_CONFIG_HOME/caravan/`, default `~/.config/caravan/` |
 | Logs, scrollback | `$XDG_DATA_HOME/caravan/`, default `~/.local/share/caravan/` |
 | Caches | `$XDG_CACHE_HOME/caravan/`, default `~/.cache/caravan/` |
 | Passwords, client certs | **macOS Keychain — never a file** |
 
-Config files are plain text and user-editable; treat their paths as public API.
+Config files are plain text and user-editable; treat their paths as public API. `caravan.conf`
+is `key = value`, one per line, `#` for a comment. Your comments and any keys the app does
+not recognise survive being written back, and a key that is not there takes its default —
+so the file only ever holds what you actually changed.
 
 ## How this gets built
 
