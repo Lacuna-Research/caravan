@@ -2325,6 +2325,69 @@ abstraction ahead of a second consumer. The `UserDefaults` stopgap ran five prom
 than intended; naming the keys in one enum is what kept the eventual move to one afternoon,
 and that trick is worth reusing for anything else deliberately deferred.
 
+## Stage 2, formatting codes — rendering
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+**Shipped:** a new pure module, `IRCFormat` — `IRCFormatting` (the code parser),
+`InlineStyle`/`InlineColour`/`RGB`, `MIRCPalette` (both base tables and the fixed 16–98
+range), `NickColour`. `CaravanUI` — `Palette` (index → `NSColor`, appearance resolution,
+per-index and per-nick overrides), `InlineTraits` and its attribute, the render path in
+`LineRenderer`, and a rebuilt `applyFont`/`restyle` in `MessageLogController`. 418 tests
+across 42 suites; the authoring half is now its own `PLAN.md` item.
+
+**Decisions:**
+
+- **`IRCFormat` is a pure module, in the Linux job.** The code table and the colour tables
+  are tables, and a colour table exercised only through a text view is one nobody
+  exercises. Putting it in the Linux manifest makes purity mechanical rather than a
+  promise, the same trade `IRCProtocol` already makes. Colours come out as *indices*, not
+  colours: which red index 4 is depends on the window, and that is not this module's
+  business.
+- **Two nick palettes, one per appearance — because one was arithmetically impossible.**
+  §6 asks for the palette to be contrast-checked against both backgrounds. Clearing 4.5:1
+  against near-white needs relative luminance ≤ 0.183; against near-black, ≥ 0.234. No
+  colour satisfies both, and the best any single colour manages is about 4.08:1. So the
+  hash picks a *hue* and the appearance picks its lightness: a nick keeps its identity
+  across a theme switch and both variants clear AA properly. `oneTableWasImpossible` is
+  the test that records why, so nobody collapses the two tables back into one.
+- **A sender who named both colours gets both literally.** `^C1,0` is black on white, and
+  it stays that way on a dark window because the white is actually drawn behind it.
+  Adjusting the foreground there would put light grey on white — destroying the one case
+  the sender got unambiguously right. Only a lone foreground is re-tuned, which is exactly
+  the case the alternate palette exists for.
+- **The light table stays mIRC's literal sixteen.** Yellow on white is unreadable in mIRC
+  too; silently darkening it invents a colour the sender did not ask for. Only the dark
+  table is ours, so only it has to answer a legibility test.
+- **`^D` hex colours are parsed although the item did not ask.** A code left unparsed does
+  not disappear — it renders as a control picture and six stray characters mid-sentence.
+  Hex is never re-tuned or overridden: there the sender named a value rather than a slot.
+
+**Learned — three ways to silently lose bold, all found by one test:**
+
+- **`AttributedString` → `NSAttributedString` drops custom attributes** unless the scope is
+  named: `NSAttributedString(line, including: \.caravan)`. The plain initializer threw away
+  every `InlineTraits` on the way into the text storage.
+- **Adding `.bold` to a resolved font's descriptor returns a font that is not bold.** The
+  descriptor names a specific face and the name beats the added trait.
+  `NSFontManager.convert` fails the same way once the font carries a cascade list. Going
+  back to the *family* is what actually produces Menlo-Bold — and it keeps the fallback
+  cascade, which a bold run needs as much as a plain one.
+- **A test that asserts the call returned something asserts nothing.** All three of these
+  passed a "did we get a font back" check. Asserting the glyphs were bold is what found
+  them.
+
+**Consumed** prompt 10's two carry-forward notes on this item, and prompt 11's: `restyle()`
+now rebuilds each run's font from its traits instead of blanket-setting it, so changing the
+font size no longer flattens every bold run in the buffer. That is a test now.
+
+**Deferred, and why:** the authoring half — Ctrl+K/B/U/I and the colour strip — is its own
+`PLAN.md` item rather than more of this one. Reading and writing share only the code table:
+reading is a parser plus a palette, writing is input-field key handling. The rendering half
+went first because a client that writes codes it cannot read is the wrong way round. Also
+outstanding for that item: the settings-form rows for palette mode and nick colouring, and
+a live run — this branch has had none, so `Palette` is still constructed with defaults at
+every call site and `auto` does not yet follow the system appearance in the running app.
 ## Decision — a worktree inventory, and why "removable" is a high bar
 
 **Date:** 2026-08-06
@@ -2363,3 +2426,94 @@ the order to land a PR in from now on: merge, prune, then pull.
 standing in, so using it to identify "the main checkout" excludes the wrong entry from the
 inventory — the tool listed the real `main` as a stray and hid the worktree it was running
 from. The first entry of `git worktree list --porcelain` is the main working tree.
+
+---
+
+## Stage 2, formatting codes — rendering, finished
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+Closes the item the entry above left half-done: the settings-form rows, the `ChatSettings`
+persistence, `Palette` reaching the buffers at all, and the live run that entry recorded as
+outstanding. The live run found three defects, two of which made most of the item a no-op,
+and none of them were visible to a test that stops at the renderer's output.
+
+**Shipped:** `chat.palette` and `chat.colour-nicks` in `ChatSettings`, a Colours section in
+the settings form, `ChatSettings.palette` pushed to every `MessageLogController` on creation
+and on change, `NickColumn` and its attribute, and appearance-resolving colours in `Palette`.
+425 tests.
+
+**Decisions:**
+
+- **An index becomes a colour that resolves itself, and the *window* picks the table.**
+  `Palette.colours` now reads both tables and returns an `NSColor(name:dynamicProvider:)`
+  when they differ; the mode goes to the scrollback's `NSAppearance`, and AppKit resolves
+  each colour against whatever is drawing it. The alternative — resolving to a plain colour
+  at render time — cannot repaint the scrollback, and a palette toggle that reaches only the
+  next line to arrive fails the acceptance criterion outright. It is also *less* code than
+  what it replaced: `systemAppearance` and `MIRCPalette.Appearance.system` are both gone,
+  because nothing has to ask the system anything any more. Revisit if a buffer ever needs a
+  palette that is not the window's.
+- **Pinning the palette pins the window.** Light or Dark sets the scroll view's appearance
+  rather than only choosing a table, so the background, the semantic `LineColour` roles and
+  the mIRC indices move together. Pinning the table alone would draw the dark palette on a
+  white background: less legible than either half of the choice.
+- **Colours that agree across both tables stay plain colours.** Hex triples, per-index
+  overrides and the whole fixed 16–98 range are one value in both, and a dynamic colour that
+  always answers the same thing is a closure call per draw for nothing.
+- **The nick toggle needs a different mechanism, because no appearance can express it.**
+  Whether a nick is coloured is a claim about the line, not about the window. The renderer
+  tags the nick column with a `NickColumn` — the bare nick, and the line's own `LineColour` —
+  and `restyle()` rebuilds it: the division `InlineTraits` already uses for fonts. It carries
+  the role because by then the storage holds the nick's colour where the line's used to be,
+  and turning colouring off has to put something back.
+- **`NickColumn` encodes as `role|nick`, split at the first separator.** `|` is legal in a
+  nick and illegal in a `LineColour` case name, so that split cannot be fooled by `bob|away`.
+
+**Three defects the live run found, two of them silent:**
+
+- **Naming an attribute scope in the conversion drops every scope not named.** The entry
+  above recorded that `NSAttributedString(line)` drops custom attributes and that
+  `including: \.caravan` fixes it. It does — and it silently took *AppKit's* attributes with
+  it on the way out. No colour, no underline and no link had been reaching the text storage
+  at all. The scope now nests `AttributeScopes.AppKitAttributes`. The fix is one line; the
+  cost was that every test asserted the renderer's `AttributedString`, which was correct, and
+  none asserted the storage, which was empty.
+- **A bare `.single` writes SwiftUI's underline, not AppKit's.** `underlineStyle` exists in
+  both scopes and the bare form picks `SwiftUI.UnderlineStyle`, which has no
+  `NSAttributedString` key and is dropped at the same crossing. Underline and strikethrough
+  had never rendered. Fixed by naming the type. This is prompt 10's
+  `foregroundColor`-resolves-to-SwiftUI note one scope over, and it will not be the last:
+  **when an attribute exists in two scopes the ambiguity resolves silently, and in the
+  direction that does nothing.**
+- **The nick colour was hashed on the decorated nick.** `@bob` and `bob` hashed differently,
+  so the same person changed colour between a channel where he is opped and one where he is
+  not — the exact property §6 exists to guarantee. `LineRenderer.undecorated` strips the
+  prefix the caller resolved rather than a guessed class of punctuation, because a server
+  declares its own `PREFIX`.
+
+`stylingReachesTheTextView` is the test that would have caught the first two, and it asserts
+the text storage attribute by attribute rather than the line. The lesson from the entry above
+— "a test that asserts the call returned something asserts nothing" — was right, and had not
+been applied far enough down the stack.
+
+**Live acceptance, against Libera over TLS,** with a scripted second client in
+`##caravan-fmt` sending seven lines of codes. Read back correctly: bold, italic, underline,
+strikethrough, monospace (a no-op by rule), reverse, reset, both 16-colour tables, a named
+foreground and background pair, the 16–98 range, `^D` hex, and a link. No control character
+reached the buffer. Switching Light / Dark / Auto repainted the *existing* lines and the
+background together, and Auto followed a live system theme switch.
+
+**Measured by sampling pixels, not by eye** — and that mattered, because reading the
+screenshot visually gave the wrong answer twice in a row. Index 8 at `#FEFE4B` against
+`#FDF671`, the nick's fuchsia at `#932DAB` against `#E4AFF8`, and scrollback row means of
+254 against 30 are what actually settled it. Worth repeating for any later prompt whose
+acceptance is "look at it": a screenshot is evidence, but a histogram of it is the reading.
+
+Turning nick colouring off recoloured lines already on screen, and back on restored them.
+Both settings round-tripped through `caravan.conf`.
+
+**Deferred:** per-index and per-nick overrides have no UI. `Palette` carries both and both
+are tested, but the form offers neither — they belong with stage 3's Colors dialog, where a
+99-swatch grid can be built properly rather than bolted onto a settings list. Recorded on
+that `PLAN.md` item.

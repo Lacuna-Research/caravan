@@ -174,6 +174,17 @@ struct ConfigFileTests {
         #expect(settings.showsRawTraffic == ChatSettings.Default.showsRawTraffic)
         #expect(settings.nickListWidth == ChatSettings.Default.nickListWidth)
         #expect(settings.isNickListVisible == ChatSettings.Default.nickListVisible)
+        #expect(settings.paletteMode == ChatSettings.Default.paletteMode)
+        #expect(settings.coloursNicks == ChatSettings.Default.coloursNicks)
+    }
+
+    /// The same rule the numbers follow: this file is hand-edited, and a value nobody
+    /// recognises should cost the setting rather than the launch.
+    @Test("an unknown palette mode takes the default")
+    func unknownPaletteMode() throws {
+        let url = temporaryFile()
+        try write("chat.palette = darkk\n", to: url)
+        #expect(ChatSettings(config: ConfigFile(url: url)).paletteMode == .auto)
     }
 
     /// This number and this size arrive from a text editor as readily as from the form,
@@ -200,12 +211,17 @@ struct ConfigFileTests {
         // that does not stick has two places to look.
         settings.nickListWidth = 240
         settings.isNickListVisible = false
+        settings.paletteMode = .dark
+        settings.coloursNicks = false
 
         let reloaded = ChatSettings(config: ConfigFile(url: url))
         #expect(reloaded.timestampFormat == "[HH:mm]")
         #expect(reloaded.scrollbackLines == 250)
         #expect(reloaded.nickListWidth == 240)
         #expect(reloaded.isNickListVisible == false)
+        #expect(reloaded.paletteMode == .dark)
+        #expect(reloaded.coloursNicks == false)
+        #expect(reloaded.palette == Palette(mode: .dark, coloursNicks: false))
     }
 
     // MARK: - The Connect sheet's values

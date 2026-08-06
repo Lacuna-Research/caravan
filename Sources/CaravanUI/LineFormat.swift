@@ -50,6 +50,21 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
         default: false
         }
     }
+
+    /// Whether `$nick` names a speaker in a column, rather than a person mid-sentence.
+    ///
+    /// Nick colouring applies only here. An event line mentions people inside a sentence —
+    /// "*** Joins: bob" — and colouring those turns the event stream into a ransom note
+    /// while stealing the one signal that says "somebody said this".
+    public var hasNickColumn: Bool {
+        switch self {
+        case .message, .ownMessage, .action, .ownAction, .notice, .ownNotice,
+            .ownPrivateMessage, .ownPrivateNotice:
+            true
+        default:
+            false
+        }
+    }
 }
 
 /// A line's colour, named by role rather than by value.
@@ -57,7 +72,9 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
 /// Semantic rather than RGB so the system's own colours can adapt to light and dark
 /// without a table per appearance. Stage 3's Colors dialog makes these user-editable;
 /// stage 2's palette work adds the mIRC colour indices beside them.
-public enum LineColour: Sendable, Hashable {
+/// The raw values name the role on the wire between the renderer and the buffer — a
+/// ``NickColumn`` carries one so the nick can be put back in its line's colour.
+public enum LineColour: String, Sendable, Hashable {
     case text
     case ownText
     case dim
@@ -197,14 +214,24 @@ public struct LineFields: Sendable {
 }
 
 extension LineFormat {
-    /// Expands the template, reporting where the timestamp ended up.
+    /// Where each field landed in the expanded line.
     ///
-    /// The range comes back because the timestamp is dimmed independently of the rest of
-    /// the line, and finding it again by searching the output would be guesswork the
-    /// moment a nick contains the same digits.
-    func expand(_ fields: LineFields) -> (text: String, timestampRange: Range<String.Index>?) {
+    /// The ranges come back because three things are styled independently of the line's
+    /// own colour — the timestamp is dimmed, the nick takes its hash colour, and the
+    /// message text carries whatever inline formatting the sender sent — and finding any
+    /// of them again by searching the output would be guesswork the moment a nick contains
+    /// the same characters as the text.
+    struct Expansion {
+        var text: String
+        var ranges: [String: Range<String.Index>] = [:]
+
+        subscript(field: String) -> Range<String.Index>? { ranges[field] }
+    }
+
+    /// Expands the template, reporting where each field ended up.
+    func expand(_ fields: LineFields) -> Expansion {
         var output = ""
-        var timestampRange: Range<String.Index>?
+        var ranges: [String: Range<String.Index>] = [:]
         var rest = Substring(template)
 
         while let dollar = rest.firstIndex(of: "$") {
@@ -217,8 +244,8 @@ extension LineFormat {
             if let value = fields[name] {
                 let start = output.endIndex
                 output += value
-                if name == "timestamp", !value.isEmpty {
-                    timestampRange = start..<output.endIndex
+                if !value.isEmpty {
+                    ranges[name] = start..<output.endIndex
                 }
             } else {
                 // Not a variable at all — a literal `$` in the template, or a name this
@@ -229,6 +256,6 @@ extension LineFormat {
             rest = rest[nameEnd...]
         }
         output += rest
-        return (output, timestampRange)
+        return Expansion(text: output, ranges: ranges)
     }
 }

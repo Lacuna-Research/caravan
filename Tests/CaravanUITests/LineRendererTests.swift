@@ -262,7 +262,9 @@ struct LineRendererTests {
             context: RenderContext(ownNick: "alice")
         )
         #expect(line.map { String($0.characters) } == "bob said hello")
-        #expect(line?.runs.first?.appKit.foregroundColor == LineColour.error.nsColor)
+        // The *last* run, not the first: the nick column now wears its own hash colour, so
+        // the first run is bob's colour rather than the table's.
+        #expect(line?.runs.last?.appKit.foregroundColor == LineColour.error.nsColor)
     }
 
     /// Every kind has an entry, or a line somewhere renders as bare text with no warning.

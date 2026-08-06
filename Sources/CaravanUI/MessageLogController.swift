@@ -69,6 +69,29 @@ public final class MessageLogController {
         }
     }
 
+    /// Which colours this buffer draws mIRC indices and nicks in.
+    ///
+    /// Changing it reaches text already on screen, by two different routes:
+    ///
+    /// - **The Auto / Light / Dark mode goes to the view's appearance.** Every indexed
+    ///   colour in the storage resolves itself against whichever appearance is drawing it,
+    ///   so pinning the scrollback's repaints the whole buffer — background, semantic line
+    ///   colours and mIRC colours together — with no pass over the text at all.
+    /// - **Nick colouring goes through ``restyle()``**, which rebuilds each nick from the
+    ///   ``NickColumn`` the renderer left behind. That one is a real choice about what the
+    ///   line says rather than about what the window looks like, so no appearance can
+    ///   express it.
+    @ObservationIgnored public var palette: Palette {
+        didSet {
+            guard palette != oldValue else { return }
+            // Lines queued under the old palette first, or they arrive already stale and
+            // the restyle below has nothing to correct them with.
+            flush()
+            applyPaletteAppearance()
+            restyle()
+        }
+    }
+
     /// Which line holds the unread rule, as an index into ``lineLengths``.
     ///
     /// An index rather than a character offset, because trimming from the top moves every
@@ -90,10 +113,15 @@ public final class MessageLogController {
     @ObservationIgnored private var flushTask: Task<Void, Never>?
     @ObservationIgnored private var isScrollingProgrammatically = false
 
-    public init(lineCap: Int = 5000, coalesceInterval: Duration = .milliseconds(50)) {
+    public init(
+        lineCap: Int = 5000,
+        coalesceInterval: Duration = .milliseconds(50),
+        palette: Palette = Palette()
+    ) {
         self.lineCap = lineCap
         self.coalesceInterval = coalesceInterval
         self.chatFont = ChatFont.nsFont()
+        self.palette = palette
     }
 
     // MARK: - Appending
@@ -139,7 +167,7 @@ public final class MessageLogController {
         var appendedLengths: [Int] = []
         appendedLengths.reserveCapacity(pending.count)
         for line in pending {
-            let attributed = NSAttributedString(line)
+            let attributed = Self.converted(line)
             batch.append(attributed)
             batch.append(Self.newline)
             appendedLengths.append(attributed.length + 1)
@@ -175,19 +203,61 @@ public final class MessageLogController {
     /// column 0 rather than hanging under the message column, and a clamped line height so
     /// pasted Zalgo cannot blow one line to hundreds of points.
     private func applyChatAttributes(to batch: NSMutableAttributedString) {
-        let font = chatFont
         let whole = NSRange(location: 0, length: batch.length)
         batch.addAttributes(
             [
                 .ligature: 0,
-                .paragraphStyle: ChatFont.paragraphStyle(for: font),
+                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
             ],
             range: whole
         )
-        batch.enumerateAttribute(.font, in: whole) { existing, range, _ in
-            guard existing == nil else { return }
-            batch.addAttribute(.font, value: font, range: range)
+        applyFont(to: batch, in: whole)
+    }
+
+    /// Converts a rendered line for the text storage, **naming our own attribute scope**.
+    ///
+    /// `NSAttributedString(someAttributedString)` carries only the scopes it knows about,
+    /// and silently drops everything else — so the plain initializer threw away every
+    /// ``InlineTraits`` on the way in, and bold text arrived unbold with nothing to show
+    /// for it. Naming the scope is what keeps a custom attribute alive across the bridge.
+    private static func converted(_ line: AttributedString) -> NSAttributedString {
+        (try? NSAttributedString(line, including: \.caravan)) ?? NSAttributedString(line)
+    }
+
+    /// Fills in the chat font, wearing whatever traits each run asked for.
+    ///
+    /// The renderer cannot do this: an `NSFont` is not `Sendable`, so it cannot go into an
+    /// `AttributedString`. It leaves ``InlineTraits`` behind instead, and this is the one
+    /// place that knows both the traits and the current chat font — which is what lets a
+    /// font change restyle bold text back into bold text.
+    private func applyFont(to text: NSMutableAttributedString, in range: NSRange) {
+        let font = chatFont
+        text.enumerateAttribute(.inlineTraits, in: range) { value, subrange, _ in
+            let traits = (value as? NSNumber).map { InlineTraits(rawValue: $0.uint8Value) } ?? []
+            text.addAttribute(.font, value: traits.applied(to: font), range: subrange)
         }
+    }
+
+    /// Recolours every nick column from the current palette.
+    ///
+    /// The renderer already coloured them for the palette in force when the line was
+    /// built; this is what makes turning nick colouring on or off reach lines already in
+    /// the buffer. With it off, the nick goes back to its line's own colour — which is
+    /// what the ``NickColumn`` carries the role for, since by then the storage has the
+    /// nick's colour where the line's used to be.
+    private func applyNickColours(to text: NSMutableAttributedString, in range: NSRange) {
+        text.enumerateAttribute(.nickColumn, in: range) { value, subrange, _ in
+            guard let encoded = value as? String,
+                let column = NickColumn(encoded: encoded)
+            else { return }
+            let colour = palette.colour(forNick: column.nick) ?? column.base.nsColor
+            text.addAttribute(.foregroundColor, value: colour, range: subrange)
+        }
+    }
+
+    /// Pins the scrollback to the palette's appearance, or lets it follow the system.
+    private func applyPaletteAppearance() {
+        scrollView?.appearance = palette.mode.nsAppearance
     }
 
     /// Drops the oldest lines once the buffer is over its cap.
@@ -221,10 +291,10 @@ public final class MessageLogController {
 
     /// Reapplies the chat font and the grid rules to everything already on screen.
     ///
-    /// Blanket-sets the font, which is right while every run carries the chat font and
-    /// nothing else. Stage 2's formatting codes introduce bold and italic runs, and this
-    /// will then have to rebuild each run's font from its traits rather than overwrite it
-    /// — noted against that item in `PLAN.md`.
+    /// **Rebuilds each run's font from its traits rather than overwriting it.** A blanket
+    /// `addAttribute(.font:)` was correct only while every run wore the plain chat font;
+    /// with inline formatting on the wire it would flatten every bold and italic run in
+    /// the buffer the moment somebody nudged the font size.
     private func restyle() {
         guard let textStorage = textView?.textStorage, textStorage.length > 0 else { return }
         let wasPinned = isPinnedToBottom
@@ -232,12 +302,13 @@ public final class MessageLogController {
         textStorage.beginEditing()
         textStorage.addAttributes(
             [
-                .font: chatFont,
                 .ligature: 0,
                 .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
             ],
             range: whole
         )
+        applyFont(to: textStorage, in: whole)
+        applyNickColours(to: textStorage, in: whole)
         // The unread rule is deliberately wider than the window and clipped rather than
         // wrapped, so the blanket pass above has to be undone for its one line.
         if let index = unreadMarkerLine, index < lineLengths.count {
@@ -364,6 +435,7 @@ public final class MessageLogController {
         self.textView = textView
         self.scrollView = scrollView
         scrollView.contentView.postsBoundsChangedNotifications = true
+        applyPaletteAppearance()
     }
 
     /// The scroll view this buffer is drawn in, built once and reused for the life of the

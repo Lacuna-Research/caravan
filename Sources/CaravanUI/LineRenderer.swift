@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import IRCFormat
 import IRCProtocol
 import IRCSession
 
@@ -37,12 +38,18 @@ public struct LineRenderer: Sendable {
     /// written in that syntax, and the brackets pass through as literals.
     public var timestampFormat: String
 
+    /// Which colours the indices in a sender's `^C` codes resolve to, and whether nicks
+    /// are coloured at all.
+    public var palette: Palette
+
     public init(
         table: LineFormatTable = .mIRC,
-        timestampFormat: String = ChatSettings.Default.timestampFormat
+        timestampFormat: String = ChatSettings.Default.timestampFormat,
+        palette: Palette = Palette()
     ) {
         self.table = table
         self.timestampFormat = timestampFormat
+        self.palette = palette
     }
 
     // MARK: - Building a line
@@ -84,7 +91,12 @@ public struct LineRenderer: Sendable {
     @MainActor
     public func line(for event: IRCEvent, context: RenderContext) -> AttributedString? {
         guard let (kind, fields) = describe(event, context: context) else { return nil }
-        return render(kind: kind, fields: fields, now: context.now)
+        return render(
+            kind: kind,
+            fields: fields,
+            now: context.now,
+            senderPrefix: context.senderPrefix
+        )
     }
 
     // MARK: - Event to fields
@@ -199,12 +211,24 @@ public struct LineRenderer: Sendable {
     // MARK: - Rendering
 
     @MainActor
-    private func render(kind: LineKind, fields: LineFields, now: Date) -> AttributedString {
+    private func render(
+        kind: LineKind,
+        fields: LineFields,
+        now: Date,
+        senderPrefix: Character? = nil
+    ) -> AttributedString {
         var fields = fields
         fields.timestamp = formattedTimestamp(now)
 
+        // The codes come out of the text before the template ever sees it, so a `$text`
+        // holding a `^C` cannot shift the columns the rest of the line is measured in.
+        let formatted = IRCFormatting.parse(fields.text)
+        fields.text = formatted.plain
+        fields.nick = IRCFormatting.stripping(fields.nick)
+
         let format = table[kind]
-        let (text, timestampRange) = format.expand(fields)
+        let expansion = format.expand(fields)
+        let text = expansion.text
 
         var attributed = AttributedString(text)
         attributed.foregroundColor = format.colour.nsColor
@@ -213,17 +237,100 @@ public struct LineRenderer: Sendable {
         // paragraph style on the AppKit side, over runs that do not set their own.
 
         // The timestamp is dim whatever the line is, so the eye skips over it.
-        if let timestampRange,
-            let lower = AttributedString.Index(timestampRange.lowerBound, within: attributed),
-            let upper = AttributedString.Index(timestampRange.upperBound, within: attributed)
+        if let range = attributedRange(expansion["timestamp"], in: attributed, text: text) {
+            attributed[range].foregroundColor = LineColour.dim.nsColor
+        }
+
+        // The nick wears its own colour, over the line's. Only where there is a nick
+        // *column* — an event line names people mid-sentence, and colouring those turns a
+        // join into a ransom note.
+        if kind.hasNickColumn, !fields.nick.isEmpty,
+            let range = attributedRange(expansion["nick"], in: attributed, text: text)
         {
-            attributed[lower..<upper].foregroundColor = LineColour.dim.nsColor
+            let nick = Self.undecorated(fields.nick, prefix: senderPrefix)
+            // Recorded whether or not it is coloured right now, so turning the setting on
+            // or off reaches the buffer rather than only the next line to arrive.
+            attributed[range].nickColumn = NickColumn(nick: nick, base: format.colour)
+            if let colour = palette.colour(forNick: nick) {
+                attributed[range].foregroundColor = colour
+            }
+        }
+
+        if !formatted.isPlain, let textRange = expansion["text"] {
+            apply(formatted, to: &attributed, at: textRange, in: text)
         }
 
         if text.contains("://") || text.contains("www.") {
             applyLinks(to: &attributed, in: text)
         }
         return attributed
+    }
+
+    /// Lays the sender's inline formatting over the stretch of the line their text became.
+    ///
+    /// Walked as offsets from the start of that stretch rather than searched for: the same
+    /// word appears twice in a sentence often enough that finding it by content would
+    /// eventually style the wrong one.
+    @MainActor
+    private func apply(
+        _ formatted: FormattedText,
+        to attributed: inout AttributedString,
+        at textRange: Range<String.Index>,
+        in text: String
+    ) {
+        var cursor = textRange.lowerBound
+        for run in formatted.runs {
+            let end = text.index(cursor, offsetBy: run.text.count, limitedBy: textRange.upperBound)
+            guard let end else { return }
+            defer { cursor = end }
+            guard !run.style.isPlain,
+                let range = attributedRange(cursor..<end, in: attributed, text: text)
+            else { continue }
+
+            let style = run.style
+            var (foreground, background) = palette.colours(
+                foreground: style.foreground,
+                background: style.background
+            )
+            // `^R` swaps the two, and where one is absent it swaps in the window's own
+            // colours — which is why it is resolved here rather than in the pure module.
+            if style.isReversed {
+                let swapped = (
+                    background ?? NSColor.textBackgroundColor, foreground ?? NSColor.textColor
+                )
+                (foreground, background) = swapped
+            }
+
+            if let foreground { attributed[range].foregroundColor = foreground }
+            if let background { attributed[range].backgroundColor = background }
+            if style.isUnderlined { attributed[range].underlineStyle = Self.singleLine }
+            if style.isStruckThrough { attributed[range].strikethroughStyle = Self.singleLine }
+            // Bold, italic and monospace are traits of the *font*, and a font cannot go
+            // into an `AttributedString` under Swift 6. They travel as an attribute
+            // `MessageLogController` reads when it fills in the chat font.
+            attributed[range].inlineTraits = InlineTraits(style: style)
+        }
+    }
+
+    /// **Typed, not a bare `.single`.** `underlineStyle` and `strikethroughStyle` exist in
+    /// both the AppKit and the SwiftUI attribute scopes, and a bare `.single` picks
+    /// SwiftUI's `Text.LineStyle` — which `NSAttributedString` has no key for and drops
+    /// on the way into the text storage. Naming the type picks AppKit's, which is the one
+    /// the text view can actually draw.
+    private static let singleLine: NSUnderlineStyle = .single
+
+    /// The `AttributedString` range matching a `String` range, or `nil` if it does not
+    /// convert — which it will not for an index inside a grapheme cluster.
+    private func attributedRange(
+        _ range: Range<String.Index>?,
+        in attributed: AttributedString,
+        text: String
+    ) -> Range<AttributedString.Index>? {
+        guard let range,
+            let lower = AttributedString.Index(range.lowerBound, within: attributed),
+            let upper = AttributedString.Index(range.upperBound, within: attributed)
+        else { return nil }
+        return lower..<upper
     }
 
     /// The timestamp exactly as a line would carry it, for the settings form's preview.
@@ -249,6 +356,19 @@ public struct LineRenderer: Sendable {
         let nick = source.nick ?? source.wireForm
         guard let prefix = context.senderPrefix else { return nick }
         return "\(prefix)\(nick)"
+    }
+
+    /// `@bob` back to `bob`, given the prefix the caller decorated it with.
+    ///
+    /// The nick column shows the prefix the sender holds here, but the colour hash is
+    /// seeded on the name alone (§6) — so hashing the decorated form would give the same
+    /// person one colour in a channel where he is opped and another where he is not.
+    /// Undecorated with the character the caller actually used rather than by stripping
+    /// a guessed class of punctuation: a server declares its own `PREFIX`, and the
+    /// resolved one is already in hand.
+    static func undecorated(_ nick: String, prefix: Character?) -> String {
+        guard let prefix, nick.first == prefix else { return nick }
+        return String(nick.dropFirst())
     }
 
     private func isOwn(_ nick: String?, context: RenderContext) -> Bool {

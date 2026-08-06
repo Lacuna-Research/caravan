@@ -102,9 +102,9 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 
 ## Stage 2 — Intermediate (a mIRC daily driver)
 
-10. **mIRC formatting codes.** Parse/render bold, italic, underline, strikethrough,
-    monospace, reverse, reset, and `^C` colors including the extended 16–98 palette.
-    Ctrl+K/B/U/I in the input box, plus a color picker strip. Palettes per
+10. **mIRC formatting codes — rendering.** Parse/render bold, italic, underline,
+    strikethrough, monospace, reverse, reset, and `^C` colors including the extended
+    16–98 palette. Palettes per
     GUI-DESIGN-NOTES.md §5: an explicit three-state Auto / Light / Dark toggle (Auto
     follows the system appearance), a full alternate 16-colour palette for dark
     backgrounds — not a 0↔1 swap; the fixed 16–98 range mostly survives unchanged —
@@ -113,20 +113,19 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     override, and the generated palette contrast-checked against *both* backgrounds,
     so it cannot be a naive hue wheel.
 
+10a. **mIRC formatting codes — authoring.** Ctrl+K/B/U/I in the input box and a colour
+    picker strip, so codes can be *written* and not only read. Split out of the item
+    above once it was clear that reading and writing share only the code table: reading
+    is a parser plus a palette, writing is input-field key handling and a control. The
+    rendering half shipped first because a client that writes codes it cannot read is
+    the wrong way round.
+
     ### Carry-forward
 
-    - From prompt 10: `LineColour` is where the palette goes. It maps semantic roles to
-      system colours today; the indexed mIRC colours belong beside them, and the
-      three-state Auto/Light/Dark toggle picks which table `nsColor` reads.
-    - From prompt 10: bold and italic runs already have room. `MessageLogController`
-      fills the chat font only into runs that do not set one, precisely so a formatted
-      run can carry its own — blanket-setting the font over the batch would undo them.
-    - From prompt 11: `MessageLogController.restyle()` **does** blanket-set the font, over
-      the whole storage, because changing the font in the settings form has to reach text
-      already on screen. That is correct only while every run carries the chat font and
-      nothing else. This item is where it stops being correct: restyle has to rebuild each
-      run's font from its own traits rather than overwrite it, or the first bold word in a
-      buffer loses its bold the moment someone changes the font size.
+    - From the rendering half: `IRCFormatting` already names every control character and
+      `InlineStyle` already models the switches, so authoring is inserting the characters
+      the parser round-trips. `InputTextView.doCommand(by:)` is the seam prompt 9 built
+      and prompt 15's tab completion also wants.
 
 11. **Multi-window model.** The tree's shape shipped with stage 1
     (GUI-DESIGN-NOTES.md §12); this item adds activity and navigation at scale
@@ -362,6 +361,16 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       use. Making it user-editable is serialising those two types; an unknown `$variable`
       already survives expansion as written, so a bad theme is visibly bad rather than
       silently empty.
+    - From stage 2's formatting-codes item: **the per-index and per-nick overrides §5 and
+      §6 ask for are built but have no UI.** `Palette.overrides` and
+      `Palette.nickOverrides` are carried, applied and tested; nothing writes them, and
+      `ChatSettings` does not persist them. The Colors dialog is where a 99-swatch grid
+      belongs — bolted onto the settings list it would dwarf every other row. Persisting
+      them is the piece to design: the config file is one `key = value` per line, so
+      either `chat.palette.4 = FF0000` per index or a separate theme file.
+    - From stage 2's formatting-codes item: a colour that must survive an appearance
+      switch is an appearance-resolving `NSColor`, not a resolved one — see `Palette`.
+      A theme that bakes RGB at load time gives back the bug that item removed.
 
 36. **Customization.** F-key bindings, arbitrary keyboard shortcuts, and the
     switchbar if the treebar has not settled the need (deferred, not rejected —

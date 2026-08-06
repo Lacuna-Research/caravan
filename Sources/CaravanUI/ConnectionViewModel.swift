@@ -60,6 +60,7 @@ public final class ConnectionViewModel: Identifiable {
         self.displayName = configuration.host
         self.settings = settings
         log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        log.palette = settings.palette
     }
 
     deinit {
@@ -164,9 +165,11 @@ public final class ConnectionViewModel: Identifiable {
     /// the sort of half-working that is worse than not offering it.
     public func applySettings() {
         let font = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        let palette = settings.palette
         for controller in [log] + channels.map(\.log) {
             controller.chatFont = font
             controller.lineCap = settings.scrollbackLines
+            controller.palette = palette
         }
     }
 
@@ -433,11 +436,13 @@ public final class ConnectionViewModel: Identifiable {
     private func buffer(creating name: IRCChannelName) -> ChannelBuffer {
         if let existing = buffersByName[name] { return existing }
         let buffer = ChannelBuffer(name: name)
-        // One chat font governs every buffer; a new one adopts it rather than defaulting.
+        // One chat font and one palette govern every buffer; a new one adopts them rather
+        // than defaulting.
         buffer.log.chatFont = ChatFont.nsFont(
             family: settings.fontFamily,
             size: settings.fontSize
         )
+        buffer.log.palette = settings.palette
         buffersByName[name] = buffer
         channels.append(buffer)
         return buffer
