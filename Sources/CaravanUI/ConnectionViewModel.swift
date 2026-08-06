@@ -27,6 +27,20 @@ public final class ConnectionViewModel: Identifiable {
     /// The status window's input box and its history. Per buffer, like every other.
     public let statusInput = InputState()
 
+    /// The server's message of the day, for the status window's header band.
+    ///
+    /// Accumulated across 372s and published when 376 ends the burst, so the band does not
+    /// grow a line at a time while the MOTD streams in.
+    public private(set) var motd: String?
+
+    @ObservationIgnored private var motdLines: [String] = []
+
+    /// Appearance, shared with every other buffer: one chat font, one timestamp format,
+    /// one raw-traffic toggle.
+    @ObservationIgnored public let settings: ChatSettings
+
+    private var renderer: LineRenderer { settings.renderer }
+
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
 
     /// The casemapping the session is folding names under, learned from the events that
@@ -36,10 +50,16 @@ public final class ConnectionViewModel: Identifiable {
     @ObservationIgnored private let session: IRCSession
     @ObservationIgnored private var pump: Task<Void, Never>?
 
-    public init(configuration: SessionConfiguration, trace: TraceBuffer) {
+    public init(
+        configuration: SessionConfiguration,
+        trace: TraceBuffer,
+        settings: ChatSettings = ChatSettings()
+    ) {
         self.session = IRCSession(configuration: configuration, trace: trace)
         self.currentNick = configuration.nick
         self.displayName = configuration.host
+        self.settings = settings
+        log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
     }
 
     deinit {
@@ -102,13 +122,20 @@ public final class ConnectionViewModel: Identifiable {
             .actions(for: text, activeTarget: activeTarget)
     }
 
-    /// Sends a message and echoes its wire form into the window it came from.
+    /// Sends a message, echoing what we said into the window it came from.
     ///
-    /// The `>>` echo is prompt 7's stopgap, still standing: prompt 10 replaces it with a
-    /// proper self-echo — `<nick> text` rather than `PRIVMSG #chan :text` — and moves the
-    /// raw form behind its raw-traffic toggle, which is where `>>` markers belong.
+    /// **Local echo, because there is no `echo-message` yet.** Without the capability the
+    /// server does not send our own messages back, so a client that only rendered inbound
+    /// traffic would never show what you typed. The line is marked `own*`, which is the
+    /// one bit stage 2 needs to suppress the duplicate once the capability is negotiated.
+    ///
+    /// The wire form goes to the status window instead, and only when the raw-traffic
+    /// toggle is on — that is where `>>` markers belong.
     public func send(_ message: IRCMessage, from target: Target?) async {
-        log(for: target).append([LineRenderer.line(">> \(message.wireForm)", kind: .serverText)])
+        appendRaw(message.wireForm, kind: .rawOutbound)
+        if let echo = selfEchoLine(for: message, in: target) {
+            log(for: target).append([echo])
+        }
         await session.send(message)
     }
 
@@ -117,7 +144,55 @@ public final class ConnectionViewModel: Identifiable {
     /// The same red line an unparseable message already produced, reused rather than
     /// reinvented: input never disappears without an answer.
     public func showError(_ text: String, in target: Target?) {
-        log(for: target).append([LineRenderer.line("*** \(text)", kind: .clientError)])
+        log(for: target).append([renderer.line(text, kind: .clientError)])
+    }
+
+    /// The line for a message we just sent, or `nil` for anything that is not one.
+    ///
+    /// `PRIVMSG` and `NOTICE` only. A `JOIN` or a `MODE` produces no echo because the
+    /// server will tell us about it in a moment, and echoing it here would show it twice.
+    private func selfEchoLine(for message: IRCMessage, in target: Target?) -> AttributedString? {
+        guard case .verb(let verb) = message.command, message.parameters.count >= 2 else {
+            return nil
+        }
+        let isNotice: Bool
+        switch verb.uppercased() {
+        case "PRIVMSG": isNotice = false
+        case "NOTICE": isNotice = true
+        default: return nil
+        }
+
+        let (text, isAction) = EventTranslator.unwrapAction(message.parameters[1])
+        var fields = LineFields()
+        fields.nick = ownDisplayName(in: target)
+        fields.text = text
+        let kind: LineKind =
+            isAction ? .ownAction : (isNotice ? .ownNotice : .ownMessage)
+        return renderer.line(kind: kind, fields: fields)
+    }
+
+    /// Our own nick with whatever prefix we hold in this channel, as the nick column
+    /// shows any other sender.
+    private func ownDisplayName(in target: Target?) -> String {
+        guard case .channel(let name)? = target, let buffer = buffersByName[name] else {
+            return currentNick
+        }
+        let key = IRCNick(currentNick, mapping: name.mapping)
+        guard let member = buffer.channel.members[key],
+            let prefix = buffer.channel.prefix(for: member)
+        else { return currentNick }
+        return "\(prefix)\(currentNick)"
+    }
+
+    /// One line of wire traffic, when the toggle is on.
+    ///
+    /// Redacted on the way in, like everything else that leaves the socket: the raw view
+    /// of a `PASS` or a NickServ `identify` must not be the one place the plaintext shows
+    /// up. The status window is where both directions land, since wire traffic belongs to
+    /// the connection rather than to any buffer.
+    private func appendRaw(_ line: String, kind: LineKind) {
+        guard settings.showsRawTraffic else { return }
+        log.append([renderer.line(Redactor.redact(line), kind: kind)])
     }
 
     /// `/quit`: say goodbye, then drop the connection.
@@ -161,6 +236,8 @@ public final class ConnectionViewModel: Identifiable {
             buffer(creating: channel.name).update(channel)
         case .channelClosed(let name):
             removeBuffer(name)
+        case .numeric(let code, let parameters):
+            collectMOTD(code: code, parameters: parameters)
         default:
             break
         }
@@ -168,9 +245,53 @@ public final class ConnectionViewModel: Identifiable {
     }
 
     private func append(_ event: IRCEvent) {
-        guard let line = LineRenderer.line(for: event, ownNick: currentNick) else { return }
+        // Every inbound line has somewhere to land, whether or not it was understood.
+        if case .raw(let message) = event {
+            appendRaw(message.wireForm, kind: .rawInbound)
+            return
+        }
+        let context = RenderContext(
+            ownNick: currentNick,
+            senderPrefix: senderPrefix(for: event)
+        )
+        guard let line = renderer.line(for: event, context: context) else { return }
         for destination in destinations(for: event) {
             destination.append([line])
+        }
+    }
+
+    /// The prefix the sender of a channel message holds there, e.g. `@`.
+    ///
+    /// Only messages have a nick column, and a message has exactly one channel, so there
+    /// is no ambiguity about which buffer to ask.
+    private func senderPrefix(for event: IRCEvent) -> Character? {
+        guard case .message(let target, let sender, _, _, _) = event,
+            case .channel(let name) = target,
+            let buffer = buffersByName[name],
+            let nick = sender.nick
+        else { return nil }
+        let member = buffer.channel.members[IRCNick(nick, mapping: name.mapping)]
+        return member.flatMap { buffer.channel.prefix(for: $0) }
+    }
+
+    /// Collects the MOTD for the status window's header band.
+    ///
+    /// 375 opens the burst, 372 carries each line, 376 closes it, and 422 says there is
+    /// none. Published at the end rather than per line, so the band does not grow a line
+    /// at a time while a long MOTD streams in.
+    private func collectMOTD(code: UInt16, parameters: [String]) {
+        switch code {
+        case 375:
+            motdLines = []
+        case 372:
+            if let text = parameters.last { motdLines.append(text) }
+        case 376:
+            motd = motdLines.isEmpty ? nil : motdLines.joined(separator: "\n")
+            motdLines = []
+        case 422:
+            motd = parameters.last
+        default:
+            break
         }
     }
 
@@ -262,6 +383,11 @@ public final class ConnectionViewModel: Identifiable {
     private func buffer(creating name: IRCChannelName) -> ChannelBuffer {
         if let existing = buffersByName[name] { return existing }
         let buffer = ChannelBuffer(name: name)
+        // One chat font governs every buffer; a new one adopts it rather than defaulting.
+        buffer.log.chatFont = ChatFont.nsFont(
+            family: settings.fontFamily,
+            size: settings.fontSize
+        )
         buffersByName[name] = buffer
         channels.append(buffer)
         return buffer

@@ -70,7 +70,9 @@ struct LiveScrollbackTests {
         #expect(!connection.log.isPinnedToBottom)
         let heldOrigin = scrollView.contentView.bounds.origin.y
 
-        connection.log.append([LineRenderer.line("a line arriving while you read history")])
+        connection.log.append(
+            [LineRenderer().line("a line arriving while you read history", kind: .numeric)]
+        )
         connection.log.flush()
 
         #expect(!connection.log.isPinnedToBottom, "streaming lines must not steal the scroll")

@@ -150,7 +150,7 @@ final class InputTextView: NSTextView {
         autoresizingMask = [.width]
         textContainerInset = NSSize(width: 4, height: 4)
         textContainer?.widthTracksTextView = true
-        font = LineRenderer.font
+        font = ChatFont.nsFont()
         drawsBackground = false
     }
 

@@ -11,7 +11,7 @@ public enum EventTranslator {
     /// CTCP's delimiter. Only `ACTION` is understood at this stage; every other CTCP
     /// request stays wrapped inside an ordinary message event, and is visible in `.raw`
     /// either way.
-    static let ctcpDelimiter: Character = "\u{01}"
+    public static let ctcpDelimiter: Character = "\u{01}"
 
     /// The events for one inbound message, `.raw` first.
     public static func events(
@@ -222,7 +222,7 @@ public enum EventTranslator {
     /// `\u{01}ACTION waves\u{01}` is `* nick waves`. A malformed one — no closing
     /// delimiter, which happens when a message was truncated — is still recognized,
     /// because showing the action is better than showing the control characters.
-    static func unwrapAction(_ text: String) -> (text: String, isAction: Bool) {
+    public static func unwrapAction(_ text: String) -> (text: String, isAction: Bool) {
         let marker = "\(ctcpDelimiter)ACTION"
         guard text.hasPrefix(marker) else { return (text, false) }
         var body = text.dropFirst(marker.count)

@@ -113,11 +113,21 @@ public final class AppModel {
     public private(set) var connection: ConnectionViewModel?
     public var isShowingConnectSheet = false
 
-    /// One trace buffer for the process. Redacted on insert; prompt 10 exports it.
+    /// One trace buffer for the process. Redacted on insert, exported by "Copy
+    /// Diagnostics" — which is what makes the export safe to paste into a public issue.
     @ObservationIgnored public let trace = TraceBuffer()
 
+    /// Appearance, shared by every buffer of every connection. Settings are global
+    /// first; per-window overrides are a later addition if anyone wants them.
+    @ObservationIgnored public let settings: ChatSettings
+
     /// The tree row the user has selected.
-    public var selection: SidebarItem?
+    ///
+    /// Changing it draws the unread rule in the buffer being *left*, which is what makes
+    /// the rule mean "everything above this you have seen".
+    public var selection: SidebarItem? {
+        didSet { markUnread(leaving: oldValue) }
+    }
 
     /// Whether the network's children are showing. One network at this stage, so one
     /// flag; stage 2's multi-network tree gives each its own.
@@ -132,7 +142,11 @@ public final class AppModel {
         case channel(connection: UUID, channel: IRCChannelName)
     }
 
-    public init() {}
+    /// Settings are injectable so a test can point them at its own `UserDefaults` suite
+    /// rather than writing into the preferences of whoever is running the suite.
+    public init(settings: ChatSettings = ChatSettings()) {
+        self.settings = settings
+    }
 
     /// The channel the selection names, when it names one.
     public var selectedChannel: ChannelBuffer? {
@@ -212,11 +226,40 @@ public final class AppModel {
         await connection?.disconnect()
         let connection = ConnectionViewModel(
             configuration: settings.sessionConfiguration,
-            trace: trace
+            trace: trace,
+            settings: self.settings
         )
         self.connection = connection
         selection = .status(connection.id)
         await connection.connect()
+    }
+
+    // MARK: - Diagnostics
+
+    /// Puts the redacted wire trace, plus the app and OS version, on the clipboard.
+    @MainActor
+    public func copyDiagnostics() {
+        DiagnosticsReport.copyToPasteboard(trace: trace)
+    }
+
+    // MARK: - The unread rule
+
+    /// Draws the rule in the buffer being left behind.
+    ///
+    /// Only on the way out. A rule drawn on arrival would sit at the bottom of a buffer
+    /// you are looking at, marking nothing; drawn on the way out it marks the last thing
+    /// you saw, and it stays there until the next time you leave.
+    private func markUnread(leaving previous: SidebarItem?) {
+        guard let previous, previous != selection, let connection else { return }
+        let renderer = settings.renderer
+        switch previous {
+        case .status(let id) where id == connection.id:
+            connection.log.markUnreadPosition(with: renderer.unreadRule())
+        case .channel(let id, let name) where id == connection.id:
+            connection.buffer(named: name)?.log.markUnreadPosition(with: renderer.unreadRule())
+        default:
+            break
+        }
     }
 
     public func disconnect() async {

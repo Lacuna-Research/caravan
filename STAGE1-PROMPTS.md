@@ -1,6 +1,6 @@
 # Stage 1 — The Prompts
 
-**Status:** 9/11 complete. Next: prompt 10.
+**Status:** 10/11 complete. Next: prompt 11.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -496,43 +496,6 @@ toggle, nick colours and density presets are all next. No /debug and no settings
 UI: prompt 11 owns both, and closes out the stage.
 ```
 
-### Carry-forward
-
-- From prompt 7: `LineKind` is the one-table seam this prompt is meant to fill out — five
-  cases and a colour each today, in `LineRenderer`. The full set of line kinds and the
-  timestamp column go there, not into the event switch beside it.
-- From prompt 7: `.raw` deliberately renders nothing, so the raw-traffic toggle this
-  prompt builds is currently the *only* thing that would show wire traffic. Everything
-  needed is already flowing — the events arrive, they are simply dropped by the renderer.
-- From prompt 7: a font cannot go into an `AttributedString` under Swift 6 (`NSFont` is
-  not `Sendable`). `MessageLogController` fills the default font into runs that lack one,
-  which is what leaves room for bold and italic runs here — set the font on the
-  `NSAttributedString` side or the run will simply be overridden.
-- From prompt 7.5, the GUI-design fold (its record is the BUILD-LOG.md entry of that
-  name): `LineRenderer.font` still returns `NSFont.monospacedSystemFont` — SF
-  Mono, the font GUI-DESIGN-NOTES.md §15 rejects on measurement. The fold was docs-only,
-  so the app renders in SF Mono until this prompt replaces that call with Menlo plus the
-  explicit cascade. The default-font fill in `MessageLogController` is the other call
-  site to check. **Also** the four `.system(.body, design: .monospaced)` modifiers prompt
-  8 added — the tree, the header band, the nick list and the input field — which are the
-  "one chat font governs all four" requirement, currently four copies of SF Mono.
-- From prompt 8: the header band is built and general. `HeaderBand` in
-  `BufferChrome.swift` already does never-hidden, shrink-to-two-lines and
-  expand-into-a-scroller; the status window's MOTD case is passing it content and a
-  placeholder, not new behaviour.
-- From prompt 8: `LineRenderer` grew five more event cases (topic, topic author, channel
-  modes, join failure, and the two silent ones). They are switch arms beside the others
-  and belong in the `LineKind` table this prompt builds, along with everything already
-  there — do not leave a second table behind.
-- From prompt 9: the `>>` echo on every sent line is still prompt 7's stopgap, and it is
-  now the *only* thing that shows what you said. `ConnectionViewModel.send(_:from:)` is
-  where it lives. This prompt's local self-echo replaces it and its raw-traffic toggle is
-  where `>>` markers belong — do not end up rendering both.
-- From prompt 9: the input box is an `NSTextView` (`InputField`), so the chat font applies
-  to it the same way it applies to the scrollback. `LineRenderer.font` is already its only
-  font source, which means the Menlo change reaches it for free — but the box measures its
-  own height from that font, so check that six lines still measure as six.
-
 ---
 
 ## Prompt 11 — Debug & Settings canvas
@@ -570,6 +533,24 @@ Do not: eject the canvas into its own standalone window — ejection is the same
 affordance as detaching a buffer, and both land with stage 2's Multi-window model.
 No Dashboard (stage 2, Server list item), no tabbed options dialog, no theming UI.
 ```
+
+### Carry-forward
+
+- From prompt 10: the settings this prompt gives a form to already exist as
+  `ChatSettings` (timestamp format, chat font family and size, raw-traffic toggle) and
+  `MessageLogController.lineCap`. They persist to `UserDefaults` through named keys —
+  `ChatSettings.Key`, alongside `ConnectionSettings.Key` — which is the stopgap this
+  prompt replaces with the plain-text config. Move *both*, or the Connect sheet's
+  last-used values stay behind in defaults while everything else moves.
+- From prompt 10: the debug half's rendering is done. `LineKind.rawInbound` and
+  `.rawOutbound` render `<<`/`>>` through the same format table as everything else, and
+  `ChatSettings.showsRawTraffic` is the toggle. What `/debug` adds is the *destinations* —
+  a canvas and a file — and `-i`, which replays `TraceBuffer.snapshot()` rather than
+  streaming from now on.
+- From prompt 10: `DiagnosticsReport` already builds the redacted export, header and all,
+  and `AppModel.copyDiagnostics()` puts it on the clipboard from the Edit menu. `/debug
+  <file>` is that string plus a write, so the "file output is redacted and the UI must say
+  so" requirement is a sentence in the UI rather than new redaction code.
 
 ---
 

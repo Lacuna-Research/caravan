@@ -101,6 +101,16 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     per-nick colours seeded on the nick alone (not nick + network), manual per-nick
     override, and the generated palette contrast-checked against *both* backgrounds,
     so it cannot be a naive hue wheel.
+
+    ### Carry-forward
+
+    - From prompt 10: `LineColour` is where the palette goes. It maps semantic roles to
+      system colours today; the indexed mIRC colours belong beside them, and the
+      three-state Auto/Light/Dark toggle picks which table `nsColor` reads.
+    - From prompt 10: bold and italic runs already have room. `MessageLogController`
+      fills the chat font only into runs that do not set one, precisely so a formatted
+      run can carry its own — blanket-setting the font over the batch would undo them.
+
 11. **Multi-window model.** The tree's shape shipped with stage 1
     (GUI-DESIGN-NOTES.md §12); this item adds activity and navigation at scale
     (§1, §3, §8, §9, §11):
@@ -312,6 +322,15 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     beside scripting: computed formatting through the same JavaScriptCore layer,
     documented as slower, never on by default — no JavaScript on the default render
     path. Per-buffer fonts land here too, deferred from §15.5.
+
+    ### Carry-forward
+
+    - From prompt 10: the table is `LineFormatTable`, one `LineFormat` (template plus
+      colour role) per `LineKind`, with `LineFields` naming the variables a template may
+      use. Making it user-editable is serialising those two types; an unknown `$variable`
+      already survives expansion as written, so a bad theme is visibly bad rather than
+      silently empty.
+
 36. **Customization.** F-key bindings, arbitrary keyboard shortcuts, and the
     switchbar if the treebar has not settled the need (deferred, not rejected —
     GUI-DESIGN-NOTES.md §2). No toolbar editor: `NSToolbar`'s system customization

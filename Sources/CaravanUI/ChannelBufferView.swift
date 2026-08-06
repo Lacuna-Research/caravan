@@ -13,6 +13,8 @@ struct ChannelBufferView: View {
 
     @State private var isTopicExpanded = false
 
+    @Environment(\.chatFont) private var chatFont
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -49,7 +51,7 @@ struct ChannelBufferView: View {
             .help(isNickListVisible ? "Hide the nick list" : "Show the nick list")
             .accessibilityLabel(isNickListVisible ? "Hide the nick list" : "Show the nick list")
         }
-        .font(.system(.body, design: .monospaced))
+        .font(chatFont)
     }
 
     private var inputField: some View {
@@ -70,6 +72,8 @@ struct ChannelBufferView: View {
 struct NickListPane: View {
     let buffer: ChannelBuffer
 
+    @Environment(\.chatFont) private var chatFont
+
     var body: some View {
         VStack(spacing: 0) {
             Text(memberCountLabel)
@@ -85,7 +89,7 @@ struct NickListPane: View {
                     .lineLimit(1)
             }
             .listStyle(.plain)
-            .font(.system(.body, design: .monospaced))
+            .font(chatFont)
         }
     }
 
