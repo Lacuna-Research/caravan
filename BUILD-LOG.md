@@ -2935,3 +2935,55 @@ Collapsing Libera left OFTC expanded, which is stage 1 prompt 8's carry-forward 
 it was asked for.
 
 **Still outstanding: soju.** The bouncer half of the acceptance has nothing to run against.
+
+## Stage 2, prompt 4 — a red main, and a harness that lied
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+`main`'s post-merge run for prompt 4 failed — the first CI job in this repo to actually
+execute after the Actions outage, and it failed in 1m19s rather than timing out, so it was
+real. `a network the bouncer drops loses its row`, the very test whose stale-reconcile race
+had been fixed hours earlier.
+
+**It reproduced locally at about one run in four, and only under full-suite load.** In
+isolation it passed indefinitely. That is the shape of a test that depends on timing between
+two connections, and it is why five green single-test runs and three green full-suite runs
+before merging proved nothing.
+
+**Instrumenting beat reasoning, and by a wide margin.** Two rounds of speculation about the
+reconcile serialisation produced nothing; one `print` of the state at failure produced the
+answer immediately:
+
+    rows=["ExampleNet/-", "Libera/1"] controlNetworks=["1"] conns=3
+    lines=[... "BOUNCER LISTNETWORKS" ... "BOUNCER BIND 1" ... "BOUNCER LISTNETWORKS"
+           ... "BOUNCER BIND 1" ... "BOUNCER LISTNETWORKS"]
+
+Three connections where there should be two, `BOUNCER BIND 1` twice, and `LISTNETWORKS`
+three times.
+
+**The cause was in `ScriptedIRCServer`, not in the client.** Multi-connection support was
+added to it in this prompt, and `send(_:)` was made to broadcast — correct for a line the
+server *volunteers*, which is what a `BOUNCER NETWORK` notification is, and wrong for a
+scripted *reply*. So a welcome burst triggered by the bound connection's `CAP END` was
+delivered to the control connection as well. The control saw a second `001`, re-ran
+`handleWelcome`, re-sent `BOUNCER LISTNETWORKS`, and re-added the network the test had just
+removed. Every symptom pointed at the product; nothing was wrong with the product.
+
+**The fix is the distinction the harness had lost:** a scripted reply goes to whoever asked
+(`send(_:to:)`), an unprompted line goes to everyone (`send(_:)`). Both halves are now pinned
+by `ScriptedServerTests`, and the pinning was *verified by reintroducing the bug* — with
+replies broadcast again, the new test fails on exactly the assertion it exists for. A
+regression test nobody has watched fail is a regression test nobody knows works.
+
+**What this says about the process**, on the same day the retrospective above argued that
+mechanical checks are what carry the discipline: CI caught this and local runs did not,
+because CI is a different machine under different load. Repeating a suspect test locally is
+weak evidence. The stronger habit, for anything with two connections or two tasks in it, is
+to run the *whole* suite several times — the load is the variable — and to treat "passed in
+isolation" as almost no evidence at all.
+
+**Also recorded: the earlier fix was not wrong, merely insufficient.** The reconcile
+serialisation added hours earlier is still needed and still correct; it closed a genuine race
+between an `open()` suspension and an incoming removal. It simply was not the cause of this
+failure, and the temptation to believe a recent fix must be the culprit cost two rounds of
+theorising before the `print`.
