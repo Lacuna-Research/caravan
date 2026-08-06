@@ -109,7 +109,7 @@ paths() {
 }
 
 case "$mode" in
-list)
+--list | list)
 	found=0
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
@@ -125,7 +125,7 @@ list)
 	[ "$found" -eq 1 ] || echo "  no worktrees"
 	;;
 
-prune)
+--prune | prune)
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
 		state=$(verdict "$path")
