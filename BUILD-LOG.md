@@ -2814,3 +2814,39 @@ available.
 -sha256` exactly, for a fresh certificate and again for a rotated one; the changed-
 certificate case draws in red with the previous fingerprint beside the new one; accepting
 writes `known_hosts`; refusing leaves it untouched, ends the attempt, and now stays ended.
+
+## Decision — a website, in `docs/`, built like the client
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+GitHub Actions went down mid-morning, which made it a good moment for work that does not
+need CI to iterate: a project website. It lives at `docs/index.html` + `docs/style.css`,
+and the decisions were all the same decision:
+
+- **Static HTML and CSS, no JavaScript, no build step, no framework.** Jekyll, Hugo and
+  friends were rejected without much agonising — a site that needs a toolchain to say
+  "zero dependencies" is a joke at its own expense. Two files, viewable with `open
+  docs/index.html`, servable by anything.
+- **`docs/` on `main`, not a `gh-pages` branch.** GitHub Pages serves `/docs` from the
+  default branch with no extra workflow, and an orphan branch is a second thing to keep
+  in sync and a permanent exception to the worktree/branch housekeeping rules.
+- **The palette is `MIRCPalette.swift`'s, verbatim.** The site's dark appearance uses the
+  dark table (accent `#3CC8C8` is index 10, orange highlights are index 7), light uses
+  mIRC's own light table, and the strip under the hero is the full 0–98 range in order.
+  Same rule as the client: two palettes, not one inverted.
+- **The window is CSS and labelled a mockup**, like the README's ASCII art — no
+  screenshot was faked and none was taken; the machine's display was not available to
+  drive the real app, and the README's honesty about this reads well anyway.
+- **The condensed build-log timeline is sixteen entries** picked from this log —
+  decisions with rejected alternatives, live-run surprises, milestones. It is a
+  hand-written digest and says so, linking here for the full record.
+
+**What will drift:** the page states stage 2 progress (3/17, and a progress-meter width)
+that `check-docs.sh` does not check, exactly the class of stale-badge problem rule 5
+exists for. Raised in `PLAN.md`'s Still open list rather than fixed now.
+
+**Verified** with headless Chrome screenshots: both appearances, full page height, and a
+phone-width run — which found a fake defect first: Chrome will not lay out narrower than
+485px however small `--window-size` asks to be, so a "390px" screenshot is a 485px layout
+cropped, and everything looks clipped. A probe script measuring
+`document.documentElement.clientWidth` settled it; the CSS was never wrong.
