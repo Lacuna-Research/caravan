@@ -21,7 +21,7 @@ public struct ConnectionSettings: Sendable, Equatable {
     /// A server password, if the network or bouncer wants one.
     ///
     /// Held only long enough to reach the socket, and never written anywhere: it is not
-    /// in `@AppStorage` with the rest, because its home is the Keychain and that is
+    /// in the config file with the rest, because its home is the Keychain and that is
     /// stage 2's. A user re-types it per connection until then, which is the right
     /// failure mode.
     public var password: String
@@ -66,18 +66,18 @@ public struct ConnectionSettings: Sendable, Equatable {
             && port > 0
     }
 
-    /// `@AppStorage` keys, named once.
+    /// Config-file keys, named once.
     ///
-    /// Two readers now — the Connect sheet writes them and `/server` reads them — and a
-    /// key that is a string literal in two places is a key that eventually differs in one.
+    /// Two readers — the Connect sheet writes them and `/server` reads them — and a key
+    /// that is a string literal in two places is a key that eventually differs in one.
     public enum Key {
-        public static let host = "lastHost"
-        public static let port = "lastPort"
-        public static let useTLS = "lastUseTLS"
-        public static let nick = "lastNick"
-        public static let altNick = "lastAltNick"
-        public static let ident = "lastIdent"
-        public static let realName = "lastRealName"
+        public static let host = "server.host"
+        public static let port = "server.port"
+        public static let useTLS = "server.tls"
+        public static let nick = "server.nick"
+        public static let altNick = "server.alt-nick"
+        public static let ident = "server.ident"
+        public static let realName = "server.real-name"
     }
 
     /// The last values the Connect sheet was used with.
@@ -86,18 +86,30 @@ public struct ConnectionSettings: Sendable, Equatable {
     /// settings, and a command that silently changed your nick or real name would be a
     /// surprise. The password is absent by design: its home is the Keychain, and until
     /// that exists it is never written down.
-    public static var lastUsed: ConnectionSettings {
-        let defaults = UserDefaults.standard
-        let storedPort = defaults.integer(forKey: Key.port)
-        return ConnectionSettings(
-            host: defaults.string(forKey: Key.host) ?? "irc.libera.chat",
-            port: storedPort > 0 ? UInt16(clamping: storedPort) : 6697,
-            useTLS: defaults.object(forKey: Key.useTLS) as? Bool ?? true,
-            nick: defaults.string(forKey: Key.nick) ?? "",
-            altNick: defaults.string(forKey: Key.altNick) ?? "",
-            ident: defaults.string(forKey: Key.ident) ?? "",
-            realName: defaults.string(forKey: Key.realName) ?? ""
+    @MainActor
+    public static func lastUsed(from config: ConfigFile = .shared) -> ConnectionSettings {
+        ConnectionSettings(
+            host: config.string(Key.host) ?? "irc.libera.chat",
+            port: config.int(Key.port).map { UInt16(clamping: $0) } ?? 6697,
+            useTLS: config.bool(Key.useTLS) ?? true,
+            nick: config.string(Key.nick) ?? "",
+            altNick: config.string(Key.altNick) ?? "",
+            ident: config.string(Key.ident) ?? "",
+            realName: config.string(Key.realName) ?? ""
         )
+    }
+
+    /// Records these as the last-used values. Called on connecting rather than on every
+    /// keystroke: "last used" should mean used, not merely typed and cancelled.
+    @MainActor
+    public func rememberAsLastUsed(in config: ConfigFile = .shared) {
+        config.set(host, forKey: Key.host)
+        config.set(Int(port), forKey: Key.port)
+        config.set(useTLS, forKey: Key.useTLS)
+        config.set(nick, forKey: Key.nick)
+        config.set(altNick.isEmpty ? nil : altNick, forKey: Key.altNick)
+        config.set(ident.isEmpty ? nil : ident, forKey: Key.ident)
+        config.set(realName.isEmpty ? nil : realName, forKey: Key.realName)
     }
 }
 
@@ -115,11 +127,18 @@ public final class AppModel {
 
     /// One trace buffer for the process. Redacted on insert, exported by "Copy
     /// Diagnostics" — which is what makes the export safe to paste into a public issue.
-    @ObservationIgnored public let trace = TraceBuffer()
+    @ObservationIgnored public let trace: TraceBuffer
 
     /// Appearance, shared by every buffer of every connection. Settings are global
     /// first; per-window overrides are a later addition if anyone wants them.
     @ObservationIgnored public let settings: ChatSettings
+
+    /// The plain-text config both the settings form and the Connect sheet persist to.
+    @ObservationIgnored public let config: ConfigFile
+
+    /// Where the wire trace is going. Lives on the app rather than the connection: the
+    /// trace is one ring for the process, and `/debug` outlives any single connection.
+    @ObservationIgnored public let debug: DebugController
 
     /// The tree row the user has selected.
     ///
@@ -137,15 +156,34 @@ public final class AppModel {
     ///
     /// There is no separate status row: the network row *is* the status buffer's entry,
     /// which removes a row per network and a concept from the UI.
+    ///
+    /// Note what this enum is named after. It is a *row*, not a buffer: `settingsAndDebug`
+    /// is a canvas, has no activity state, and takes no part in buffer navigation — but it
+    /// is selectable in the tree, because the tree is a navigation list rather than
+    /// strictly a list of buffers (GUI-DESIGN-NOTES.md §10).
     public enum SidebarItem: Hashable, Sendable {
         case status(UUID)
         case channel(connection: UUID, channel: IRCChannelName)
+        case settingsAndDebug
     }
 
-    /// Settings are injectable so a test can point them at its own `UserDefaults` suite
-    /// rather than writing into the preferences of whoever is running the suite.
-    public init(settings: ChatSettings = ChatSettings()) {
+    /// Whether the canvas is what the detail area is showing.
+    public var isShowingCanvas: Bool { selection == .settingsAndDebug }
+
+    /// ⌘0, ⌘, and the pinned row all land here.
+    public func showSettingsAndDebug() {
+        selection = .settingsAndDebug
+    }
+
+    /// The config file is injectable so a test can point it at a temporary directory
+    /// rather than writing into the settings of whoever is running the suite.
+    public init(config: ConfigFile = .shared, settings: ChatSettings? = nil) {
+        let settings = settings ?? ChatSettings(config: config)
+        let trace = TraceBuffer()
+        self.config = config
         self.settings = settings
+        self.trace = trace
+        self.debug = DebugController(trace: trace, settings: settings)
     }
 
     /// The channel the selection names, when it names one.
@@ -192,6 +230,13 @@ public final class AppModel {
                     password: password,
                     reportingInto: target
                 )
+            case .debug(let command):
+                // The canvas is where `/debug window` sends output, so the command opens
+                // it: being told the trace is now going somewhere you cannot see would be
+                // a strange way to answer.
+                let answer = debug.apply(command)
+                if case .toCanvas = command { showSettingsAndDebug() }
+                connection.showNotice(answer, in: target)
             }
         }
     }
@@ -204,7 +249,7 @@ public final class AppModel {
         password: String?,
         reportingInto target: Target?
     ) async {
-        var settings = ConnectionSettings.lastUsed
+        var settings = ConnectionSettings.lastUsed(from: config)
         settings.host = host
         if let port { settings.port = port }
         if let tls { settings.useTLS = tls }
@@ -223,6 +268,7 @@ public final class AppModel {
     }
 
     public func connect(using settings: ConnectionSettings) async {
+        settings.rememberAsLastUsed(in: config)
         await connection?.disconnect()
         let connection = ConnectionViewModel(
             configuration: settings.sessionConfiguration,
@@ -232,6 +278,19 @@ public final class AppModel {
         self.connection = connection
         selection = .status(connection.id)
         await connection.connect()
+    }
+
+    // MARK: - Settings
+
+    /// Pushes changed settings out to everything already on screen.
+    ///
+    /// The settings form calls this; nothing observes `ChatSettings` for it. An
+    /// `@Observable` read inside a view redraws the view, but the font and the line cap
+    /// live on `MessageLogController`s that no view owns — so this is the one push, and
+    /// it is explicit rather than a chain of observers to reason about.
+    public func applySettings() {
+        connection?.applySettings()
+        debug.applySettings()
     }
 
     // MARK: - Diagnostics

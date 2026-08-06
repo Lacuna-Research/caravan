@@ -295,6 +295,69 @@ struct CommandParserTests {
         #expect(try error("/").contains("//"))
     }
 
+    // MARK: - /debug
+
+    /// The whole `/debug` table, since it is a table.
+    private func debug(_ input: String) throws -> DebugCommand {
+        let actions = Self.parser.actions(for: input, activeTarget: Self.channelTarget)
+        #expect(actions.count == 1, "expected exactly one action, got \(actions)")
+        guard case .debug(let command)? = actions.first else {
+            throw ExpectedAnError(actions: actions)
+        }
+        return command
+    }
+
+    @Test("bare /debug asks where the trace is going")
+    func debugReport() throws {
+        #expect(try debug("/debug") == .report)
+    }
+
+    @Test("/debug off stops every destination")
+    func debugOff() throws {
+        #expect(try debug("/debug off") == .off)
+        #expect(try debug("/debug OFF") == .off)
+    }
+
+    /// `window`, `on` and `@anything` all mean the canvas: the first is what the prompt
+    /// says, the other two are what mIRC users have typed for twenty years.
+    @Test("window, on and @name all mean the canvas")
+    func debugToCanvas() throws {
+        #expect(try debug("/debug window") == .toCanvas(includingExistingTrace: false))
+        #expect(try debug("/debug on") == .toCanvas(includingExistingTrace: false))
+        #expect(try debug("/debug @debug") == .toCanvas(includingExistingTrace: false))
+    }
+
+    @Test("-i asks for the trace already in the ring")
+    func debugIncludingExisting() throws {
+        #expect(try debug("/debug -i window") == .toCanvas(includingExistingTrace: true))
+        #expect(
+            try debug("/debug -i ~/caravan.log")
+                == .toFile(path: "~/caravan.log", includingExistingTrace: true)
+        )
+    }
+
+    /// `-i` on its own has only one destination it could mean, so it means that one
+    /// rather than a usage line.
+    @Test("-i alone means the canvas, including the ring")
+    func debugBareFlag() throws {
+        #expect(try debug("/debug -i") == .toCanvas(includingExistingTrace: true))
+    }
+
+    /// A path may contain spaces, and truncating at the first one would write to a file
+    /// the user never named.
+    @Test("a path keeps its spaces")
+    func debugFileWithSpaces() throws {
+        #expect(
+            try debug("/debug ~/Debug Logs/caravan.log")
+                == .toFile(path: "~/Debug Logs/caravan.log", includingExistingTrace: false)
+        )
+    }
+
+    @Test("an unknown flag says so rather than being ignored")
+    func debugUnknownFlag() throws {
+        #expect(try error("/debug -z window").contains("-z"))
+    }
+
     // MARK: - Casemapping
 
     /// The parser classifies channel names with the server's `CHANTYPES`, not a hardcoded

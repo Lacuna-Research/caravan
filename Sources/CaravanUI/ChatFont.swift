@@ -37,6 +37,26 @@ public enum ChatFont {
     /// user picked a different primary.
     public static let fallbackFamilies = ["Andale Mono", "Courier New"]
 
+    /// The families the settings form offers, filtered to those actually installed.
+    ///
+    /// A short list of known-good monospaced faces rather than every font on the machine.
+    /// A font picker showing Helvetica is a picker offering to break the grid the whole
+    /// design rests on, and nothing downstream can un-break it. The config file is still
+    /// plain text, so anyone who wants a font that is not here can write it in and live
+    /// with the consequences — which is the right place for that decision.
+    @MainActor
+    public static func selectableFamilies(including current: String? = nil) -> [String] {
+        let installed = Set(NSFontManager.shared.availableFontFamilies)
+        var families = ["Menlo", "SF Mono", "Monaco", "Andale Mono", "Courier New"]
+            .filter(installed.contains)
+        // Whatever the config says, even if we would not have offered it: a picker with
+        // no row matching the current value shows a blank, which reads as a bug.
+        if let current, !families.contains(current) {
+            families.insert(current, at: 0)
+        }
+        return families
+    }
+
     /// The font to render chat in.
     ///
     /// Falls back to the system monospaced font only if the requested family and every

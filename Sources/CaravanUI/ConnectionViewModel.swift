@@ -147,10 +147,40 @@ public final class ConnectionViewModel: Identifiable {
         log(for: target).append([renderer.line(text, kind: .clientError)])
     }
 
+    /// Shows something the client wants to say that is not an error — `/debug`'s answers.
+    ///
+    /// Deliberately not the red `.clientError` line: telling a user "the debug log is now
+    /// at ~/caravan.log" in the colour reserved for failures teaches them to distrust the
+    /// colour.
+    public func showNotice(_ text: String, in target: Target?) {
+        log(for: target).append([renderer.line(text, kind: .status)])
+    }
+
+    /// Adopts changed settings across every buffer this connection owns.
+    ///
+    /// The font and the line cap are held by each `MessageLogController` rather than read
+    /// from the settings per line, so changing them in the form has to reach the existing
+    /// buffers — otherwise the setting only applies to windows opened afterwards, which is
+    /// the sort of half-working that is worse than not offering it.
+    public func applySettings() {
+        let font = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        for controller in [log] + channels.map(\.log) {
+            controller.chatFont = font
+            controller.lineCap = settings.scrollbackLines
+        }
+    }
+
     /// The line for a message we just sent, or `nil` for anything that is not one.
     ///
     /// `PRIVMSG` and `NOTICE` only. A `JOIN` or a `MODE` produces no echo because the
     /// server will tell us about it in a moment, and echoing it here would show it twice.
+    ///
+    /// **A message addressed somewhere other than this window is marked as such.** `/msg
+    /// bob hi` typed in `#swift` echoes there — mIRC's behaviour, and the only way to see
+    /// that it sent without leaving the window — but as `-> *bob* hi`, with the recipient
+    /// in the nick column. The live acceptance run found it rendered as `<@you> hi`,
+    /// indistinguishable from something said in the channel, which is a client lying about
+    /// where your words went.
     private func selfEchoLine(for message: IRCMessage, in target: Target?) -> AttributedString? {
         guard case .verb(let verb) = message.command, message.parameters.count >= 2 else {
             return nil
@@ -163,12 +193,32 @@ public final class ConnectionViewModel: Identifiable {
         }
 
         let (text, isAction) = EventTranslator.unwrapAction(message.parameters[1])
+        let recipient = message.parameters[0]
         var fields = LineFields()
-        fields.nick = ownDisplayName(in: target)
         fields.text = text
+
+        guard isThisWindow(recipient, target) else {
+            fields.nick = recipient
+            return renderer.line(
+                kind: isNotice ? .ownPrivateNotice : .ownPrivateMessage,
+                fields: fields
+            )
+        }
+
+        fields.nick = ownDisplayName(in: target)
         let kind: LineKind =
             isAction ? .ownAction : (isNotice ? .ownNotice : .ownMessage)
         return renderer.line(kind: kind, fields: fields)
+    }
+
+    /// Whether a recipient names the window the message was typed in.
+    ///
+    /// Folded under the live casemapping rather than compared literally: `#Swift` and
+    /// `#swift` are the window you are in, and rendering your own line as though it went
+    /// elsewhere because of a capital letter would be its own small lie.
+    private func isThisWindow(_ recipient: String, _ target: Target?) -> Bool {
+        guard let target else { return false }
+        return caseMapping.equal(recipient, target.raw)
     }
 
     /// Our own nick with whatever prefix we hold in this channel, as the nick column

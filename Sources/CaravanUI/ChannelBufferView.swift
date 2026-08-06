@@ -7,13 +7,19 @@ struct ChannelBufferView: View {
     let buffer: ChannelBuffer
 
     /// App-wide, not per buffer. One setting to find and one to change, per the
-    /// global-first rule the design notes take for everything of this kind.
-    @AppStorage("nickListWidth") private var nickListWidth = 180.0
-    @AppStorage("nickListVisible") private var isNickListVisible = true
+    /// global-first rule the design notes take for everything of this kind — and in the
+    /// plain-text config with every other setting, rather than in a second store.
+    @Bindable private var settings: ChatSettings
 
     @State private var isTopicExpanded = false
 
     @Environment(\.chatFont) private var chatFont
+
+    init(model: AppModel, buffer: ChannelBuffer) {
+        self.model = model
+        self.buffer = buffer
+        self._settings = Bindable(wrappedValue: model.settings)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,10 +31,13 @@ struct ChannelBufferView: View {
                     Divider()
                     inputField
                 }
-                if isNickListVisible {
-                    ResizeHandle(width: $nickListWidth, range: 120...420)
+                if settings.isNickListVisible {
+                    ResizeHandle(
+                        width: $settings.nickListWidth,
+                        range: ChatSettings.nickListWidthRange
+                    )
                     NickListPane(buffer: buffer)
-                        .frame(width: nickListWidth)
+                        .frame(width: settings.nickListWidth)
                 }
             }
         }
@@ -43,13 +52,15 @@ struct ChannelBufferView: View {
             isExpanded: $isTopicExpanded
         ) {
             Button {
-                isNickListVisible.toggle()
+                settings.isNickListVisible.toggle()
             } label: {
-                Image(systemName: isNickListVisible ? "sidebar.right" : "sidebar.trailing")
+                Image(systemName: settings.isNickListVisible ? "sidebar.right" : "sidebar.trailing")
             }
             .buttonStyle(.plain)
-            .help(isNickListVisible ? "Hide the nick list" : "Show the nick list")
-            .accessibilityLabel(isNickListVisible ? "Hide the nick list" : "Show the nick list")
+            .help(settings.isNickListVisible ? "Hide the nick list" : "Show the nick list")
+            .accessibilityLabel(
+                settings.isNickListVisible ? "Hide the nick list" : "Show the nick list"
+            )
         }
         .font(chatFont)
     }

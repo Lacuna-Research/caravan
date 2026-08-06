@@ -1,6 +1,6 @@
 # Stage 1 — The Prompts
 
-**Status:** 10/11 complete. Next: prompt 11.
+**Status:** 11/11 complete. Stage 1 is done; stage 2 is planned in `PLAN.md`.
 
 Each block is a self-contained prompt. They assume the previous ones are done and
 merged. Every prompt has a **Do not** section — that's the scope fence that keeps
@@ -533,24 +533,6 @@ Do not: eject the canvas into its own standalone window — ejection is the same
 affordance as detaching a buffer, and both land with stage 2's Multi-window model.
 No Dashboard (stage 2, Server list item), no tabbed options dialog, no theming UI.
 ```
-
-### Carry-forward
-
-- From prompt 10: the settings this prompt gives a form to already exist as
-  `ChatSettings` (timestamp format, chat font family and size, raw-traffic toggle) and
-  `MessageLogController.lineCap`. They persist to `UserDefaults` through named keys —
-  `ChatSettings.Key`, alongside `ConnectionSettings.Key` — which is the stopgap this
-  prompt replaces with the plain-text config. Move *both*, or the Connect sheet's
-  last-used values stay behind in defaults while everything else moves.
-- From prompt 10: the debug half's rendering is done. `LineKind.rawInbound` and
-  `.rawOutbound` render `<<`/`>>` through the same format table as everything else, and
-  `ChatSettings.showsRawTraffic` is the toggle. What `/debug` adds is the *destinations* —
-  a canvas and a file — and `-i`, which replays `TraceBuffer.snapshot()` rather than
-  streaming from now on.
-- From prompt 10: `DiagnosticsReport` already builds the redacted export, header and all,
-  and `AppModel.copyDiagnostics()` puts it on the clipboard from the Edit menu. `/debug
-  <file>` is that string plus a write, so the "file output is redacted and the UI must say
-  so" requirement is a sentence in the UI rather than new redaction code.
 
 ---
 

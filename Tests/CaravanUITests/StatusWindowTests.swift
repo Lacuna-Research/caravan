@@ -41,8 +41,8 @@ struct StatusWindowTests {
         }
     }
 
-    /// A model whose settings live in their own defaults suite, so a test never writes
-    /// into the user's real preferences.
+    /// A model whose settings live in their own config file, so a test never writes into
+    /// the user's real settings.
     private func harness(
         nick: String = "alice",
         showsRawTraffic: Bool = false
@@ -51,11 +51,7 @@ struct StatusWindowTests {
         let port = try await server.start()
         await server.scriptWelcome(nick: nick)
 
-        // A defaults suite of this test's own: `ChatSettings` persists on write, and a
-        // test suite has no business editing the preferences of whoever runs it.
-        let defaults = UserDefaults(suiteName: "com.lacuna-research.caravan.tests")!
-        defaults.removePersistentDomain(forName: "com.lacuna-research.caravan.tests")
-        let model = AppModel(settings: ChatSettings(defaults: defaults))
+        let model = AppModel(config: temporaryConfig())
         model.settings.showsRawTraffic = showsRawTraffic
         let harness = Harness(server: server, model: model)
         await model.connect(
@@ -113,9 +109,52 @@ struct StatusWindowTests {
         await harness.model.submit("/msg bob hi there", from: nil)
         #expect(
             await waitUntil {
-                harness.text(of: harness.connection.log).contains("<alice> hi there")
+                harness.text(of: harness.connection.log).contains("-> *bob* hi there")
             }
         )
+
+        await harness.shutDown()
+    }
+
+    /// Found by the stage 1 acceptance run: `/msg bob hi` typed in `#swift` was echoed
+    /// `<@alice> hi`, indistinguishable from something said in the channel. The message
+    /// went to bob; a client that renders it as a channel line is lying about where your
+    /// words went.
+    @Test("a message addressed elsewhere is marked as going elsewhere")
+    func echoOfAMessageSentElsewhere() async throws {
+        let harness = try await harness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        #expect(await waitUntil { harness.connection.channels.count == 1 })
+        let buffer = try #require(harness.connection.channels.first)
+        let target = Target.channel(IRCChannelName("#swift", mapping: .ascii))
+
+        await harness.model.submit("/msg bob a word in private", from: target)
+        await harness.model.submit("/notice carol heads up", from: target)
+        await harness.model.submit("in the channel", from: target)
+
+        #expect(await waitUntil { harness.text(of: buffer.log).contains("in the channel") })
+        let text = harness.text(of: buffer.log)
+        // The recipient is in the nick column, and the arrow says it left the window.
+        #expect(text.contains("-> *bob* a word in private"))
+        #expect(text.contains("-> -carol- heads up"))
+        // What was actually said here still reads as ours.
+        #expect(text.contains("<alice> in the channel"))
+
+        await harness.shutDown()
+    }
+
+    /// The window's own target is still the window's own target, whatever its case.
+    @Test("a message to this window, differently cased, is still this window")
+    func echoIsCaseInsensitive() async throws {
+        let harness = try await harness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        #expect(await waitUntil { harness.connection.channels.count == 1 })
+        let buffer = try #require(harness.connection.channels.first)
+        let target = Target.channel(IRCChannelName("#swift", mapping: .ascii))
+
+        await harness.model.submit("/msg #SWIFT shouted", from: target)
+        #expect(await waitUntil { harness.text(of: buffer.log).contains("shouted") })
+        #expect(!harness.text(of: buffer.log).contains("-> *#SWIFT*"))
 
         await harness.shutDown()
     }

@@ -40,6 +40,39 @@ struct SidebarTree: View {
         }
         .listStyle(.sidebar)
         .font(chatFont)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            settingsAndDebugRow
+        }
+    }
+
+    /// The canvas's row, pinned to the bottom of the tree.
+    ///
+    /// In the tree without being a buffer: the tree is a navigation list rather than
+    /// strictly a list of buffers (§10). Pinned rather than listed, because it must not
+    /// drift below thirty channels — and it carries no activity dot, because activity is
+    /// a concept belonging to buffers only.
+    private var settingsAndDebugRow: some View {
+        VStack(spacing: 0) {
+            Divider()
+            Button {
+                model.showSettingsAndDebug()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape")
+                        .frame(width: 7)
+                    Text("Settings & Debug")
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .font(chatFont)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(model.isShowingCanvas ? Color.accentColor.opacity(0.2) : Color.clear)
+        }
+        .background(.bar)
     }
 }
 

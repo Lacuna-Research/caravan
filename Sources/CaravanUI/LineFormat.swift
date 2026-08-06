@@ -14,6 +14,14 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case ownAction
     case notice
     case ownNotice
+    /// A message we sent *somewhere else*, echoed in the window we typed it in.
+    ///
+    /// `/msg bob hi` typed in `#swift` has to be visibly not a line in `#swift`. Rendered
+    /// `-> *bob* hi`, as mIRC has for decades: the nick in the column is the recipient,
+    /// not the sender, and the arrow is what says so.
+    case ownPrivateMessage
+    /// The same, for `/notice`.
+    case ownPrivateNotice
     case join
     case part
     case quit
@@ -38,7 +46,7 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     /// The one question stage 2 needs to ask when `echo-message` arrives.
     public var isSelfEcho: Bool {
         switch self {
-        case .ownMessage, .ownAction, .ownNotice: true
+        case .ownMessage, .ownAction, .ownNotice, .ownPrivateMessage, .ownPrivateNotice: true
         default: false
         }
     }
@@ -119,6 +127,14 @@ public struct LineFormatTable: Sendable {
         .ownAction: LineFormat(template: "$timestamp* $nick $text", colour: .action),
         .notice: LineFormat(template: "$timestamp-$nick- $text", colour: .notice),
         .ownNotice: LineFormat(template: "$timestamp-$nick- $text", colour: .notice),
+        .ownPrivateMessage: LineFormat(
+            template: "$timestamp-> *$nick* $text",
+            colour: .ownText
+        ),
+        .ownPrivateNotice: LineFormat(
+            template: "$timestamp-> -$nick- $text",
+            colour: .notice
+        ),
         .join: LineFormat(
             template: "$timestamp*** Joins: $nick ($userhost) $channel",
             colour: .event

@@ -32,6 +32,33 @@ public enum CommandAction: Sendable, Equatable {
     /// One action rather than a `send` plus a `disconnect`, because the order matters and
     /// a caller that got it backwards would send `QUIT` into a closed socket.
     case quit(reason: String?)
+
+    /// `/debug`: point the wire trace somewhere, or stop.
+    ///
+    /// The answer the user reads back is the *controller's*, not the parser's — it names
+    /// the file that was actually opened, which is knowledge no pure function has.
+    case debug(DebugCommand)
+}
+
+/// Where the wire trace should go, following mIRC's `/debug`.
+///
+/// The trace itself is always running — ``Diagnostics/TraceBuffer`` is on from launch —
+/// so this is only ever about *destinations*. That is what makes
+/// ``toCanvas(includingExistingTrace:)`` with the flag set useful: you turn debugging on
+/// after something has already gone wrong, and the ring still has it.
+public enum DebugCommand: Sendable, Equatable {
+    /// `/debug window` — stream to the Debug & Settings canvas.
+    case toCanvas(includingExistingTrace: Bool)
+
+    /// `/debug <file>` — append to a file. The file is redacted, because everything in
+    /// the trace was redacted on insert; there is no unredacted path to write.
+    case toFile(path: String, includingExistingTrace: Bool)
+
+    /// `/debug off` — stop every destination.
+    case off
+
+    /// Bare `/debug` — say where the trace is currently going.
+    case report
 }
 
 /// Why a command could not be carried out, phrased for the person who typed it.
@@ -45,6 +72,8 @@ public enum CommandError: Sendable, Equatable {
     case usage(String)
     /// A `/server` port that is not a number, or not a port.
     case badPort(String)
+    /// A flag the command does not have.
+    case unknownFlag(command: String, flag: String)
 
     public var message: String {
         switch self {
@@ -54,6 +83,8 @@ public enum CommandError: Sendable, Equatable {
             "Usage: \(usage)"
         case .badPort(let port):
             "\(port) is not a valid port"
+        case .unknownFlag(let command, let flag):
+            "\(command) has no \(flag) flag"
         }
     }
 }

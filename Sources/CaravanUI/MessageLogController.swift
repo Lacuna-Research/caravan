@@ -20,7 +20,13 @@ import Observation
 @Observable
 public final class MessageLogController {
     /// Lines retained before the oldest are dropped.
-    public var lineCap: Int
+    ///
+    /// Lowering it takes effect at once rather than at the next line to arrive: a quiet
+    /// buffer would otherwise sit above its new cap indefinitely, which reads as the
+    /// setting having done nothing.
+    public var lineCap: Int {
+        didSet { trimNow() }
+    }
 
     /// How long appends are gathered before one batched mutation.
     ///
@@ -52,7 +58,16 @@ public final class MessageLogController {
 
     /// The chat font. One font governs every buffer, so the owner sets this from the
     /// settings and the controller only draws with it.
-    @ObservationIgnored public var chatFont: NSFont
+    ///
+    /// Changing it restyles what is already on screen. A font setting that applied only to
+    /// lines arriving after you changed it would leave the buffer in two fonts, which is
+    /// both ugly and a lie about what the setting does.
+    @ObservationIgnored public var chatFont: NSFont {
+        didSet {
+            guard chatFont != oldValue else { return }
+            restyle()
+        }
+    }
 
     /// Which line holds the unread rule, as an index into ``lineLengths``.
     ///
@@ -194,6 +209,47 @@ public final class MessageLogController {
         if let index = unreadMarkerLine {
             unreadMarkerLine = index >= excess ? index - excess : nil
         }
+    }
+
+    /// Trims to the current cap without waiting for a line to arrive.
+    private func trimNow() {
+        guard let textStorage = textView?.textStorage else { return }
+        textStorage.beginEditing()
+        trimIfNeeded(in: textStorage, isPinned: isPinnedToBottom)
+        textStorage.endEditing()
+    }
+
+    /// Reapplies the chat font and the grid rules to everything already on screen.
+    ///
+    /// Blanket-sets the font, which is right while every run carries the chat font and
+    /// nothing else. Stage 2's formatting codes introduce bold and italic runs, and this
+    /// will then have to rebuild each run's font from its traits rather than overwrite it
+    /// — noted against that item in `PLAN.md`.
+    private func restyle() {
+        guard let textStorage = textView?.textStorage, textStorage.length > 0 else { return }
+        let wasPinned = isPinnedToBottom
+        let whole = NSRange(location: 0, length: textStorage.length)
+        textStorage.beginEditing()
+        textStorage.addAttributes(
+            [
+                .font: chatFont,
+                .ligature: 0,
+                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
+            ],
+            range: whole
+        )
+        // The unread rule is deliberately wider than the window and clipped rather than
+        // wrapped, so the blanket pass above has to be undone for its one line.
+        if let index = unreadMarkerLine, index < lineLengths.count {
+            let location = lineLengths.prefix(index).reduce(0, +)
+            textStorage.addAttribute(
+                .paragraphStyle,
+                value: ChatFont.clippingParagraphStyle(for: chatFont),
+                range: NSRange(location: location, length: lineLengths[index])
+            )
+        }
+        textStorage.endEditing()
+        if wasPinned { scrollToBottom() }
     }
 
     // MARK: - The unread marker

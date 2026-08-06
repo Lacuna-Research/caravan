@@ -357,6 +357,65 @@ struct MessageLogControllerTests {
         #expect(!harness.controller.hasUnreadMarker)
     }
 
+    // MARK: - Settings applied live
+
+    /// The settings form can change the font, so a change has to reach text that is
+    /// already on screen. A buffer left in two fonts is both ugly and a lie about what the
+    /// setting does.
+    @Test("changing the font restyles what is already on screen")
+    func fontChangeRestyles() {
+        let harness = makeHarness()
+        harness.controller.append(lines(3))
+        harness.controller.flush()
+
+        let replacement = ChatFont.nsFont(family: "Courier New", size: 18)
+        harness.controller.chatFont = replacement
+
+        let storage = harness.textView.textStorage!
+        var families: Set<String> = []
+        storage.enumerateAttribute(.font, in: NSRange(location: 0, length: storage.length)) {
+            value,
+            _,
+            _ in
+            if let font = value as? NSFont { families.insert(font.familyName ?? "") }
+        }
+        #expect(families == [replacement.familyName ?? ""])
+    }
+
+    /// The unread rule is deliberately wider than the window and clipped rather than
+    /// wrapped; a blanket restyle that forgot it would turn one rule into two.
+    @Test("restyling keeps the unread rule unwrapped")
+    func fontChangeKeepsTheRuleClipped() throws {
+        let harness = makeHarness()
+        harness.controller.append(lines(2))
+        harness.controller.flush()
+        harness.controller.markUnreadPosition(with: rule())
+        harness.controller.chatFont = ChatFont.nsFont(family: "Courier New", size: 18)
+
+        let storage = harness.textView.textStorage!
+        let ruleLocation = storage.string.distance(
+            from: storage.string.startIndex,
+            to: try #require(storage.string.firstIndex(of: "─"))
+        )
+        let style = storage.attribute(.paragraphStyle, at: ruleLocation, effectiveRange: nil)
+        #expect((style as? NSParagraphStyle)?.lineBreakMode == .byClipping)
+    }
+
+    /// Lowering the cap in the settings form has to take effect on a quiet buffer too,
+    /// or the setting looks like it did nothing.
+    @Test("lowering the line cap trims at once")
+    func lineCapTrimsImmediately() {
+        let harness = makeHarness(lineCap: 5000)
+        harness.controller.append(lines(400))
+        harness.controller.flush()
+        #expect(harness.controller.lineCount == 400)
+
+        harness.controller.lineCap = 100
+        #expect(harness.controller.lineCount == 100)
+        #expect(!text(of: harness.textView).contains("line 0\n"))
+        #expect(text(of: harness.textView).contains("line 399"))
+    }
+
     /// Text storage edits are what a flush is measured in.
     private final class EditCounter: NSObject, NSTextStorageDelegate {
         private(set) nonisolated(unsafe) var edits = 0

@@ -2,52 +2,49 @@ import SwiftUI
 
 /// Where a connection is described.
 ///
-/// Last-used values persist through `@AppStorage`, which is a stopgap and marked as one:
-/// the real home is the plain-text config under `$XDG_CONFIG_HOME/caravan`, alongside
-/// the server list in stage 2. The password is deliberately not persisted — its home is
-/// the Keychain, and until that exists, not storing it is the right failure mode.
+/// Last-used values live in the plain-text config at `$XDG_CONFIG_HOME/caravan`, and are
+/// written when you connect rather than as you type: "last used" should mean used, not
+/// typed and then cancelled. The password is deliberately not persisted at all — its home
+/// is the Keychain, and until that exists, not storing it is the right failure mode.
 struct ConnectSheet: View {
+    let config: ConfigFile
     let onConnect: (ConnectionSettings) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
-    @AppStorage(ConnectionSettings.Key.host) private var host = "irc.libera.chat"
-    @AppStorage(ConnectionSettings.Key.port) private var port = 6697
-    @AppStorage(ConnectionSettings.Key.useTLS) private var useTLS = true
-    @AppStorage(ConnectionSettings.Key.nick) private var nick = ""
-    @AppStorage(ConnectionSettings.Key.altNick) private var altNick = ""
-    @AppStorage(ConnectionSettings.Key.ident) private var ident = ""
-    @AppStorage(ConnectionSettings.Key.realName) private var realName = ""
+    @State private var settings = ConnectionSettings()
 
-    @State private var password = ""
-
-    private var settings: ConnectionSettings {
-        ConnectionSettings(
-            host: host,
-            port: UInt16(clamping: port),
-            useTLS: useTLS,
-            nick: nick,
-            altNick: altNick,
-            ident: ident,
-            realName: realName,
-            password: password
-        )
-    }
+    /// The port as a number the field can edit. `UInt16` has no `FormatStyle`, and a
+    /// field bound to one that rejected 65536 by refusing to render would be worse than
+    /// clamping on the way out.
+    @State private var port = 6697
 
     var body: some View {
         Form {
             Section("Server") {
-                TextField("Hostname", text: $host)
+                TextField("Hostname", text: $settings.host)
                 TextField("Port", value: $port, format: .number.grouping(.never))
-                Toggle("Use TLS", isOn: $useTLS)
-                SecureField("Server password (optional)", text: $password)
+                Toggle("Use TLS", isOn: $settings.useTLS)
+                SecureField("Server password (optional)", text: $settings.password)
             }
             Section("Identity") {
-                TextField("Nickname", text: $nick)
-                TextField("Alternate nickname", text: $altNick)
-                TextField("Ident", text: $ident, prompt: Text("Defaults to the nickname"))
-                TextField("Real name", text: $realName, prompt: Text("Defaults to the nickname"))
+                TextField("Nickname", text: $settings.nick)
+                TextField("Alternate nickname", text: $settings.altNick)
+                TextField(
+                    "Ident",
+                    text: $settings.ident,
+                    prompt: Text("Defaults to the nickname")
+                )
+                TextField(
+                    "Real name",
+                    text: $settings.realName,
+                    prompt: Text("Defaults to the nickname")
+                )
             }
+        }
+        .onAppear {
+            settings = .lastUsed(from: config)
+            port = Int(settings.port)
         }
         .formStyle(.grouped)
         .safeAreaInset(edge: .bottom) {
@@ -56,11 +53,13 @@ struct ConnectSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button("Connect") {
+                    var settings = settings
+                    settings.port = UInt16(clamping: port)
                     onConnect(settings)
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(!settings.isValid)
+                .disabled(!settings.isValid || port <= 0)
             }
             .padding()
             .background(.bar)
@@ -70,5 +69,5 @@ struct ConnectSheet: View {
 }
 
 #Preview {
-    ConnectSheet { _ in }
+    ConnectSheet(config: .shared) { _ in }
 }

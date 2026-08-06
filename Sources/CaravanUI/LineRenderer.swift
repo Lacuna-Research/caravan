@@ -226,6 +226,15 @@ public struct LineRenderer: Sendable {
         return attributed
     }
 
+    /// The timestamp exactly as a line would carry it, for the settings form's preview.
+    ///
+    /// The preview has to be the real thing rather than an approximation of it, or a
+    /// format that renders differently in the buffer than in the form is a bug the form
+    /// itself hides.
+    public func timestampPreview(_ date: Date = Date()) -> String {
+        formattedTimestamp(date).trimmingCharacters(in: .whitespaces)
+    }
+
     /// The timestamp column, with its trailing space, or nothing at all.
     ///
     /// Fixed width by construction: a monospaced font plus a fixed-width format means the
