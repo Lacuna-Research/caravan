@@ -198,7 +198,9 @@ code {
 
 /* ---- sections ---- */
 
-section { padding: 4.5rem 0 2rem; }
+/* section.wrap, not bare section: .wrap's own padding rule outranks an
+   element selector and would zero the vertical padding entirely */
+section.wrap { padding: 6rem 1.5rem 1rem; }
 
 .kicker {
   font-family: var(--mono);
