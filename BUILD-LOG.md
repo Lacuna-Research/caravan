@@ -2324,3 +2324,42 @@ happened and were not missed — `CaravanUI` holds both, and splitting them now 
 abstraction ahead of a second consumer. The `UserDefaults` stopgap ran five prompts longer
 than intended; naming the keys in one enum is what kept the eventual move to one afternoon,
 and that trick is worth reusing for anything else deliberately deferred.
+
+## Decision — a worktree inventory, and why "removable" is a high bar
+
+**Date:** 2026-08-06
+
+`Scripts/check-worktree.sh` answers "am I loitering in a worktree whose PR has landed?"
+and fires only from *inside* one. Nothing answered the question you can only ask from the
+repository root: what is lying around in total. Two worktrees had accumulated —
+`gui-design` on a long-running design branch, and `item-mirc-formatting-codes` parked
+mid-item — and from `main` there was no way to see them, let alone tell which mattered.
+
+`Scripts/worktrees.sh` lists them with a verdict, `--prune` removes the merged ones, and a
+second Stop hook blocks at the root when a merged one is still on disk. `make worktrees`
+and `make worktrees-prune`.
+
+**Removable means provably merged, never merely tidy.** The two signals are the ones
+`check-worktree.sh` already trusts: an upstream that no longer resolves, or a HEAD whose
+*tree* matches the base branch. Everything else is listed and left alone. The reason is
+that not every worktree here is the assistant's — design conversations live on their own
+long-running branches, and a tool that read "not merged yet" as "probably rubbish" would
+eventually delete somebody's unfinished thinking. Both current worktrees come back `keep`,
+which is the correct answer and the first thing the tool was checked against.
+
+**Rejected: pruning by age, or by branch-name convention.** Age punishes a branch you
+thought about for a week; a name convention (`prompt-*` is mine, everything else is not)
+breaks the moment a naming rule changes, and it had already changed once this stage.
+Merged-ness is a fact about content rather than about labels.
+
+**The ordering bug this also fixes.** `gh pr merge --squash --delete-branch` failed on
+both PRs merged today — once with "cannot delete branch 'X' used by worktree", once with
+"'main' is already used by worktree" — after the merge had already succeeded remotely,
+which reads alarmingly like a failed merge. The branch cannot be deleted while a worktree
+holds it, so `--prune` removes the worktree *first* and deletes the branch second. That is
+the order to land a PR in from now on: merge, prune, then pull.
+
+**Learned:** `git rev-parse --show-toplevel` answers with whichever worktree you are
+standing in, so using it to identify "the main checkout" excludes the wrong entry from the
+inventory — the tool listed the real `main` as a stray and hid the worktree it was running
+from. The first entry of `git worktree list --porcelain` is the main working tree.
