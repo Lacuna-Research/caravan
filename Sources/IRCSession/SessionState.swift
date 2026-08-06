@@ -45,6 +45,13 @@ public enum DisconnectReason: Sendable, Equatable {
     /// Registration could not complete.
     case registrationFailed(String)
 
+    /// The server's TLS certificate was not trusted — refused by the user, or presented
+    /// where there was nobody to ask.
+    ///
+    /// Never reconnected from, for the same reason as ``authenticationFailed(_:)``: it is
+    /// an answer, and asking again is not how you get a different one.
+    case trustRefused
+
     /// Authentication was refused, or could not be completed.
     ///
     /// Its own case, and never reconnected from: a wrong password does not become right on

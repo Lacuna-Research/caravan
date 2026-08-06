@@ -32,6 +32,17 @@ public enum TransportError: Error, Sendable, Equatable, CustomStringConvertible 
     /// after `ERROR` is not the same event as the user choosing to leave.
     case closedByPeer
 
+    /// The TLS certificate was refused — by the trust evaluator, or because there was
+    /// nobody to ask.
+    ///
+    /// Its own case because it is **a decision, not a fault.** TLS reports it as an
+    /// ordinary handshake failure (`-9808: bad certificate format`), which reads as a
+    /// broken server and, worse, is transient-looking enough that the session reconnects —
+    /// so refusing a certificate would pop the same dialog again a few seconds later,
+    /// forever. Naming it here is what lets the session treat it like a deliberate
+    /// disconnect.
+    case trustRefused
+
     public var description: String {
         switch self {
         case .invalidPort(let port): "invalid port \(port)"
@@ -39,6 +50,7 @@ public enum TransportError: Error, Sendable, Equatable, CustomStringConvertible 
         case .receiveFailed(let reason): "receive failed: \(reason)"
         case .sendFailed(let reason): "send failed: \(reason)"
         case .closedByPeer: "connection closed by peer"
+        case .trustRefused: "the server's TLS certificate was not trusted"
         }
     }
 }

@@ -242,6 +242,12 @@ public actor IRCSession {
             break
         case .ready:
             await beginRegistration()
+        case .failed(.trustRefused):
+            // A refused certificate is a decision, not a fault. Reconnecting would present
+            // the same trust question again a few seconds after the user declined it, and
+            // again after that — a dialog that will not take no for an answer.
+            Log.session.error("the server's TLS certificate was not trusted")
+            await endAttempt(reason: .trustRefused, allowingReconnect: false)
         case .failed(let error):
             Log.session.error("transport failed: \(String(describing: error), privacy: .public)")
             await endAttempt(reason: .transportFailed(error), allowingReconnect: true)

@@ -2763,3 +2763,54 @@ once per method.
 **Still not checked, and the entry above still stands:** that the sheets *read* well, that
 the trust sheet's red-for-a-changed-certificate lands, and that the password fields visibly
 arrive pre-filled. Measuring is not looking.
+
+## Stage 2, prompt 3 — refusing a certificate has to mean refusing it
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+A defect the GUI acceptance run found the moment it became possible to do one, in the code
+merged an hour earlier. The entry above records that the run was outstanding; this is what
+it caught.
+
+**What happened.** Declining a certificate in `TrustSheet` produced this:
+
+    *** Disconnected: receive failed: -9808: bad certificate format
+    *** Reconnecting (attempt 1) in 2.4s
+    *** Connecting...
+
+and the trust sheet reappeared. Two things wrong, one of them badly.
+
+- **The client reconnected from a decision.** `complete(false)` fails the TLS handshake
+  through the ordinary error path, so the session saw a transient-looking transport failure
+  and did what it does with those. The dialog would come back every couple of seconds until
+  the backoff ceiling, and then keep coming back. A prompt that will not accept "no" is
+  worse than no prompt, because it trains people to click the other button.
+- **The reason was Security.framework's, not ours.** `-9808: bad certificate format` reads
+  as a broken server. Nothing said the client had been told to refuse it.
+
+**The fix.** `TransportError.trustRefused` and `DisconnectReason.trustRefused`.
+`IRCConnection` latches a `RefusalFlag` when the verify block answers `false` — before
+answering, since the handshake failure races back the instant `complete(false)` returns —
+and `finish(_:)` substitutes the reason on the way out. `IRCSession` treats
+`.failed(.trustRefused)` like a deliberate disconnect: `allowingReconnect: false`, the same
+as `.authenticationFailed`. Both are answers, and asking again is not how you get a
+different one.
+
+**Why no test caught it.** `SelfSignedTLSTests` asserted the handshake *failed*, which was
+true and remained true. What it did not ask was what the layer above then did — and the
+layer above is where the whole behaviour lived. The transport test now asserts on
+`.failed(.trustRefused)` specifically rather than on "some failure", and
+`LiveTrustRefusalTests` drives a whole `IRCSession` at the refusal and asserts no
+`.reconnecting` state is ever emitted. That second one is the test that would have caught
+this, and it did not exist because the transport suite looked like enough coverage.
+
+**The general lesson, and it is the third time this project has learned it:** a test that
+stops at the seam it is about will miss anything the next layer does with the result. Stage
+1 shipped three defects a live run caught in a minute; this is a fourth, and the only reason
+it took an hour rather than a stage is that the run happened as soon as the screen was
+available.
+
+**Verified live, in the app:** the fingerprint shown matches `openssl x509 -fingerprint
+-sha256` exactly, for a fresh certificate and again for a rotated one; the changed-
+certificate case draws in red with the previous fingerprint beside the new one; accepting
+writes `known_hosts`; refusing leaves it untouched, ends the attempt, and now stays ended.

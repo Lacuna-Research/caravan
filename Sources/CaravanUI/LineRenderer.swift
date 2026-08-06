@@ -485,6 +485,10 @@ public struct LineRenderer: Sendable {
             case .transportFailed(let error): return "Disconnected: \(error)"
             case .registrationFailed(let text): return "Registration failed: \(text)"
             case .authenticationFailed(let text): return "Authentication failed: \(text)"
+            case .trustRefused:
+                // Says whose decision it was. The TLS error underneath this reads
+                // "-9808: bad certificate format", which sounds like a broken server.
+                return "Not connected: the server's certificate was not trusted"
             case .timedOut: return "Disconnected: the connection stopped responding"
             case .connectTimedOut: return "Could not connect: timed out"
             }
