@@ -37,16 +37,22 @@ public enum IRCFormatting {
         var style = InlineStyle()
         var pending = ""
         var index = text.startIndex
+        var pendingStart = text.startIndex
 
         func closeRun() {
             guard !pending.isEmpty else { return }
-            runs.append(FormattedText.Run(text: pending, style: style))
+            // `index` is at the code that ended the run, or at the end of the text, so
+            // this is exactly the stretch `pending` was gathered from.
+            runs.append(
+                FormattedText.Run(text: pending, style: style, range: pendingStart..<index)
+            )
             pending = ""
         }
 
         while index < text.endIndex {
             let character = text[index]
             guard allCodes.contains(character) else {
+                if pending.isEmpty { pendingStart = index }
                 pending.append(character)
                 index = text.index(after: index)
                 continue
@@ -167,9 +173,18 @@ public struct FormattedText: Sendable, Equatable {
         public let text: String
         public let style: InlineStyle
 
-        public init(text: String, style: InlineStyle) {
+        /// Where this run's text sits in the string it was parsed from.
+        ///
+        /// The codes themselves are the *gaps* between consecutive ranges, which is what
+        /// an editor showing raw text needs: the buffer strips the codes before drawing,
+        /// but the input box cannot — it has to draw the text it is going to send, codes
+        /// and all, and style only the stretches between them.
+        public let range: Range<String.Index>
+
+        public init(text: String, style: InlineStyle, range: Range<String.Index>) {
             self.text = text
             self.style = style
+            self.range = range
         }
     }
 

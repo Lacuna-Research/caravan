@@ -14,6 +14,18 @@ struct InputBar: View {
     let target: Target?
 
     let placeholder: String
+
+    /// What Tab completes against here. A closure, so it is answered when Tab is pressed
+    /// rather than when the view was built.
+    var sources: () -> CompletionSources = { CompletionSources() }
+
+    /// The palette the box draws its own codes in — the buffer's, so what you are writing
+    /// looks like what you are about to send.
+    var palette: Palette = Palette()
+
+    /// What a Tab-completed nick is followed by.
+    var completionStyle: CompletionStyle = CompletionStyle()
+
     let submit: (String) async -> Void
 
     @Environment(\.chatFont) private var chatFont
@@ -31,6 +43,9 @@ struct InputBar: View {
             InputField(
                 text: $state.text,
                 onSubmit: send,
+                sources: sources,
+                palette: palette,
+                completionStyle: completionStyle,
                 onRecallPrevious: { state.recallPrevious() },
                 onRecallNext: { state.recallNext() },
                 onEdited: { state.noteEdited() }

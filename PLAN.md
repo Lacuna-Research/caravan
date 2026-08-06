@@ -120,13 +120,6 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     rendering half shipped first because a client that writes codes it cannot read is
     the wrong way round.
 
-    ### Carry-forward
-
-    - From the rendering half: `IRCFormatting` already names every control character and
-      `InlineStyle` already models the switches, so authoring is inserting the characters
-      the parser round-trips. `InputTextView.doCommand(by:)` is the seam prompt 9 built
-      and prompt 15's tab completion also wants.
-
 11. **Multi-window model.** The tree's shape shipped with stage 1
     (GUI-DESIGN-NOTES.md §12); this item adds activity and navigation at scale
     (§1, §3, §8, §9, §11):
@@ -211,13 +204,6 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.
 15. **Tab completion.** mIRC-style cycling nick completion with configurable suffix
     (`: ` at line start, ` ` elsewhere), plus channel and command completion.
-
-    ### Carry-forward
-
-    - From prompt 9: the seam is `InputTextView.doCommand(by:)`, which already intercepts
-      Return and the arrow keys. Tab arrives there as `insertTab:`. The nick list to
-      complete against is on the buffer's `Channel` snapshot, ordered; the command names
-      are the `switch` in `CommandParser`, which is the one place that knows them.
 16. **Modes.** Render mode changes readably, track channel modes, ban/quiet/invex list
     dialogs (`367`/`368`, `346`–`349`), channel modes sheet.
 17. **Context menus.** Nick-list and channel right-click menus: whois, query, op/deop,

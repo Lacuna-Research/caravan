@@ -33,6 +33,10 @@ public final class ChatSettings {
         /// On, per §6. mIRC did not colour nicks; every client since has, and a channel
         /// of twenty people is much harder to read without it.
         public static let coloursNicks = true
+
+        /// What a Tab-completed nick is followed by. mIRC's defaults, and configurable
+        /// for the same reason mIRC made them so: people are particular about it.
+        public static let completionSuffix = CompletionStyle()
     }
 
     /// The range the form offers, and the range a hand-edited file is clamped to.
@@ -56,6 +60,32 @@ public final class ChatSettings {
         public static let nickListVisible = "ui.nick-list-visible"
         public static let paletteMode = "chat.palette"
         public static let coloursNicks = "chat.colour-nicks"
+        public static let completionSuffixAtLineStart = "chat.completion-suffix-line-start"
+        public static let completionSuffix = "chat.completion-suffix"
+    }
+
+    /// What a Tab-completed nick is followed by, at the start of a line and elsewhere.
+    ///
+    /// **Stored with the spaces written out**, because the config file cannot hold a value
+    /// that begins or ends with one — whitespace around a value is not significant there,
+    /// which is a deliberate property of the format rather than a limitation to work
+    /// around. `_` stands for a space on the way in and out, so `: ` is written `:_`.
+    public var completionSuffix: CompletionStyle {
+        didSet {
+            config.set(
+                Self.encodeSuffix(completionSuffix.atLineStart),
+                forKey: Key.completionSuffixAtLineStart
+            )
+            config.set(Self.encodeSuffix(completionSuffix.elsewhere), forKey: Key.completionSuffix)
+        }
+    }
+
+    static func encodeSuffix(_ suffix: String) -> String {
+        suffix.replacingOccurrences(of: " ", with: "_")
+    }
+
+    static func decodeSuffix(_ stored: String) -> String {
+        stored.replacingOccurrences(of: "_", with: " ")
     }
 
     /// Which of the two base palettes mIRC's colour indices read, per §5.
@@ -169,6 +199,12 @@ public final class ChatSettings {
             config.string(Key.paletteMode).flatMap(Palette.Mode.init(rawValue:))
             ?? Default.paletteMode
         self.coloursNicks = config.bool(Key.coloursNicks) ?? Default.coloursNicks
+        self.completionSuffix = CompletionStyle(
+            atLineStart: config.string(Key.completionSuffixAtLineStart)
+                .map(Self.decodeSuffix) ?? Default.completionSuffix.atLineStart,
+            elsewhere: config.string(Key.completionSuffix)
+                .map(Self.decodeSuffix) ?? Default.completionSuffix.elsewhere
+        )
     }
 
     /// The colours configured here, as the buffers and the renderer want them.

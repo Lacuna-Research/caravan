@@ -171,4 +171,42 @@ struct FormattingTests {
         let art = "  \u{03}4/\\\u{03} \u{02}|\u{02}  "
         #expect(IRCFormatting.parse(art).plain == "  /\\ |  ")
     }
+
+    // MARK: - Where the runs came from
+
+    /// The input box styles raw text in place, so it needs to know which stretches of the
+    /// original string each run came from — the codes are the gaps between them.
+    @Test("every run's range points at its own text in the source")
+    func runsCarryTheirRange() {
+        for source in [
+            "plain",
+            "\u{02}bold\u{02} then not",
+            "  \u{03}04,08red on yellow\u{0F} after",
+            "\u{04}FF00FF hex\u{0F}",
+            "\u{02}\u{1D}\u{1F}adjacent codes",
+            "",
+        ] {
+            let formatted = IRCFormatting.parse(source)
+            for run in formatted.runs {
+                #expect(
+                    String(source[run.range]) == run.text,
+                    "run \"\(run.text)\" must sit at its own range in \"\(source.debugDescription)\""
+                )
+            }
+        }
+    }
+
+    /// Ranges in order and never overlapping is what lets a caller treat the gaps as the
+    /// codes. If two runs overlapped, a code would be styled as text.
+    @Test("run ranges are in order and do not overlap")
+    func rangesAreOrdered() {
+        let source = "\u{02}a\u{02}b\u{03}4c\u{0F}d"
+        let runs = IRCFormatting.parse(source).runs
+        var cursor = source.startIndex
+        for run in runs {
+            #expect(run.range.lowerBound >= cursor)
+            cursor = run.range.upperBound
+        }
+        #expect(cursor <= source.endIndex)
+    }
 }

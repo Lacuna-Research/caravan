@@ -293,6 +293,23 @@ public final class AppModel {
         debug.applySettings()
     }
 
+    // MARK: - Completion
+
+    /// What Tab completes against in a given window.
+    ///
+    /// Assembled here because it is the one place that can see all three sources at once:
+    /// the buffer's membership, the connection's open channels, and the command table.
+    /// Nothing in it needs a round trip — completing against anything the server would
+    /// have to be asked for is the line this stage does not cross.
+    public func completionSources(in buffer: ChannelBuffer?) -> CompletionSources {
+        CompletionSources(
+            // The nick list's own order, which is rank then casemapped alphabetical.
+            nicks: buffer?.members.map(\.nick.raw) ?? [],
+            channels: connection?.channels.map(\.name.raw) ?? [],
+            commands: CompletionSources.allCommands
+        )
+    }
+
     // MARK: - Diagnostics
 
     /// Puts the redacted wire trace, plus the app and OS version, on the clipboard.

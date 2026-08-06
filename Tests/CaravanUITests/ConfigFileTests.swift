@@ -176,6 +176,22 @@ struct ConfigFileTests {
         #expect(settings.isNickListVisible == ChatSettings.Default.nickListVisible)
         #expect(settings.paletteMode == ChatSettings.Default.paletteMode)
         #expect(settings.coloursNicks == ChatSettings.Default.coloursNicks)
+        #expect(settings.completionSuffix == ChatSettings.Default.completionSuffix)
+    }
+
+    /// The config format cannot hold a value that begins or ends with a space — that is a
+    /// deliberate property of it, not a limitation — and `": "` is exactly such a value.
+    @Test("a completion suffix round-trips through the file with its spaces")
+    func completionSuffixRoundTrips() {
+        let url = temporaryFile()
+        let settings = ChatSettings(config: ConfigFile(url: url))
+        settings.completionSuffix = CompletionStyle(atLineStart: ", ", elsewhere: " - ")
+
+        let reloaded = ChatSettings(config: ConfigFile(url: url))
+        #expect(reloaded.completionSuffix.atLineStart == ", ")
+        #expect(reloaded.completionSuffix.elsewhere == " - ")
+        // Written as `_`, which is what makes it survive a format that trims whitespace.
+        #expect(ConfigFile(url: url).string("chat.completion-suffix-line-start") == ",_")
     }
 
     /// The same rule the numbers follow: this file is hand-edited, and a value nobody

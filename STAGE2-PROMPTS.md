@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 1/17 complete. Next: prompt 2.
+**Status:** 2/17 complete. Next: prompt 3.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -107,24 +107,10 @@ Do not: aliases or scripting — a Ctrl+K that runs a script is stage 3. No comp
 anything that requires a network round trip.
 ```
 
-**Carry-forward** *(consumed when this prompt runs)*
-
-- From prompt 1: `IRCFormatting` names every control character and `InlineStyle` models
-  every switch, so authoring is inserting characters the parser already round-trips.
-  `IRCFormatting.parse` on the input box's own text gives the preview for free.
-- From prompt 1, and this cost the whole item once: **styling dies silently at the
-  crossing into an `NSTextView`, in two different ways.** `NSAttributedString(_:including:)`
-  carries the named scope and nothing else — `AttributeScopes.CaravanAttributes` now nests
-  `AppKitAttributes` for exactly this reason — and a bare `.single` on `underlineStyle` or
-  `strikethroughStyle` resolves to SwiftUI's `Text.LineStyle`, which has no
-  `NSAttributedString` key at all. `LineRenderer.singleLine` is the typed constant that
-  avoids the second. The input box's preview draws through an `NSTextView` too, so assert
-  the *storage* rather than the `AttributedString`: `stylingReachesTheTextView` in
-  `InlineFormattingTests` is the shape to copy.
-- From prompt 1: the colour strip's swatches should come from `MIRCPalette` through
-  `Palette.colours`, not a second table. Note they may be appearance-resolving `NSColor`s,
-  so a swatch compares equal to a plain colour only after resolving — `drawn(_:in:)` in
-  `InlineFormattingTests` is the helper for that.
+**Status:** complete. Ctrl+O and Ctrl+R ship alongside the four named, being the same
+table — without a reset you cannot stop a code. The one thing without a test is that the
+colour strip *presents*: `NSPopover` never reports `isShown` in a headless bundle, so it
+is checked live instead, and `BUILD-LOG.md` records that.
 
 ---
 
@@ -312,6 +298,15 @@ them apart means writing `/ban` twice.
 
 *To be written out before it starts.*
 
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 2: **every command added to `CommandParser`'s switch must also be added to
+  `CommandParser.knownCommands`**, directly above it — that list is what Tab completion
+  offers, and this prompt roughly triples the table. Swift cannot enumerate a `switch`, so
+  nothing will fail if you forget; the command simply never gets offered.
+  `everyKnownCommandParses` in `CommandParserTests` catches only the opposite mistake, a
+  name listed that the switch no longer handles.
+
 ---
 
 ## Prompt 9 — Things you can do to what is in the buffer
@@ -350,6 +345,11 @@ file survives being hand-edited. Display carries the density and zoom model from
   carried and tested but nothing writes them, and `ChatSettings` does not persist them.
   Whether that grid lands here or waits for stage 3's Colors dialog is this prompt's call —
   the stage 3 item records the persistence question either way.
+- From prompt 2: a Typing section exists too, holding the two nick-completion suffixes
+  (`ChatSettings.completionSuffix`, a `CompletionStyle`). Note how they are stored: the
+  config format cannot hold a value with a leading or trailing space, so `_` stands for a
+  space — `ChatSettings.encodeSuffix`. Any later setting whose value is whitespace-bearing
+  has the same problem and should use the same answer rather than inventing a second one.
 
 ---
 

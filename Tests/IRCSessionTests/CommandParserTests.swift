@@ -376,4 +376,42 @@ struct CommandParserTests {
         // reason for parting the window we are in.
         #expect(message.wireForm == "PART #swift :&local bye")
     }
+
+    // MARK: - The list Tab completion offers
+
+    /// `knownCommands` is hand-kept beside the switch, because Swift cannot enumerate one.
+    /// This is the half that *can* be checked: every name listed must actually be handled,
+    /// so a case deleted from the switch cannot leave a name being offered that now falls
+    /// through to the server as a raw verb.
+    ///
+    /// The other direction — a case added and not listed — is only catchable by reading,
+    /// which is why the list sits directly above the switch.
+    @Test("every command offered for completion is one the switch answers")
+    func everyKnownCommandParses() {
+        let parser = CommandParser()
+        for name in CommandParser.knownCommands {
+            let actions = parser.actions(for: "/\(name)", activeTarget: Self.channelTarget)
+            // The passthrough is what an *unknown* verb produces: the verb, upper-cased,
+            // straight onto the wire. Anything the switch handles answers differently —
+            // with a usage error, or a typed action.
+            let isPassthrough =
+                actions.count == 1
+                && {
+                    if case .send(let message)? = actions.first {
+                        return message.wireForm.hasPrefix(name.uppercased())
+                            && message.parameters.isEmpty
+                    }
+                    return false
+                }()
+            #expect(!isPassthrough, "/\(name) is offered but falls through to the server")
+        }
+    }
+
+    /// Aliases are offered too — someone who types `/j` wants to see it.
+    @Test("the offered list includes the aliases")
+    func aliasesAreOffered() {
+        #expect(CommandParser.knownCommands.contains("j"))
+        #expect(CommandParser.knownCommands.contains("m"))
+        #expect(CommandParser.knownCommands == CommandParser.knownCommands.sorted())
+    }
 }

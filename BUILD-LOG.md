@@ -2517,3 +2517,101 @@ Both settings round-tripped through `caravan.conf`.
 are tested, but the form offers neither — they belong with stage 3's Colors dialog, where a
 99-swatch grid can be built properly rather than bolted onto a settings list. Recorded on
 that `PLAN.md` item.
+
+---
+
+## Stage 2, prompt 2 — the input field grows up
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+Authoring the codes prompt 1 taught the buffer to read, and completing what you are typing.
+Both items in one prompt because both are `InputTextView`, and two prompts would have
+touched the same forty lines twice. 450 tests.
+
+**Shipped:** `TabCompletion` and `CompletionSources`, `InputStyling`, `ColourStrip`,
+`CommandParser.knownCommands`, a `range` on every parsed run, and the key handling that
+joins them up.
+
+**Decisions:**
+
+- **The chords are read in `keyDown`, not `doCommand(by:)` — the prompt's plan was wrong
+  about this.** It said "Tab arrives there as `insertTab:`, and so do the control-key
+  chords". Tab does; the chords do not usefully. **Ctrl+I *is* Tab** — the same character,
+  arriving as the same selector — while Ctrl+B and Ctrl+K arrive as `moveBackward:` and
+  `deleteToEndOfParagraph:`, the Emacs bindings AppKit ships. By `doCommand` the letter is
+  gone and only `keyDown` still has `charactersIgnoringModifiers`. Taking those bindings is
+  the deliberate trade: in an IRC input box, Ctrl+B meaning bold is the older muscle memory.
+- **Ctrl+O and Ctrl+R ship too**, though the prompt named only four. Without a reset you
+  cannot stop a code, and reverse has no other way in; they are the same table.
+- **The codes stay visible in the box, as dim `^B` markers.** mIRC hides them. An invisible
+  control character in an *editable* box gives a caret that moves without visible cause and
+  a Backspace that appears to delete nothing — the box is the one place the raw text has to
+  be honest, because it is the thing being sent. `showsControlCharacters` draws them, so
+  the marker is AppKit's own rather than a substitution that would change what goes out.
+- **`FormattedText.Run` gained a `range`, and that is why the input box needs no second
+  parser.** The buffer strips the codes and styles what is left; the box must keep every
+  character and style the stretches *between* the codes. One parse answers both, with the
+  codes as the gaps between consecutive ranges. `InputStyling` is the opposite operation to
+  `LineRenderer`'s and is separate code for that reason, not for want of reuse.
+- **The colour strip is sixteen swatches, not ninety-nine**, and its colours come from
+  `Palette` rather than a second table. The extended range is typed as digits, which is how
+  it is reached in mIRC. A 99-swatch grid hanging off an input box is a colour dialog, and
+  that is stage 3's.
+- **A picked colour is written as two digits.** `^C4` followed by a message beginning with
+  a digit reads as index 42 on the receiving client. Zero-padding costs one character.
+- **The suffix is configurable, and stored with `_` for a space.** The prompt asked for a
+  configurable suffix and it would have been easy to ship only the rule. `caravan.conf`
+  cannot hold a value that begins or ends with a space — whitespace around a value is not
+  significant, which is a deliberate property of the format rather than a limitation — and
+  `": "` is exactly such a value. `_` stands for a space on the way in and out. The
+  alternative was a quoting scheme, which is a much larger change to a format whose paths
+  are public API, for one setting.
+- **`CommandParser.knownCommands` lives beside the switch it lists.** The input box must not
+  keep a second copy of the command table. It is still hand-kept — Swift cannot enumerate a
+  `switch` — so `everyKnownCommandParses` checks the half that is checkable: nothing listed
+  may fall through to the passthrough. A case added and not listed is only catchable by
+  reading, which is why they are adjacent.
+
+**Found by its own tests, before any of it ran:** completing `#swift` at the start of a line
+produced `#swift: `, addressing a channel as though it were a person. The suffix and the
+candidate list were being decided separately and had drifted apart; both now come from one
+`Kind` decided once. Two tests would have had to be wrong together to miss it.
+
+**Found by the live run, twice.** The colour strip **did not go away when you typed the
+digits** —
+which is the case it exists to support. `.transient` closes a popover when the user
+interacts *outside* it, and a keystroke aimed at the box behind it does not count, so the
+strip sat there through `04red` and the next Ctrl+K merely closed it. `didChangeText()` now
+dismisses it: every edit puts it away, including the `^C` that opened it, which is inserted
+before the strip is shown and so cannot dismiss its own strip.
+
+And the suffix setting's form rows were **unusable on first draw**: a `TextField` inside a
+`LabeledContent` draws its own placeholder as a second label, and in a 70pt box that label
+wrapped one word per line — a five-line-tall row with a sliver of field beside it. Every
+test passed; nothing but looking at it would have found it. `labelsHidden()` fixes it, and
+the fields are bordered where the form's others are not, because a suffix is often a single
+space and an unbordered field holding one looks like no field at all.
+
+**Not covered by a test, and deliberately:** that the strip presents at all. `NSPopover`
+never reports `isShown` in a headless test bundle, so the assertion passes or fails on the
+test environment rather than on the code. A test written for it was deleted rather than
+left flaky; the strip is checked live, and this entry is the record that it was.
+
+**Learned — the wrong-binary lesson has a third form.** Prompts 9 and 10 both recorded
+`DerivedData` being keyed on the project path. This time the path was right and the
+*instance* was wrong: `⌘Q` through System Events silently failed, three copies of Caravan
+were running, and `tell process "Caravan"` addressed whichever one it found. Two live checks
+were made against a binary two builds old, and both "reproduced" a defect that was already
+fixed. `ps aux | rg Caravan.app` before trusting a live check, and `pkill -f` rather than
+`⌘Q` to end one.
+
+**Live acceptance, against Libera over TLS,** in `##caravan-input` with a scripted listener
+as the second party. Composed the prompt's line — a Tab-completed nick, `^B`bold`^B`, a
+`^C04` colour and `^O` — and watched the box draw it while typing: **loud** in bold, `red`
+in red, the codes as dim markers. Sent it; the listener heard exactly
+`caravanin2: \x02loud\x02 and \x0304red\x0f done`, and the buffer echoed it looking the way
+it had looked while being typed. Also live: Tab completion of a nick with `: ` at line
+start, `/j` → `/j ` → `/join ` cycling through the aliases, `##ca` completing mid-sentence
+with a space rather than a colon, and the strip opening, dismissing on the digits, reopening,
+and inserting `04` from a clicked swatch. The suffix setting was changed to `, ` in the form,
+checked in `caravan.conf` as `,_`, and then watched completing `carav` to `caravanin1, `.
