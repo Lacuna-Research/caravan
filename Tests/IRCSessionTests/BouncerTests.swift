@@ -333,3 +333,92 @@ struct BouncerTests {
         await harness.shutDown()
     }
 }
+
+/// A property of the scripted server itself, pinned because breaking it cost an afternoon.
+///
+/// `ScriptedIRCServer` gained multi-connection support for the bouncer tests, and briefly
+/// broadcast *scripted replies* as well as unprompted lines. A welcome burst triggered by
+/// one client's `CAP END` then landed on every other client: the bouncer's control
+/// connection saw a second `001`, re-ran registration, re-sent `BOUNCER LISTNETWORKS` and
+/// re-added a network the test had just removed. It looked exactly like a product bug, it
+/// reproduced only under full-suite load, and it reached `main`.
+@Suite("Scripted server")
+struct ScriptedServerTests {
+    private func session(port: UInt16) -> (IRCSession, StreamLog<IRCEvent>) {
+        let session = IRCSession(
+            configuration: SessionConfiguration(
+                host: "127.0.0.1",
+                port: port,
+                tls: .disabled,
+                nick: "alice",
+                connectTimeout: .seconds(5),
+                backoff: BackoffPolicy(initialDelay: .seconds(3600), multiplier: 1)
+            ),
+            trace: TraceBuffer(capacity: 256)
+        )
+        let events = StreamLog<IRCEvent>()
+        events.drain(session.events())
+        return (session, events)
+    }
+
+    private func registrations(_ log: StreamLog<IRCEvent>) async -> Int {
+        await log.snapshot().filter { if case .registered = $0 { true } else { false } }.count
+    }
+
+    @Test("a scripted reply reaches only the client that asked for it")
+    func repliesAreNotBroadcast() async throws {
+        let server = try ScriptedIRCServer()
+        let port = try await server.start()
+        await server.scriptCapabilityNegotiation(nick: "alice", offering: ["multi-prefix"])
+
+        let (first, firstEvents) = session(port: port)
+        await first.connect()
+        #expect(await waitUntil { await registrations(firstEvents) == 1 })
+
+        // A second client registering must not deliver a welcome to the first.
+        let (second, secondEvents) = session(port: port)
+        await second.connect()
+        #expect(await waitUntil { await registrations(secondEvents) == 1 })
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await registrations(firstEvents) == 1)
+
+        await first.disconnect()
+        await second.disconnect()
+        await server.stop()
+    }
+
+    /// The other half: a line the server *volunteers* does go to everyone, which is how a
+    /// `BOUNCER NETWORK` notification reaches a control connection opened before the bound
+    /// ones.
+    @Test("an unprompted line is broadcast to every client")
+    func unpromptedLinesBroadcast() async throws {
+        let server = try ScriptedIRCServer()
+        let port = try await server.start()
+        await server.scriptCapabilityNegotiation(nick: "alice", offering: ["multi-prefix"])
+
+        let (first, firstEvents) = session(port: port)
+        let (second, secondEvents) = session(port: port)
+        await first.connect()
+        await second.connect()
+        #expect(await waitUntil { await server.connectionCount() == 2 })
+
+        await server.send(":irc.example.org NOTICE * :heard by everyone")
+        for log in [firstEvents, secondEvents] {
+            #expect(
+                await waitUntil {
+                    await log.snapshot().contains {
+                        if case .raw(let message) = $0 {
+                            message.parameters.last == "heard by everyone"
+                        } else {
+                            false
+                        }
+                    }
+                }
+            )
+        }
+
+        await first.disconnect()
+        await second.disconnect()
+        await server.stop()
+    }
+}

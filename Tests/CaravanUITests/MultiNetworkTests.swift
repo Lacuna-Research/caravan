@@ -208,12 +208,15 @@ struct MultiNetworkTests {
         )
 
         let model = temporaryModel()
-        await model.connect(using: settings(port: bouncer.port))
+        let control = try #require(await model.connect(using: settings(port: bouncer.port)))
         #expect(await waitUntil { model.connections.count == 2 })
 
         await bouncer.server.send(":bouncer BOUNCER NETWORK 1 *")
         #expect(await waitUntil { model.connections.count == 1 })
         #expect(model.connections.first?.bouncerNetworkID == nil)
+        // The bouncer itself stays: only the network behind it went away.
+        #expect(model.connections.first === control)
+        #expect(control.bouncerNetworks.isEmpty)
 
         await model.disconnectAll()
         await bouncer.server.stop()
