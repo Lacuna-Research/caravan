@@ -29,7 +29,10 @@ public struct RootView: View {
                 closeChannelButton
             }
             ToolbarItem(placement: .primaryAction) {
-                if model.connection?.isConnected == true {
+                // Acts on the network you are looking at, not on "the" connection — there
+                // is no such thing now. Connecting is always available, because it means
+                // "open another network".
+                if model.activeConnection?.isConnected == true {
                     Button("Disconnect") {
                         Task { await model.disconnect() }
                     }
@@ -56,7 +59,7 @@ public struct RootView: View {
         // was selected — which is what makes selecting a buffer bring the chat area back.
         if model.isShowingCanvas {
             SettingsDebugCanvas(model: model)
-        } else if let connection = model.connection {
+        } else if let connection = model.activeConnection {
             if let buffer = model.selectedChannel {
                 ChannelBufferView(model: model, buffer: buffer)
             } else {
@@ -78,11 +81,11 @@ public struct RootView: View {
     /// two networks are different rooms.
     private var title: String {
         if model.isShowingCanvas { return "Settings & Debug" }
-        return model.selectedChannel?.name.raw ?? model.connection?.displayName ?? "Caravan"
+        return model.selectedChannel?.name.raw ?? model.activeConnection?.displayName ?? "Caravan"
     }
 
     private var subtitle: String {
-        guard !model.isShowingCanvas, let connection = model.connection else { return "" }
+        guard !model.isShowingCanvas, let connection = model.activeConnection else { return "" }
         return model.selectedChannel == nil ? connection.statusSummary : connection.displayName
     }
 

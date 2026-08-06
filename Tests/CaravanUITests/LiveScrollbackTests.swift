@@ -148,3 +148,61 @@ struct LiveScrollbackTests {
         await connection.quit(reason: "acceptance run")
     }
 }
+
+/// Prompt 4's acceptance, as far as a machine can take it: **two real networks at once.**
+///
+/// Libera and OFTC, which are different ircds run by different people — so this exercises
+/// the thing a scripted server cannot, which is that two independent sessions with
+/// independent nicks, capabilities and casemappings really do coexist under one `AppModel`.
+///
+///     CARAVAN_LIVE_TESTS=1 swift test --filter LiveMultiNetworkTests
+@MainActor
+@Suite(
+    "live multi-network",
+    .enabled(if: ProcessInfo.processInfo.environment["CARAVAN_LIVE_TESTS"] != nil)
+)
+struct LiveMultiNetworkTests {
+    @Test("two real networks connect at once and keep their own state")
+    func twoRealNetworks() async throws {
+        let model = temporaryModel()
+        let nick = "caravan\(Int.random(in: 100_000...999_999))"
+
+        for host in ["irc.libera.chat", "irc.oftc.net"] {
+            await model.connect(
+                using: ConnectionSettings(
+                    host: host,
+                    port: 6697,
+                    useTLS: true,
+                    nick: nick,
+                    realName: "Caravan test"
+                )
+            )
+        }
+        #expect(model.connections.count == 2)
+        #expect(
+            await waitUntil(timeout: .seconds(60)) {
+                model.connections.allSatisfy(\.isConnected)
+            }
+        )
+
+        // Each took its own name from its own `ISUPPORT`, which is also the proof that the
+        // two sessions are not sharing state.
+        let names = model.connections.map(\.displayName)
+        #expect(names.contains("Libera.Chat"), "got \(names)")
+        #expect(names.contains("OFTC"), "got \(names)")
+
+        // And their capabilities differ, which is exactly the kind of per-network state a
+        // single shared session would flatten.
+        let libera = try #require(model.connections.first { $0.displayName == "Libera.Chat" })
+        #expect(libera.capabilities.isEnabled(.echoMessage))
+
+        // The selection decides which one a typed line reaches.
+        for connection in model.connections {
+            model.selection = .status(connection.id)
+            #expect(model.activeConnection === connection)
+        }
+
+        print("LIVE: connected to \(names.joined(separator: " and "))")
+        await model.disconnectAll()
+    }
+}

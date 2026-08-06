@@ -24,7 +24,7 @@ struct StatusWindowTests {
             self.model = model
         }
 
-        var connection: ConnectionViewModel { model.connection! }
+        var connection: ConnectionViewModel { model.activeConnection! }
 
         func text(of log: MessageLogController) -> String {
             let key = ObjectIdentifier(log)
@@ -63,7 +63,7 @@ struct StatusWindowTests {
                 realName: "Alice Example"
             )
         )
-        #expect(await waitUntil { model.connection?.isConnected == true })
+        #expect(await waitUntil { model.activeConnection?.isConnected == true })
         return harness
     }
 

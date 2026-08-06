@@ -2814,3 +2814,92 @@ available.
 -sha256` exactly, for a fresh certificate and again for a rotated one; the changed-
 certificate case draws in red with the previous fingerprint beside the new one; accepting
 writes `known_hosts`; refusing leaves it untouched, ends the attempt, and now stays ended.
+
+## Stage 2, prompt 4 — multi-network, and the bouncer
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+Two networks at once, and one bouncer pretending to be several. Together because bouncer
+mode *is* `bouncer-networks`: writing multi-network without it means writing the sidebar
+model twice. 570 tests.
+
+**Shipped:** `AppModel.connections` in place of `connection`, `BouncerNetwork` and
+`BouncerReply`, `BOUNCER BIND`/`LISTNETWORKS` in the negotiation state machine,
+`CHATHISTORY LATEST` on join, the `<user>/<network>` fallback, and per-connection expansion.
+
+**The design decision the whole prompt turns on: `BOUNCER BIND` goes on the connection being
+registered, so *both modes are one connection per network.*** The prompt describes bouncer
+mode as "a single connection to soju where `soju.im/bouncer-networks` enumerates the
+upstream networks", which is half right — the enumerating connection is one, but the
+extension requires a bind before registration completes, and a bound connection is talking
+to an upstream network rather than to the bouncer. So a bouncer is **one control connection
+plus one per network**, and a direct setup is one per network. The tree is a flat list of
+networks in both cases, and "the UI must not care which is in play" falls out rather than
+having to be engineered. Read the spec rather than trusting memory; the memory was wrong.
+
+**Decisions:**
+
+- **Connecting adds a network rather than replacing one.** It replaced because there could
+  only be one. "Connect" now means what the Connect sheet and `/server` have always looked
+  like they meant. Same host, same port *and same ident* selects what is already open
+  instead of growing a duplicate row — the ident is in that test because `alice/libera` and
+  `alice/oftc` are the same host and are emphatically not the same network.
+- **A bouncer's networks are siblings of direct ones, not children of the bouncer.** Nesting
+  would make the tree two levels deep for a bouncer and one for a direct connection, which
+  is precisely the UI caring which mode is in play.
+- **The bouncer keeps a row of its own.** So the tree is *not* byte-identical between the
+  two modes: a bouncer contributes one extra row. It earns it — `BouncerServ` is reachable
+  there and bouncer-level failures have to land somewhere — and the part the prompt cares
+  about, the networks and their channels, is identical. Recorded as a deviation rather than
+  quietly satisfied.
+- **A bind that cannot happen fails the attempt.** A bound connection whose server turns out
+  not to support the capability would otherwise register against the bouncer itself and show
+  the wrong network's traffic under this network's name, silently, which is the worst
+  possible failure for this feature.
+- **The whole network list is re-emitted on every change, never a delta.** `IRCEvent
+  .bouncerNetworks` carries all of them, and `AppModel.reconcileBouncerNetworks` reconciles.
+  Applying a stream of edits to a list of open buffers is much easier to get wrong.
+- **Discovering a network never steals the selection.** They arrive seconds after connecting
+  and several at once; yanking the user into the last to arrive would be its own hostility.
+- **Closing a bouncer closes the networks behind it.** They are reached *through* it, and a
+  row that could never reconnect is a lie the tree tells.
+- **`CHATHISTORY LATEST` fires on our own `JOIN` only.** A busy channel would otherwise
+  produce one request per arrival. A limit of zero turns backfill off, and means "ask for
+  nothing" rather than "ask for zero lines".
+- **A network takes its name from `ISUPPORT`'s `NETWORK=`**, and a name passed in at
+  construction outranks it — the bouncer's word for an upstream network beats that
+  network's own, because the bouncer is the thing that knows there are several behind one
+  host.
+
+**Surprises:**
+
+- **`ScriptedIRCServer` could only hold one connection at a time**, and silently cancelled
+  the previous one on accept. Every test until now used one connection, so nothing had
+  noticed. A bouncer test has a control connection *and* a bound one, and the symptom was a
+  notification arriving at the wrong session — which read as a product bug for a while. It
+  now keeps a list, broadcasts `send`, and gives each connection **its own `LineFramer`**:
+  two clients' bytes interleave on the way in, and one shared framer splices a line from
+  each into nonsense.
+- **A `switch` case that could never match.** `adoptNetworkName` was added as
+  `case .numeric(5, let parameters)` *after* the general `case .numeric(let code, ...)`, so
+  it never ran and the network was never renamed. Swift warns about many things; an
+  unreachable enum-pattern case with a payload constraint is not one of them.
+
+**Carry-forward consumed, and one only half:** the expansion state moved off
+`AppModel.isNetworkExpanded` onto `ConnectionViewModel.isExpanded`, and the two capabilities
+were added as the notes asked. The note about **widening `IRCTags` beyond `IRCEvent.message`
+is deliberately not done** — soju's `chathistory` replays messages, which already carry
+their tags, so the general envelope would be built for events this bouncer does not send.
+The note moves to prompt 12, which owns de-duplication and is where a replayed `JOIN` would
+first actually matter.
+
+**Verified live, against Libera and OFTC at once:** both connected under one `AppModel`,
+each taking its own name from its own `ISUPPORT` (`Libera.Chat` and `OFTC`), with
+independent capabilities and independent selection. That is the first half of the prompt's
+acceptance and it is now a test.
+
+**Not done: the bouncer half of the acceptance, and the GUI.** There is no soju to point at
+— `PLAN.md`'s testing strategy has wanted a local one since stage 1 and this is the prompt
+that finally needs it — so bouncer mode is proven against a scripted server that speaks the
+extension, and against the spec, but not against soju itself. And the machine was locked
+again, so the tree was not looked at. Both are on the PR.
