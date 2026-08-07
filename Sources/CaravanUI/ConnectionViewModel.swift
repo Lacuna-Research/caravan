@@ -112,6 +112,13 @@ public final class ConnectionViewModel: Identifiable {
     /// carry one. Starts at the `ISUPPORT` default, as the session's own does.
     @ObservationIgnored private var caseMapping: IRCCaseMapping = .rfc1459
 
+    /// What the server said it supports, mirrored from the session's own.
+    ///
+    /// A synchronous copy for the views: the modes sheet needs `EXCEPTS`, `INVEX` and
+    /// `CHANMODES` while drawing, and `body` cannot `await`. Refreshed when an `ISUPPORT`
+    /// line arrives, which is the only thing that changes it.
+    public private(set) var lastKnownCapabilities = ServerCapabilities()
+
     /// What `CAP` negotiation settled on, mirrored from the session's own.
     ///
     /// Read on the send path, which is synchronous with respect to the user's keystroke —
@@ -323,6 +330,56 @@ public final class ConnectionViewModel: Identifiable {
         await session.send(message)
     }
 
+    /// `/ban`, `/unban` and `/kickban`, with the mask worked out here.
+    ///
+    /// **This is why the parser hands over a person rather than a mask.** A useful ban is
+    /// `*!*@host` — banning `bob!*@*` is defeated by typing `/nick bob2`, which is not
+    /// much of a ban. The host lives in the channel roster, the roster lives here, and a
+    /// pure parser has neither.
+    ///
+    /// A subject that already looks like a mask is passed through untouched, so
+    /// `/ban *!*@evil.example` does exactly what it says.
+    public func ban(
+        channel: String,
+        subject: String,
+        isSet: Bool,
+        kickReason: String?,
+        from target: Target?
+    ) async {
+        let name = IRCChannelName(channel, mapping: caseMapping)
+        let mask = banMask(for: subject, in: name)
+        await send(
+            IRCMessage(verb: "MODE", parameters: [channel, isSet ? "+b" : "-b", mask]),
+            from: target
+        )
+        // **The ban goes out first.** Kicking before banning leaves a window, however
+        // small, in which they can rejoin — and the whole point of `/kickban` over two
+        // commands is that it closes it.
+        guard let kickReason else { return }
+        let parameters =
+            kickReason.isEmpty ? [channel, subject] : [channel, subject, kickReason]
+        await send(IRCMessage(verb: "KICK", parameters: parameters), from: target)
+    }
+
+    /// The mask to ban, from a nick or a mask.
+    ///
+    /// Falls back to `nick!*@*` when the host is not known — which happens for someone who
+    /// has already left, or in a channel whose `NAMES` did not carry hosts. A weaker ban
+    /// than intended is better than no ban and an error message.
+    func banMask(for subject: String, in channel: IRCChannelName) -> String {
+        // Anything with mask punctuation in it was written as a mask.
+        guard !subject.contains("!"), !subject.contains("@"), !subject.contains("*") else {
+            return subject
+        }
+        let key = IRCNick(subject, mapping: channel.mapping)
+        guard let member = buffersByName[channel]?.channel.members[key],
+            let host = member.host, !host.isEmpty
+        else {
+            return "\(subject)!*@*"
+        }
+        return "*!*@\(host)"
+    }
+
     /// Shows a usage or argument error in the window it came from.
     ///
     /// The same red line an unparseable message already produced, reused rather than
@@ -504,6 +561,7 @@ public final class ConnectionViewModel: Identifiable {
 
     private func handle(_ event: IRCEvent) {
         noteCaseMapping(in: event)
+        collectListMode(event)
         switch event {
         case .stateChanged(let newState):
             state = newState
@@ -517,7 +575,15 @@ public final class ConnectionViewModel: Identifiable {
             removeBuffer(name)
         case .numeric(let code, let parameters):
             collectMOTD(code: code, parameters: parameters)
-            if code == 5 { adoptNetworkName(fromISUPPORT: parameters) }
+            if code == 5 {
+                adoptNetworkName(fromISUPPORT: parameters)
+                // Read back off the actor rather than parsed again here: the session has
+                // already applied this line, and a second parser would be a second answer.
+                Task { [weak self] in
+                    guard let self else { return }
+                    self.lastKnownCapabilities = await self.session.capabilities
+                }
+            }
         case .capabilitiesChanged(let negotiated):
             capabilities = negotiated
         case .bouncerNetworks(let networks):
@@ -567,6 +633,24 @@ public final class ConnectionViewModel: Identifiable {
             )
         }
         noteConversation(event, at: context.now)
+    }
+
+    /// Collects a channel's ban / quiet / invite / except list as it arrives.
+    ///
+    /// Kept on the buffer rather than rebuilt from the scrollback: the lines are also
+    /// *shown*, because someone who typed `/mode #swift +b` wants to read the answer where
+    /// they asked — but a dialog that had to parse its own scrollback back into data would
+    /// be absurd.
+    private func collectListMode(_ event: IRCEvent) {
+        switch event {
+        case .listModeEntry(let channel, let mode, let mask, let setBy, let setAt):
+            buffersByName[channel]?
+                .recordListMode(mode, entry: ListModeEntry(mask: mask, setBy: setBy, setAt: setAt))
+        case .listModeEnd(let channel, let mode):
+            buffersByName[channel]?.finishListMode(mode)
+        default:
+            break
+        }
     }
 
     /// Moves a buffer up to `state`, never down: a buffer holds the most urgent thing that
@@ -714,7 +798,9 @@ public final class ConnectionViewModel: Identifiable {
             .topicChanged(let channel, _, _),
             .topicAuthor(let channel, _, _),
             .channelModes(let channel, _),
-            .joinFailed(let channel, _, _):
+            .joinFailed(let channel, _, _),
+            .listModeEntry(let channel, _, _, _, _),
+            .listModeEnd(let channel, _):
             return [existing(channel) ?? status]
 
         case .modeChanged(let target, _, _):
@@ -798,7 +884,8 @@ public final class ConnectionViewModel: Identifiable {
             .topicAuthor(let channel, _, _), .channelModes(let channel, _),
             .namesReply(let channel, _), .endOfNames(let channel),
             .joinFailed(let channel, _, _), .channelClosed(let channel),
-            .invited(_, _, let channel):
+            .invited(_, _, let channel), .listModeEntry(let channel, _, _, _, _),
+            .listModeEnd(let channel, _):
             caseMapping = channel.mapping
         case .channelChanged(let channel):
             caseMapping = channel.mapping

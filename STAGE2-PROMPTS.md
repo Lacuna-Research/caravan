@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 7/17 complete. Next: prompt 8.
+**Status:** 8/17 complete. Next: prompt 9.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -18,7 +18,7 @@ malformed.
 
 ### Prompts are written just-in-time, and that is deliberate
 
-Prompts 1–7 are written out in full. **Prompts 8–17 carry their scope, their grouping and
+Prompts 1–8 are written out in full. **Prompts 9–17 carry their scope, their grouping and
 their fence, but not yet their detail** — and are to be fleshed out immediately before
 they start, not now.
 
@@ -343,52 +343,62 @@ model and through its load path live.
 
 **Items:** Full command set · Modes.
 
-The command table filled out — `/whois /whowas /who /mode /op /deop /voice /devoice
-/kick /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
-/server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall` — and the mode work
-underneath the half of them that sets modes: readable mode-change rendering, tracked
-channel modes, and the ban/quiet/invex list dialogs (`367`/`368`, `346`–`349`).
+```
+Fill out the command table, and build the mode layer half of it fronts.
 
-Together because half the command table is a thin front for the mode layer, and writing
-them apart means writing `/ban` twice.
+Together because `/op`, `/ban`, `/kickban` and `/mode` are one feature seen from two
+sides; writing them apart means writing /ban twice.
 
-*To be written out before it starts.*
+- The commands: /whois /whowas /who /mode /op /deop /voice /devoice /kick /ban /unban
+  /kickban /invite /notice /away /back /list /names /oper /amsg /ame /say /ctcp /ping
+  /clear /clearall. `CommandParser` is pure and its switch is the one place that knows
+  what a command is — so this is mostly one table and an exhaustive test of it.
+- **Every command added to the switch goes in `knownCommands` too**, directly above it.
+  That list is what Tab completion offers and nothing fails if you forget.
+- Membership modes take a *person*, and several at once: `/op a b c` is one MODE line
+  with `MODES=` from ISUPPORT deciding how many changes fit, and the rest on the next.
+- `/ban` and `/kickban` want `*!*@host`, which needs the channel roster — so the parser
+  says "ban this person from this channel" and the connection, which has the roster,
+  resolves the mask. A bare `nick!*@*` is the fallback when the host is not known.
+- `/amsg` and `/ame` go to every channel on every connected network. The parser cannot
+  know what those are, so the action says "to all channels" and the app expands it.
+- Tracked channel modes, and a channel modes sheet to see and set them.
+- The list modes — ban `367`/`368`, invite `346`/`347`, except `348`/`349`, and quiet
+  where the network has one — as typed events and one list dialog over all of them.
+  They are the same numeric shape three times, so they are one dialog with a picker,
+  not three dialogs.
 
-**Carry-forward** *(consumed when this prompt runs)*
+Acceptance: op and deop two people at once and watch one MODE line go out; ban someone
+by nick and confirm the mask picked up their host; open the ban list on a real channel
+and read it; set a channel mode from the sheet and watch the tree and the header agree.
 
-- From prompt 2: **every command added to `CommandParser`'s switch must also be added to
-  `CommandParser.knownCommands`**, directly above it — that list is what Tab completion
-  offers, and this prompt roughly triples the table. Swift cannot enumerate a `switch`, so
-  nothing will fail if you forget; the command simply never gets offered.
-  `everyKnownCommandParses` in `CommandParserTests` catches only the opposite mistake, a
-  name listed that the switch no longer handles.
-- **Keep `CommandAction` describing *what was asked for*, not what the UI should do about
-  it.** This prompt roughly triples the table, so it is where the enum's shape sets. Two
-  later things read it as the client's whole vocabulary — stage 3's scripting `irc` object
-  and `PLAN.md` item 34a's control socket — and both want "join this channel", not "the
-  user typed something in a window". A case that reaches for the selection, a view model or
-  a sheet is one those two cannot use, and the divergence is invisible until the second
-  front end is built.
-- From prompt 5: **`/ctcp` and `/ping` have everything they need already.**
-  `IRCProtocol.CTCPMessage` builds the wire form and `IRCEvent.ctcpReply` renders the
-  answer, so both commands are one `.send` each. Two things to get right: the request goes
-  out as a `PRIVMSG` (a `NOTICE` is a *reply*, and the split is the only thing stopping two
-  clients answering each other forever), and `ConnectionViewModel.echo` deliberately draws
-  nothing for an outgoing non-`ACTION` CTCP — so `/ctcp bob VERSION` currently shows only
-  the answer coming back. Decide there whether asking deserves a line of its own; a
-  `.ownCtcpRequest` kind beside `.ownCtcpReply` is the shape if so.
-- From prompt 5: **`/query` and `/msg` are now different commands**, not aliases.
-  `CommandAction.openQuery(nick:message:)` opens a window with an optional message;
-  `/msg` sends and opens the recipient's window as a side effect. `/say` belongs with
-  `/msg`. Note that `/query` refuses a channel name via `CommandError.notAPerson`, which is
-  the pattern for any later command that wants a person rather than a target.
-- From prompt 7: **new keyboard shortcuts are not done until they have been pressed.** This
-  stage has now lost two to system shortcuts that report no conflict at build time and
-  simply never fire — ⌥⌘H is Hide Others (prompt 6) and ⌃⌘D is Look Up in Dictionary
-  (prompt 7). This prompt roughly triples the command table; if any of it gains shortcuts,
-  budget a live pass for them. The taken ones so far: ⌘K, ⌥⌘A, ⇧⌥⌘A, ⌘1–9, ⌘0, ⌘,, ⌘W,
-  ⇧⌘N, ⌃⌘O, ⌃⌘L, ⇧⌘D, ⌃⇥.
+Do not: the *systems* behind three of these commands, which are later prompts and are
+deliberately not started here.
+  - `/ignore` — the matching machinery is prompt 13's, with the ignore list. Left out of
+    the table entirely rather than half-built.
+  - `/list` sends LIST and renders the numerics; the channel *browser* is prompt 15.
+  - `/away` and `/back` send the command; auto-away, away nick and the away log are
+    prompt 14.
+  Also not: context menus that invoke these (prompt 9), and no new keyboard shortcuts
+  without a live press — this stage has lost two already.
+```
 
+**Status:** complete. All five notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`.
+
+**`/ignore` is deliberately not in the table**, and `PLAN.md` item 14 now says so: the
+matching machinery belongs with the ignore list in prompt 13, and a half-built `/ignore`
+that silently did nothing would be worse than one the server rejects out loud. `/list` and
+`/away` ship as the bare commands, with the channel browser (prompt 15) and the away system
+(prompt 14) still theirs.
+
+**No new keyboard shortcuts**, on purpose — prompt 7's note asked for a live press per
+shortcut and nothing in this prompt is reached for often enough to be worth one. The modes
+sheet is a menu item without a key.
+
+**Not verified live: the modes sheet's Add field**, and the invite and except lists — Libera
+advertises both, but the test channel had no entries and creating some proves less than the
+ban path already did.
 ---
 
 ## Prompt 9 — Things you can do to what is in the buffer

@@ -14,8 +14,19 @@ public struct CommandParser: Sendable {
     /// whoever owns the parser.
     public var capabilities: ServerCapabilities
 
-    public init(capabilities: ServerCapabilities = ServerCapabilities()) {
+    /// What `/ping` sends as its token, for the sender to match a reply against.
+    ///
+    /// Injected rather than generated: this type is pure and has no clock, and a `/ping`
+    /// whose token changed under a test would be a test that could only assert its shape.
+    /// The app passes a timestamp.
+    public var pingToken: String
+
+    public init(
+        capabilities: ServerCapabilities = ServerCapabilities(),
+        pingToken: String = "0"
+    ) {
         self.capabilities = capabilities
+        self.pingToken = pingToken
     }
 
     /// The actions for the contents of an input box, which may hold several lines.
@@ -64,8 +75,11 @@ public struct CommandParser: Sendable {
     ///
     /// Aliases are included: someone who types `/j` wants to see it offered.
     public static let knownCommands = [
-        "connect", "debug", "disconnect", "j", "join", "leave", "m", "me", "msg", "nick",
-        "notice", "part", "q", "query", "quit", "quote", "raw", "server", "topic",
+        "ame", "amsg", "away", "back", "ban", "clear", "clearall", "connect", "ctcp",
+        "debug", "deop", "devoice", "disconnect", "invite", "j", "join", "kick", "kickban",
+        "leave", "list", "m", "me", "mode", "msg", "names", "nick", "notice", "op", "oper",
+        "part", "ping", "q", "query", "quit", "quote", "raw", "say", "server", "topic",
+        "unban", "voice", "who", "whois", "whowas",
     ]
 
     private func command(_ verb: String, rest: String, activeTarget: Target?) -> [CommandAction] {
@@ -132,6 +146,128 @@ public struct CommandParser: Sendable {
                 return [.error(CommandError.usage("/raw <IRC line>").message)]
             }
             return [.send(message)]
+
+        // MARK: Asking the server about people and places
+
+        case "whois", "whowas":
+            // `/whois bob bob` asks bob's own server, which is how you get idle time — so
+            // the arguments are passed through as typed rather than second-guessed.
+            guard !rest.isEmpty else {
+                return [.error(CommandError.usage("/\(verb.lowercased()) <nick>").message)]
+            }
+            return [.send(IRCMessage(verb: verb.uppercased(), parameters: words(rest)))]
+
+        case "who":
+            // A bare `/who` in a channel asks about that channel, which is the only thing
+            // it could usefully mean.
+            let mask = rest.isEmpty ? activeTarget?.raw : rest
+            guard let mask else {
+                return [.error(CommandError.noTargetInThisWindow(command: "/who").message)]
+            }
+            return [.send(IRCMessage(verb: "WHO", parameters: words(mask)))]
+
+        case "names":
+            guard let channel = channelOrActive(rest, activeTarget) else {
+                return [.error(CommandError.noTargetInThisWindow(command: "/names").message)]
+            }
+            return [.send(IRCMessage(verb: "NAMES", parameters: [channel]))]
+
+        case "list":
+            // The channel *browser* is a later prompt; this sends LIST and lets the
+            // numerics land in the status window like any other reply.
+            return [.send(IRCMessage(verb: "LIST", parameters: words(rest)))]
+
+        case "oper":
+            let (name, password) = split(rest)
+            guard !name.isEmpty, !password.isEmpty else {
+                return [.error(CommandError.usage("/oper <name> <password>").message)]
+            }
+            // Redaction is `TraceBuffer`'s business, and it already strips `OPER`.
+            return [.send(IRCMessage(verb: "OPER", parameters: [name, password]))]
+
+        // MARK: Presence
+
+        case "away":
+            // `/away` with no reason is how you come back, per the RFC. `/back` is the
+            // friendlier spelling of the same line.
+            return [.send(IRCMessage(verb: "AWAY", parameters: rest.isEmpty ? [] : [rest]))]
+
+        case "back":
+            return [.send(IRCMessage(verb: "AWAY", parameters: []))]
+
+        // MARK: Saying things
+
+        case "say":
+            // Exactly a plain line, but explicit — which is how you send text beginning
+            // with a slash without doubling it.
+            guard !rest.isEmpty else {
+                return [.error(CommandError.usage("/say <message>").message)]
+            }
+            return message(rest, to: activeTarget, command: "/say")
+
+        case "amsg", "ame":
+            guard !rest.isEmpty else {
+                return [.error(CommandError.usage("/\(verb.lowercased()) <message>").message)]
+            }
+            return [.toAllChannels(text: rest, isAction: verb.lowercased() == "ame")]
+
+        case "ctcp":
+            let (ctcpTarget, request) = split(rest)
+            let (keyword, argument) = split(request)
+            guard !ctcpTarget.isEmpty, !keyword.isEmpty else {
+                return [.error(CommandError.usage("/ctcp <target> <request> [args]").message)]
+            }
+            // **A request is a PRIVMSG.** A `NOTICE` is a *reply*, and that split is the
+            // only thing stopping two clients answering each other forever.
+            let request2 = CTCPMessage(
+                command: keyword.uppercased(),
+                argument: argument.isEmpty ? nil : argument
+            )
+            return [
+                .send(IRCMessage(verb: "PRIVMSG", parameters: [ctcpTarget, request2.wireForm]))
+            ]
+
+        case "ping":
+            let (pingTarget, _) = split(rest)
+            guard !pingTarget.isEmpty else {
+                return [.error(CommandError.usage("/ping <nick>").message)]
+            }
+            // The argument is a token for the sender to match the reply against. A pure
+            // parser has no clock, so the caller supplies one.
+            let ping = CTCPMessage(command: "PING", argument: pingToken)
+            return [.send(IRCMessage(verb: "PRIVMSG", parameters: [pingTarget, ping.wireForm]))]
+
+        // MARK: The buffer itself
+
+        case "clear":
+            return [.clearScrollback(everywhere: false)]
+
+        case "clearall":
+            return [.clearScrollback(everywhere: true)]
+
+        // MARK: Modes
+
+        case "mode":
+            return mode(rest, activeTarget: activeTarget)
+
+        case "op", "deop", "voice", "devoice":
+            return membership(verb.lowercased(), rest: rest, activeTarget: activeTarget)
+
+        case "kick":
+            return kick(rest, activeTarget: activeTarget)
+
+        case "ban", "unban", "kickban":
+            return ban(verb.lowercased(), rest: rest, activeTarget: activeTarget)
+
+        case "invite":
+            let (invitee, channelArgument) = split(rest)
+            guard !invitee.isEmpty else {
+                return [.error(CommandError.usage("/invite <nick> [#channel]").message)]
+            }
+            guard let channel = channelOrActive(channelArgument, activeTarget) else {
+                return [.error(CommandError.noTargetInThisWindow(command: "/invite").message)]
+            }
+            return [.send(IRCMessage(verb: "INVITE", parameters: [invitee, channel]))]
 
         default:
             // mIRC's passthrough, and the reason this client is useful for anything not
@@ -341,6 +477,139 @@ public struct CommandParser: Sendable {
         return [.send(IRCMessage(verb: "PRIVMSG", parameters: [activeTarget.raw, text]))]
     }
 
+    // MARK: - Modes
+
+    /// `/mode [#channel|nick] [modes] [args]`.
+    ///
+    /// With no mode string it *asks* — `MODE #swift` returns the channel's modes in a 324,
+    /// which is the only way to read them without changing them.
+    private func mode(_ rest: String, activeTarget: Target?) -> [CommandAction] {
+        let (first, remainder) = split(rest)
+        // A first token that names a channel or is a nick with modes after it is the
+        // target; anything starting with `+` or `-` is a mode string for this window.
+        let looksLikeModes = first.hasPrefix("+") || first.hasPrefix("-")
+        let target: String
+        let arguments: String
+        if !first.isEmpty && !looksLikeModes {
+            target = first
+            arguments = remainder
+        } else if let active = activeTarget?.raw {
+            target = active
+            arguments = rest
+        } else {
+            return [.error(CommandError.noTargetInThisWindow(command: "/mode").message)]
+        }
+        let parameters = arguments.isEmpty ? [target] : [target] + words(arguments)
+        return [.send(IRCMessage(verb: "MODE", parameters: parameters))]
+    }
+
+    /// `/op`, `/deop`, `/voice`, `/devoice` — **several people at once**.
+    ///
+    /// `/op a b c` is one `MODE #swift +ooo a b c`, split across as many lines as
+    /// `ISUPPORT MODES=` allows. Sending one line per nick would work and would be three
+    /// times the traffic and three times the flood risk, which is what `MODES=` exists to
+    /// bound.
+    private func membership(_ verb: String, rest: String, activeTarget: Target?)
+        -> [CommandAction]
+    {
+        let letter: Character = verb.hasSuffix("voice") ? "v" : "o"
+        let isSet = !verb.hasPrefix("de")
+
+        var tokens = words(rest)
+        // An explicit channel may lead, for opping someone from another window.
+        let channel: String
+        if let first = tokens.first, capabilities.isChannelName(first) {
+            channel = first
+            tokens.removeFirst()
+        } else if case .channel(let active)? = activeTarget {
+            channel = active.raw
+        } else {
+            return [.error(CommandError.noTargetInThisWindow(command: "/\(verb)").message)]
+        }
+        guard !tokens.isEmpty else {
+            return [.error(CommandError.usage("/\(verb) [#channel] <nick> [nick...]").message)]
+        }
+        return modeLines(channel: channel, letter: letter, isSet: isSet, arguments: tokens)
+    }
+
+    /// Splits mode changes into as many `MODE` lines as the server will take.
+    private func modeLines(
+        channel: String,
+        letter: Character,
+        isSet: Bool,
+        arguments: [String]
+    ) -> [CommandAction] {
+        // `MODES` is optional in `ISUPPORT`; three is the RFC-era convention every server
+        // accepts, and is what to assume when the server does not say.
+        let perLine = max(1, capabilities.maximumModesPerCommand ?? 3)
+        return stride(from: 0, to: arguments.count, by: perLine).map { start in
+            let batch = Array(arguments[start..<min(start + perLine, arguments.count)])
+            let modeString =
+                String(isSet ? "+" : "-") + String(repeating: letter, count: batch.count)
+            return .send(IRCMessage(verb: "MODE", parameters: [channel, modeString] + batch))
+        }
+    }
+
+    /// `/kick [#channel] <nick> [reason]`.
+    private func kick(_ rest: String, activeTarget: Target?) -> [CommandAction] {
+        var tokens = words(rest)
+        let channel: String
+        if let first = tokens.first, capabilities.isChannelName(first) {
+            channel = first
+            tokens.removeFirst()
+        } else if case .channel(let active)? = activeTarget {
+            channel = active.raw
+        } else {
+            return [.error(CommandError.noTargetInThisWindow(command: "/kick").message)]
+        }
+        guard let nick = tokens.first else {
+            return [.error(CommandError.usage("/kick [#channel] <nick> [reason]").message)]
+        }
+        // The reason keeps its internal spacing, which `words` would have thrown away.
+        let reason = remainder(of: rest, after: nick)
+        let parameters = reason.isEmpty ? [channel, nick] : [channel, nick, reason]
+        return [.send(IRCMessage(verb: "KICK", parameters: parameters))]
+    }
+
+    /// `/ban`, `/unban`, `/kickban`.
+    ///
+    /// The mask is **not** decided here: `*!*@host` needs the channel roster, which is the
+    /// connection's and not something a pure parser should grow. See
+    /// ``CommandAction/ban(channel:subject:isSet:kickReason:)``.
+    private func ban(_ verb: String, rest: String, activeTarget: Target?) -> [CommandAction] {
+        var tokens = words(rest)
+        let channel: String
+        if let first = tokens.first, capabilities.isChannelName(first) {
+            channel = first
+            tokens.removeFirst()
+        } else if case .channel(let active)? = activeTarget {
+            channel = active.raw
+        } else {
+            return [.error(CommandError.noTargetInThisWindow(command: "/\(verb)").message)]
+        }
+        guard let subject = tokens.first else {
+            return [.error(CommandError.usage("/\(verb) [#channel] <nick|mask>").message)]
+        }
+        let isKickban = verb == "kickban"
+        let reason = isKickban ? remainder(of: rest, after: subject) : ""
+        return [
+            .ban(
+                channel: channel,
+                subject: subject,
+                isSet: verb != "unban",
+                kickReason: isKickban ? (reason.isEmpty ? "" : reason) : nil
+            )
+        ]
+    }
+
+    /// The channel a command should act on: an explicit one, or the window's.
+    private func channelOrActive(_ argument: String, _ activeTarget: Target?) -> String? {
+        let (first, _) = split(argument)
+        if !first.isEmpty, capabilities.isChannelName(first) { return first }
+        if case .channel(let active)? = activeTarget { return active.raw }
+        return first.isEmpty ? nil : first
+    }
+
     // MARK: - Helpers
 
     /// Splits off the first whitespace-delimited token, returning it and the untouched
@@ -353,6 +622,20 @@ public struct CommandParser: Sendable {
         }
         let rest = trimmed[trimmed.index(after: space)...].drop { $0 == " " || $0 == "\t" }
         return (String(trimmed[trimmed.startIndex..<space]), String(rest))
+    }
+
+    /// Whitespace-separated tokens, with empties dropped.
+    private func words(_ text: String) -> [String] {
+        text.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+    }
+
+    /// Everything after the first occurrence of `token`, with its internal spacing intact.
+    ///
+    /// `words` is fine for arguments and wrong for a reason: `/kick bob go  away` must
+    /// keep the double space, because it is a sentence a person wrote.
+    private func remainder(of text: String, after token: String) -> String {
+        guard let range = text.range(of: token) else { return "" }
+        return String(text[range.upperBound...]).trimmingCharacters(in: .whitespaces)
     }
 
     /// Adds a channel prefix to a bare name.

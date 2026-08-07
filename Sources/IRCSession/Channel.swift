@@ -114,15 +114,25 @@ public struct Channel: Sendable, Equatable {
     /// back into the session for capabilities it would have to `await`.
     public let prefixes: [ChannelPrefix]
 
+    /// `CHANMODES` group A — the modes that name a *list* rather than a value.
+    ///
+    /// **A channel does not have a `+b`; it has a ban list.** Without this, setting one ban
+    /// recorded `b` in ``modeArguments`` and the channel's mode line read `+Cnstb
+    /// badactor!*@*` — which the live run caught in the modes sheet's header. Each new ban
+    /// then overwrote the last, so the "value" was whichever ban was set most recently.
+    public let listModes: Set<Character>
+
     public let mapping: IRCCaseMapping
 
     public init(
         name: IRCChannelName,
         prefixes: [ChannelPrefix] = ServerCapabilities.Default.prefixes,
+        listModes: Set<Character> = ServerCapabilities.Default.channelModes.lists,
         mapping: IRCCaseMapping = .rfc1459
     ) {
         self.name = name
         self.prefixes = prefixes
+        self.listModes = listModes
         self.mapping = mapping
     }
 
@@ -219,12 +229,17 @@ public struct Channel: Sendable, Equatable {
     /// Needed because a reconnect resets `ISUPPORT`: keys folded under `ascii` do not
     /// match the same names folded under `rfc1459`, so a channel carried across would
     /// quietly stop matching itself.
-    func remapped(mapping newMapping: IRCCaseMapping, prefixes newPrefixes: [ChannelPrefix])
+    func remapped(
+        mapping newMapping: IRCCaseMapping,
+        prefixes newPrefixes: [ChannelPrefix],
+        listModes newListModes: Set<Character>
+    )
         -> Channel
     {
         var channel = Channel(
             name: IRCChannelName(name.raw, mapping: newMapping),
             prefixes: newPrefixes,
+            listModes: newListModes,
             mapping: newMapping
         )
         channel.topic = topic
@@ -279,6 +294,11 @@ public struct Channel: Sendable, Equatable {
             replaceMember(member)
             return
         }
+
+        // A list mode is not a property of the channel: `+b` names an entry in the ban
+        // list, and recording it here would put one arbitrary ban in the mode line and
+        // throw away every other.
+        guard !listModes.contains(change.mode) else { return }
 
         if change.isSet {
             if let argument = change.argument {

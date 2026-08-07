@@ -100,6 +100,22 @@ public enum IRCEvent: Sendable, Equatable {
     /// 324: the channel's current modes, in reply to a `MODE` query or on join.
     case channelModes(channel: IRCChannelName, changes: [ModeChange])
 
+    /// One entry of a channel's ban, quiet, invite or except list.
+    ///
+    /// **One case for four lists, because they are one numeric shape four times.** 367,
+    /// 346, 348 and the de-facto 728 differ only in which mode letter they are about, and
+    /// a client with four near-identical events would grow four near-identical dialogs.
+    case listModeEntry(
+        channel: IRCChannelName,
+        mode: Character,
+        mask: String,
+        setBy: String?,
+        setAt: Int?
+    )
+
+    /// The end of one such list — 368, 347, 349, 729.
+    case listModeEnd(channel: IRCChannelName, mode: Character)
+
     /// A join that the server refused, with the reason in a form worth acting on.
     case joinFailed(channel: IRCChannelName, reason: JoinFailure, text: String)
 

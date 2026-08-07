@@ -77,6 +77,12 @@ public struct NavigationCommands: Commands {
                 model.settings.isNickListVisible.toggle()
             }
             .keyboardShortcut("l", modifiers: [.command, .control])
+
+            // No shortcut: this stage has lost two to system bindings that report no
+            // conflict at build time, and a modes sheet is not something anyone reaches
+            // for often enough to spend a live verification pass on.
+            Button("Channel Modes…") { model.isShowingChannelModes = true }
+                .disabled(model.selectedChannel == nil)
             Divider()
         }
 

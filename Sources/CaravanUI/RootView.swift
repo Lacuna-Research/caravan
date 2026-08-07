@@ -81,6 +81,11 @@ public struct RootView: View {
         .sheet(isPresented: $model.isShowingQuickSwitcher) {
             QuickSwitcher(model: model)
         }
+        .sheet(isPresented: $model.isShowingChannelModes) {
+            if let buffer = model.selectedChannel {
+                ChannelModesSheet(model: model, buffer: buffer)
+            }
+        }
         // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
         .modifier(CtrlTabModifier(model: model))
         .onChange(of: activeState, initial: true) { _, state in

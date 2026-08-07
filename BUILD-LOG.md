@@ -3597,3 +3597,105 @@ what the *server* had received, and the reply round trip is not synchronised wit
 count at all. It now waits for a reply to actually arrive. `BUILD-LOG`'s own note from prompt
 4 — that an intermittent failure is "the kind of failure it is very tempting to re-run and
 call a flake" — is what made me go and look.
+
+## Stage 2, prompt 8 — Commands and modes
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+The command table filled out, and the mode layer half of it fronts.
+
+### Decisions
+
+**`/ban` names a person; the connection resolves the mask.** A useful ban is `*!*@host`,
+and banning `bob!*@*` is defeated by `/nick bob2`. The host lives in the channel roster,
+the roster lives on `ConnectionViewModel`, and `CommandParser` is pure and should not grow
+one. So `CommandAction.ban(channel:subject:isSet:kickReason:)` says what was asked for and
+the connection works out what it means — which is the shape prompt 2's carry-forward asked
+the whole enum to keep. A subject that already looks like a mask passes through untouched,
+and a nick the roster does not know falls back to `nick!*@*`: a weaker ban beats an error.
+
+**`/kickban` bans before it kicks.** Kicking first leaves a window, however small, in which
+they can rejoin — and closing that window is the only reason it is one command rather than
+two.
+
+**Membership modes batch to `MODES=`.** `/op a b c` is one `MODE #swift +ooo a b c`, split
+across as many lines as `ISUPPORT MODES=` allows and defaulting to three where the server
+does not say. One line per nick would work and would be three times the traffic and three
+times the flood risk, which is the thing `MODES=` exists to bound.
+
+**`/amsg` and `/ame` go to every channel on every *connected* network.** Across networks
+because "tell everyone I am going out" is not a per-network thought, and only channels we
+are actually in because a parted buffer still in the tree would earn a 404. Sent one
+channel at a time rather than as a comma list, so flood protection and the local echo see
+them as the separate messages they are.
+
+**One list dialog with a picker, not four.** 367, 346, 348 and 728 are the same numeric
+shape four times over — a channel, a mask, optionally a setter and a time. Four
+near-identical dialogs would be four places to fix the same bug. `IRCEvent.listModeEntry`
+carries the mode letter, and 728 gets special handling only because it puts that letter in
+a column of its own, having been invented later and by someone else.
+
+**Three commands are deliberately half of what their name suggests**, and the prompt's
+"Do not" says so: `/list` sends `LIST` and renders the numerics while the *browser* is a
+later prompt; `/away` and `/back` send the line while auto-away and the away log are a
+later prompt; and **`/ignore` is not in the table at all** — the matching machinery belongs
+with the ignore list, and a half-built `/ignore` that silently did nothing would be worse
+than one the server rejects out loud. `PLAN.md` item 14 lists it; the note now says where
+it went.
+
+**`EXCEPTS` and `INVEX` are read from `ISUPPORT`, and may arrive bare** — `EXCEPTS` alone
+means "yes, at `e`". `nil` means the server never mentioned it and does not have the list,
+which is a different thing from having it at the default letter and is why they are
+optional rather than defaulted. Quiet is offered regardless: no token announces it, and the
+networks without it answer with an error rather than silence.
+
+### Learned
+
+**`Character(String)` traps unless the string is exactly one character.** 728 carries a
+mode letter in a column, and a server sending an empty or two-character one would have
+crashed the client. Caught by writing the test for it rather than by it happening.
+
+**The stale-build linker failure again**, after changing `Channel`'s stored properties. Same
+signature as the enum-ordinal case already in memory: `trash .build`, not a bug.
+
+### The live run, against Libera on a channel we own
+
+`/op` and `/deop`; `/voice caravan-cmd caravan-peerm3` going out as **one `+vv` line for two
+people**, which is the batching claim proven rather than asserted; `/ban caravan-peerm`
+resolving to `+b *!*@189.146.108.51` from the roster; `/ban badactor` on someone absent
+falling back to `badactor!*@*`; `/unban` with an explicit mask; the ban list read back with
+its setter and timestamp; `/mode +m` taking effect and showing up ticked in the sheet; and
+the sheet's Lists tab fetching the ban list on appear and saying "Nobody is banned from
+this channel" rather than showing a spinner forever.
+
+**Two rounds of the live run were wasted on my own test setup**, which is worth writing
+down: opping someone already opped proves nothing, because Libera drops no-op changes from
+the echo; and banning `*!*@<my host>` locked out the scripted peer, which runs on the same
+machine. The batching claim needed two unvoiced people in the channel at once before it
+could be seen at all.
+
+**Not verified live: the sheet's Add field**, and the invite/except lists — Libera advertises
+both, but this channel had no entries to read and putting some there proves less than the
+ban path already did.
+
+### Two defects the live run found
+
+1. **List entries rendered as `*** Channel modes for : +b *!*@…`** — the wrong sentence, and
+   with an empty channel, because they reused `channelMode`'s template and never filled in
+   its `$channel`. They have their own `LineKind` now and read `Ban list for #swift:
+   *!*@evil.example (set by carol on …)`.
+2. **A channel does not have a `+b`; it has a ban list.** `Channel.apply` recorded any mode
+   with an argument in `modeArguments`, so the modes sheet's own header read `+Cnstb
+   badactor!*@*` — and each new ban overwrote the last, making the "value" whichever ban was
+   set most recently. `CHANMODES` group A is now consulted and list modes are skipped. Found
+   by reading the sheet I had just built, which is the argument for building the UI that
+   displays a thing in the same prompt as the thing.
+
+### Three test races, all mine, all fixed
+
+Written down because they are the same mistake three times and the shape is worth
+recognising: **waiting on the wrong thing.** One waited on `!pendingListModes.contains("b")`,
+which is true before anything arrives at all; one waited for the entries and then asserted
+on the end marker, which comes after them; one waited on the collected data and then read
+the *scrollback*, which is written later in the same handler. All three passed under
+`--filter` and failed in the full suite, which is slower and therefore more honest.

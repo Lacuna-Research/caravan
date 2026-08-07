@@ -269,6 +269,43 @@ public enum EventTranslator {
                     )
                 ]
             }
+        case 367, 346, 348, 728:
+            // `<client> <channel> <mask> [<setter> <timestamp>]`, and 728 inserts the mode
+            // letter before the mask because it was invented later and by someone else.
+            //
+            // The setter and timestamp are optional in practice: several servers send the
+            // mask alone, and a client that required all five would show nothing at all
+            // rather than the one field that matters.
+            let hasModeColumn = code == 728
+            let base = hasModeColumn ? 3 : 2
+            if parameters.count > base {
+                let letter =
+                    (hasModeColumn ? parameters[2].first : nil)
+                    ?? Self.listMode(numeric: code)
+                return [
+                    .listModeEntry(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        mode: letter,
+                        mask: parameters[base],
+                        setBy: parameters.count > base + 1
+                            ? IRCSource(prefix: parameters[base + 1]).nick ?? parameters[base + 1]
+                            : nil,
+                        setAt: parameters.count > base + 2 ? Int(parameters[base + 2]) : nil
+                    )
+                ]
+            }
+        case 368, 347, 349, 729:
+            if parameters.count >= 2 {
+                let letter =
+                    (code == 729 && parameters.count > 2 ? parameters[2].first : nil)
+                    ?? Self.listMode(numeric: code)
+                return [
+                    .listModeEnd(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        mode: letter
+                    )
+                ]
+            }
         case 471, 473, 474, 475, 476, 477:
             // `<client> <channel> :<reason>`
             if parameters.count >= 2, let reason = JoinFailure(numeric: code) {
@@ -315,6 +352,19 @@ public enum EventTranslator {
             break
         }
         return [.numeric(code: code, parameters: parameters)]
+    }
+
+    /// Which mode letter a list numeric is about.
+    ///
+    /// `q` for 728/729 is the fallback rather than the rule — those carry the letter
+    /// explicitly, because "quiet" is not in any RFC and networks disagree about it.
+    static func listMode(numeric code: UInt16) -> Character {
+        switch code {
+        case 367, 368: "b"
+        case 346, 347: "I"
+        case 348, 349: "e"
+        default: "q"
+        }
     }
 
     /// `*` is the wire's "none" for an account name, and is not a nick anyone can hold.

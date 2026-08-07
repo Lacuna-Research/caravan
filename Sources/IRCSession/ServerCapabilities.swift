@@ -99,6 +99,15 @@ public struct ServerCapabilities: Sendable, Equatable {
     /// `MODES`: how many mode changes may go in one `MODE` command.
     public private(set) var maximumModesPerCommand: Int?
 
+    /// `EXCEPTS` and `INVEX`: the ban-exception and invite-exception mode letters.
+    ///
+    /// **Both may arrive without a value**, which means "yes, at the conventional letter" —
+    /// `EXCEPTS` alone is `e` and `INVEX` alone is `I`. `nil` means the server never
+    /// mentioned it and does not have the list at all, which is different from having it
+    /// at the default letter and is why these are optional rather than defaulted.
+    public private(set) var banExceptionMode: Character?
+    public private(set) var inviteExceptionMode: Character?
+
     /// `TARGMAX`: per-command target limits. A `nil` value means unlimited.
     public private(set) var targetMaximums: [String: Int?] = [:]
 
@@ -186,10 +195,33 @@ public struct ServerCapabilities: Sendable, Equatable {
         channelLength = value(of: "CHANNELLEN").flatMap(Int.init) ?? Default.channelLength
         topicLength = value(of: "TOPICLEN").flatMap(Int.init)
         maximumModesPerCommand = value(of: "MODES").flatMap(Int.init)
+        banExceptionMode = Self.listModeLetter(
+            named: "EXCEPTS",
+            default: "e",
+            tokens: rawTokens,
+            value: value(of:)
+        )
+        inviteExceptionMode = Self.listModeLetter(
+            named: "INVEX",
+            default: "I",
+            tokens: rawTokens,
+            value: value(of:)
+        )
         targetMaximums = value(of: "TARGMAX").map(Self.parseTargetMaximums) ?? [:]
         statusMessagePrefixes = value(of: "STATUSMSG").map { Set($0) } ?? []
         supportsMonitor = rawTokens.keys.contains("MONITOR")
         monitorLimit = value(of: "MONITOR").flatMap(Int.init)
+    }
+
+    /// A list-mode letter from a token that may be bare, valued, or absent.
+    private static func listModeLetter(
+        named name: String,
+        default fallback: Character,
+        tokens: [String: String?],
+        value: (String) -> String?
+    ) -> Character? {
+        guard tokens.keys.contains(name) else { return nil }
+        return value(name)?.first ?? fallback
     }
 
     /// The value of a token, or `nil` when it is absent or was sent without one.

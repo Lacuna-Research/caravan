@@ -255,6 +255,17 @@ public struct LineRenderer: Sendable {
             fields.text = realName
             return (.realNameChange, fields)
 
+        case .listModeEntry(let channel, let mode, let mask, let setBy, let setAt):
+            let who = setBy.map { " by \($0)" } ?? ""
+            let when = setAt.map { " on \(Self.timestamp(epochSeconds: $0))" } ?? ""
+            let attribution = who.isEmpty && when.isEmpty ? "" : " (set\(who)\(when))"
+            fields.text = "\(Self.listName(mode)) for \(channel): \(mask)\(attribution)"
+            return (.listMode, fields)
+
+        case .listModeEnd(let channel, let mode):
+            fields.text = "End of \(Self.listName(mode).lowercased()) for \(channel)"
+            return (.listMode, fields)
+
         case .ctcpRequest(_, let sender, let request, _):
             fields.nick = sender.nick ?? sender.wireForm
             fields.text = request.summary
@@ -514,6 +525,20 @@ public struct LineRenderer: Sendable {
     /// plain string rather than a rendered line.
     public static func statusLine(for state: SessionState) -> String? {
         statusText(for: state).map { "*** \($0)" }
+    }
+
+    /// What a list mode is called in a sentence.
+    ///
+    /// The letters are the conventional ones; `q` is quiet on the networks that have it.
+    /// Anything else falls back to naming the letter, which is still a true sentence.
+    static func listName(_ mode: Character) -> String {
+        switch mode {
+        case "b": "Ban list"
+        case "q": "Quiet list"
+        case "I": "Invite list"
+        case "e": "Except list"
+        default: "+\(mode) list"
+        }
     }
 
     /// `+on-v carol dave`, with the signs collapsed the way a server writes them.

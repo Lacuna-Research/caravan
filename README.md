@@ -22,7 +22,7 @@
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
 [![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-2ea44f)](STAGE1-PROMPTS.md)
-[![stage 2: 7/17](https://img.shields.io/badge/stage%202-7%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
+[![stage 2: 8/17](https://img.shields.io/badge/stage%202-8%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
 
 </div>
 
@@ -155,7 +155,7 @@ roadmap item below is attached to one of them.
 | 5 | Queries and CTCP | ✅ done |
 | 6 | Activity and navigation at scale | ✅ done |
 | 7 | Windows and chrome | ✅ done |
-| 8 | Commands and modes | ⬜ |
+| 8 | Commands and modes | ✅ done |
 | 9 | Things you can do to what is in the buffer | ⬜ |
 | 10 | Options | ⬜ |
 | 11 | The Dashboard and the server list | ⬜ |

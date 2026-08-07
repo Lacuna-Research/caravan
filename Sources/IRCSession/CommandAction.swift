@@ -22,6 +22,30 @@ public enum CommandAction: Sendable, Equatable {
     /// complete command, and it puts nothing on the wire at all.
     case openQuery(nick: String, message: String?)
 
+    /// `/amsg` and `/ame`: say this in **every channel on every connected network**.
+    ///
+    /// Not a run of `send`s, because the parser is pure and cannot know what those
+    /// channels are — that is the app's knowledge, and this is the parser saying what was
+    /// asked for rather than guessing at it.
+    case toAllChannels(text: String, isAction: Bool)
+
+    /// `/ban`, `/unban` and `/kickban`: **ban this person**, mask to be decided.
+    ///
+    /// A ban wants `*!*@host`, and the host lives in the channel roster — which the parser
+    /// does not have and should not grow. So the action names the person and the
+    /// connection, which does have the roster, resolves the mask. A subject that already
+    /// looks like a mask is passed through untouched.
+    ///
+    /// `kickReason` non-`nil` makes it `/kickban`: the kick follows the ban, in that
+    /// order, so the ban is in place before they can rejoin.
+    case ban(channel: String, subject: String, isSet: Bool, kickReason: String?)
+
+    /// `/clear` and `/clearall`: empty this buffer's scrollback, or every one.
+    ///
+    /// Scrollback belongs to the view models, not to the session, so this cannot be a
+    /// `send` and cannot be done by the parser.
+    case clearScrollback(everywhere: Bool)
+
     /// `/server`, and `/connect` with an argument: point the client at a host.
     ///
     /// Identity — nick, ident, real name — is deliberately absent: it belongs to the
@@ -83,6 +107,8 @@ public enum CommandError: Sendable, Equatable {
     case unknownFlag(command: String, flag: String)
     /// A command that wants a person was given a channel.
     case notAPerson(command: String, target: String)
+    /// A mode command was given a mode letter the server never declared.
+    case unknownMode(command: String, mode: Character)
 
     public var message: String {
         switch self {
@@ -96,6 +122,8 @@ public enum CommandError: Sendable, Equatable {
             "\(command) has no \(flag) flag"
         case .notAPerson(let command, let target):
             "\(command) opens a conversation with a person — \(target) is a channel, so use /join"
+        case .unknownMode(let command, let mode):
+            "\(command): this server does not have a +\(mode) channel mode"
         }
     }
 }
