@@ -3216,3 +3216,35 @@ domain rather than depending on someone remembering it. Losing it un-points
 **DNS is not ours.** The subdomain resolves to Cloudflare addresses today, so publishing
 needs a `CNAME` record for `caravan` pointing at `Lacuna-Research.github.io`, made at
 Cloudflare by someone with access to it.
+
+## Decision — the website source directory is `www/`
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Renamed from `htdocs/`, which had itself replaced `docs/` a few hours earlier. Recording the
+third name because the second one's entry is already in this log and would otherwise read as
+current.
+
+**`gh-pages/` was asked for first, to match the branch, and was rejected on evidence.** A
+directory of that name collides with the branch of that name in git's own argument parsing:
+
+    $ git checkout gh-pages
+    fatal: 'gh-pages' could be both a local file and a tracking branch.
+    Please use -- (and optionally --no-guess) to disambiguate
+
+That is the command someone types to go and look at the published branch, and it stops
+working the moment the directory exists. Worse quietly: `git rev-parse gh-pages` stops
+resolving to the branch and returns the path, so anything scripted against the ref begins
+meaning something else without erroring. Tested in the working tree before recommending
+against it, rather than asserted from memory.
+
+**There is also no standard to match.** GitHub Pages blesses exactly two source folders, `/`
+and `/docs`; `gh-pages` is a *branch* convention and `htdocs` is Apache's. So the rename
+would have bought symmetry with the branch at the cost of colliding with it — and `www/` is
+the older, shorter convention that collides with nothing and reads correctly beside
+`Sources/` and `Scripts/`.
+
+**Nothing about the published site changes.** Pages serves the `gh-pages` branch's *root*,
+which still holds `index.html`, `style.css` and `CNAME`; only the name of the source
+directory on `main` moved. The two trees stay byte-identical, which is still checked by
+hand — see the open question in `PLAN.md`.
