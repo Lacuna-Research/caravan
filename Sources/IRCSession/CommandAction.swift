@@ -15,6 +15,13 @@ public enum CommandAction: Sendable, Equatable {
     /// input never disappears without an answer.
     case error(String)
 
+    /// `/query <nick> [message]`: open a conversation window, and say something in it if
+    /// there was anything to say.
+    ///
+    /// Not a `send`, because the window is the point: `/query bob` with no message is a
+    /// complete command, and it puts nothing on the wire at all.
+    case openQuery(nick: String, message: String?)
+
     /// `/server`, and `/connect` with an argument: point the client at a host.
     ///
     /// Identity — nick, ident, real name — is deliberately absent: it belongs to the
@@ -74,6 +81,8 @@ public enum CommandError: Sendable, Equatable {
     case badPort(String)
     /// A flag the command does not have.
     case unknownFlag(command: String, flag: String)
+    /// A command that wants a person was given a channel.
+    case notAPerson(command: String, target: String)
 
     public var message: String {
         switch self {
@@ -85,6 +94,8 @@ public enum CommandError: Sendable, Equatable {
             "\(port) is not a valid port"
         case .unknownFlag(let command, let flag):
             "\(command) has no \(flag) flag"
+        case .notAPerson(let command, let target):
+            "\(command) opens a conversation with a person — \(target) is a channel, so use /join"
         }
     }
 }

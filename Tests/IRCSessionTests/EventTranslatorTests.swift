@@ -145,6 +145,88 @@ struct EventTranslatorTests {
         #expect(result.isAction == isAction)
     }
 
+    // MARK: - CTCP
+
+    /// A `VERSION` request is not something anybody said. It used to arrive as an ordinary
+    /// message and render as control characters in a channel window.
+    @Test("a CTCP request in a PRIVMSG is a request, not a message")
+    func ctcpRequest() throws {
+        #expect(
+            try events(":bob!u@h PRIVMSG alice :\u{01}VERSION\u{01}").dropFirst() == [
+                .ctcpRequest(
+                    target: .nick(IRCNick("alice", mapping: .ascii)),
+                    sender: user("bob"),
+                    request: CTCPMessage(command: "VERSION"),
+                    tags: IRCTags()
+                )
+            ]
+        )
+    }
+
+    /// The `PRIVMSG`/`NOTICE` split is the only thing standing between two clients and an
+    /// infinite exchange, so it decides which case this is.
+    @Test("a CTCP in a NOTICE is a reply")
+    func ctcpReply() throws {
+        #expect(
+            try events(":bob!u@h NOTICE alice :\u{01}VERSION mIRC v7.75\u{01}").dropFirst() == [
+                .ctcpReply(
+                    target: .nick(IRCNick("alice", mapping: .ascii)),
+                    sender: user("bob"),
+                    reply: CTCPMessage(command: "VERSION", argument: "mIRC v7.75"),
+                    tags: IRCTags()
+                )
+            ]
+        )
+    }
+
+    /// `ACTION` is a message wearing a CTCP's wrapper, and stays one.
+    @Test("ACTION is a message, never a request")
+    func actionIsNotARequest() throws {
+        let events = try events(":bob!u@h PRIVMSG #swift :\u{01}ACTION waves\u{01}").dropFirst()
+        #expect(
+            events == [
+                .message(
+                    target: .channel(channel("#swift")),
+                    sender: user("bob"),
+                    text: "waves",
+                    kind: .privmsg,
+                    isAction: true,
+                    tags: IRCTags()
+                )
+            ]
+        )
+    }
+
+    /// A channel-wide `VERSION` is one person asking; the target says where it came in.
+    @Test("a CTCP aimed at a channel keeps the channel as its target")
+    func ctcpToChannel() throws {
+        guard
+            case .ctcpRequest(let target, _, let request, _) = try #require(
+                try events(":bob!u@h PRIVMSG #swift :\u{01}PING 42\u{01}").last
+            )
+        else {
+            Issue.record("expected a CTCP request")
+            return
+        }
+        #expect(target == .channel(channel("#swift")))
+        #expect(request.summary == "PING 42")
+    }
+
+    /// A stray `\u{01}` in a paste is a control character, not a request.
+    @Test("a delimiter that is not leading leaves an ordinary message")
+    func strayDelimiter() throws {
+        guard
+            case .message(_, _, let text, _, let isAction, _) = try #require(
+                try events(":bob!u@h PRIVMSG #swift :hello \u{01}VERSION\u{01}").last
+            )
+        else {
+            Issue.record("expected a message event")
+            return
+        }
+        #expect(text == "hello \u{01}VERSION\u{01}")
+        #expect(!isAction)
+    }
+
     /// `@#swift` addresses the channel's operators. It is still the channel's window.
     @Test("a STATUSMSG prefix does not turn a channel into a nick")
     func statusMessagePrefix() throws {

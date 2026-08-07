@@ -65,7 +65,7 @@ public struct CommandParser: Sendable {
     /// Aliases are included: someone who types `/j` wants to see it offered.
     public static let knownCommands = [
         "connect", "debug", "disconnect", "j", "join", "leave", "m", "me", "msg", "nick",
-        "notice", "part", "query", "quit", "quote", "raw", "server", "topic",
+        "notice", "part", "q", "query", "quit", "quote", "raw", "server", "topic",
     ]
 
     private func command(_ verb: String, rest: String, activeTarget: Target?) -> [CommandAction] {
@@ -90,11 +90,8 @@ public struct CommandParser: Sendable {
         case "msg", "m":
             return directed(rest, verb: "PRIVMSG", usage: "/msg <target> <message>")
 
-        case "query":
-            // Stage 1 has no query buffers, so this is `/msg` with a usage line instead
-            // of a window. Listed rather than dropped, or the passthrough below would
-            // send the server a command called QUERY.
-            return directed(rest, verb: "PRIVMSG", usage: "/query <nick> <message>")
+        case "query", "q":
+            return query(rest)
 
         case "notice":
             return directed(rest, verb: "NOTICE", usage: "/notice <target> <message>")
@@ -201,14 +198,34 @@ public struct CommandParser: Sendable {
         return [.send(IRCMessage(verb: verb, parameters: [target, text]))]
     }
 
+    /// `/query <nick> [message]` — open the conversation window, optionally saying
+    /// something in it.
+    ///
+    /// The message is optional, which is the whole difference from `/msg`: `/query bob`
+    /// is "open a window for bob", and there is no other way to ask for one before he has
+    /// said anything.
+    ///
+    /// A channel name is refused rather than quietly opened as a query. `/query #swift`
+    /// is somebody reaching for `/join`, and a conversation window named after a channel
+    /// would send `PRIVMSG #swift` from a window that looks like a private one.
+    private func query(_ rest: String) -> [CommandAction] {
+        let (nick, text) = split(rest)
+        guard !nick.isEmpty else {
+            return [.error(CommandError.usage("/query <nick> [message]").message)]
+        }
+        guard !capabilities.isChannelName(nick) else {
+            return [.error(CommandError.notAPerson(command: "/query", target: nick).message)]
+        }
+        return [.openQuery(nick: nick, message: text.isEmpty ? nil : text)]
+    }
+
     /// `/me waves` — a `PRIVMSG` wrapped in CTCP `ACTION`, to the window you are in.
     private func action(_ rest: String, to activeTarget: Target?) -> [CommandAction] {
         guard !rest.isEmpty else { return [.error(CommandError.usage("/me <action>").message)] }
         guard let activeTarget else {
             return [.error(CommandError.noTargetInThisWindow(command: "/me").message)]
         }
-        let wrapped =
-            "\(EventTranslator.ctcpDelimiter)ACTION \(rest)\(EventTranslator.ctcpDelimiter)"
+        let wrapped = CTCPMessage(command: "ACTION", argument: rest).wireForm
         return [.send(IRCMessage(verb: "PRIVMSG", parameters: [activeTarget.raw, wrapped]))]
     }
 

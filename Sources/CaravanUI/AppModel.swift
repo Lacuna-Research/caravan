@@ -126,8 +126,28 @@ public struct ConnectionSettings: Sendable, Equatable {
             ident: bouncerIdent,
             realName: realName.isEmpty ? nil : realName,
             password: password.isEmpty ? nil : password,
-            authentication: authenticationMethod
+            authentication: authenticationMethod,
+            clientVersion: Self.clientVersion
         )
+    }
+
+    /// What CTCP `VERSION` answers with.
+    ///
+    /// Read from the bundle here rather than in `IRCSession`, which has no bundle and no
+    /// business acquiring one. The OS version is included because "which macOS" is the
+    /// first question asked of a client-specific bug, and CTCP `VERSION` is where every
+    /// other client has put it for thirty years.
+    ///
+    /// Assembled from the numeric components rather than from
+    /// `operatingSystemVersionString`, which the live run showed reads `Version 26.5.2
+    /// (Build 25F84)` — so the reply went out as "macOS Version 26.5.2 (Build 25F84)",
+    /// with a redundant word and a build number nobody asking for a version wants.
+    static var clientVersion: String {
+        let short =
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let version = short.map { "Caravan \($0)" } ?? "Caravan"
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(version) (macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion))"
     }
 
     /// The `<user>` of `USER`, with the bouncer network appended when there is one.
@@ -349,6 +369,9 @@ public final class AppModel {
     public enum SidebarItem: Hashable, Sendable {
         case status(UUID)
         case channel(connection: UUID, channel: IRCChannelName)
+        /// A private conversation. Sorted after the channels of the same network (§12),
+        /// which keeps channel positions stable as transient PMs come and go.
+        case query(connection: UUID, nick: IRCNick)
         case settingsAndDebug
     }
 
@@ -395,6 +418,7 @@ public final class AppModel {
         switch selection {
         case .status(let id): connection(id: id)
         case .channel(let id, _): connection(id: id)
+        case .query(let id, _): connection(id: id)
         case .settingsAndDebug, nil: nil
         }
     }
@@ -407,14 +431,55 @@ public final class AppModel {
         return connection.buffer(named: name)
     }
 
-    /// Closes the selected channel buffer, parting the channel. ⌘W's action.
-    public func closeSelectedChannel() async {
-        guard case .channel(let connectionID, let name) = selection,
-            let connection = connection(id: connectionID),
-            let buffer = connection.buffer(named: name)
-        else { return }
-        await connection.closeChannel(buffer.name)
-        selection = .status(connection.id)
+    /// The conversation the selection names, when it names one.
+    public var selectedQuery: QueryBuffer? {
+        guard case .query(let connectionID, let nick) = selection,
+            let connection = connection(id: connectionID)
+        else { return nil }
+        return connection.query(named: nick)
+    }
+
+    /// Where a typed line goes from the selected window, or `nil` in a status window.
+    public var selectedTarget: Target? {
+        switch selection {
+        case .channel(_, let name): .channel(name)
+        case .query(_, let nick): .nick(nick)
+        case .status, .settingsAndDebug, nil: nil
+        }
+    }
+
+    /// Whether ⌘W has a buffer to close, and what closing it is called.
+    ///
+    /// Two different acts behind one key: closing a channel *parts* it, and closing a
+    /// conversation closes a window. The menu item says which, because a shortcut that
+    /// quietly leaves a channel is one people press once.
+    public var closeBufferTitle: String? {
+        switch selection {
+        case .channel: "Close Channel"
+        case .query: "Close Conversation"
+        case .status, .settingsAndDebug, nil: nil
+        }
+    }
+
+    /// Closes the selected buffer. ⌘W's action.
+    ///
+    /// A channel is parted — membership never outlives its buffer. A query is not, having
+    /// no membership to leave; it simply stops taking up a row.
+    public func closeSelectedBuffer() async {
+        switch selection {
+        case .channel(let connectionID, let name):
+            guard let connection = connection(id: connectionID),
+                let buffer = connection.buffer(named: name)
+            else { return }
+            await connection.closeChannel(buffer.name)
+            selection = .status(connection.id)
+        case .query(let connectionID, let nick):
+            guard let connection = connection(id: connectionID) else { return }
+            connection.closeQuery(nick)
+            selection = .status(connection.id)
+        case .status, .settingsAndDebug, nil:
+            return
+        }
     }
 
     // MARK: - Input
@@ -438,6 +503,17 @@ public final class AppModel {
                 await connection.disconnect()
             case .quit(let reason):
                 await connection.quit(reason: reason)
+            case .openQuery(let nick, let message):
+                // Selected, unlike a query opened by an arriving message: this one was
+                // asked for, and `/query bob` that did not take you to bob would be a
+                // command with no visible effect.
+                let buffer = await connection.openQuery(with: nick)
+                selection = .query(connection: connection.id, nick: buffer.nick)
+                guard let message else { break }
+                await connection.send(
+                    IRCMessage(verb: "PRIVMSG", parameters: [nick, message]),
+                    from: .nick(buffer.nick)
+                )
             case .connect(let host, let port, let tls, let password):
                 await connect(
                     toHost: host,
@@ -704,9 +780,14 @@ public final class AppModel {
     /// Nothing in it needs a round trip — completing against anything the server would
     /// have to be asked for is the line this stage does not cross.
     public func completionSources(in buffer: ChannelBuffer?) -> CompletionSources {
+        // The nick list's own order, which is rank then casemapped alphabetical.
+        completionSources(nicks: buffer?.members.map(\.nick.raw) ?? [])
+    }
+
+    /// The same, for a window whose "membership" is the two people in it.
+    public func completionSources(nicks: [String]) -> CompletionSources {
         CompletionSources(
-            // The nick list's own order, which is rank then casemapped alphabetical.
-            nicks: buffer?.members.map(\.nick.raw) ?? [],
+            nicks: nicks,
             // This network's channels only. With two open, offering the other one's would
             // complete to a channel this connection cannot join.
             channels: activeConnection?.channels.map(\.name.raw) ?? [],
@@ -737,6 +818,9 @@ public final class AppModel {
             connection(id: id)?.log.markUnreadPosition(with: renderer.unreadRule())
         case .channel(let id, let name):
             connection(id: id)?.buffer(named: name)?.log
+                .markUnreadPosition(with: renderer.unreadRule())
+        case .query(let id, let nick):
+            connection(id: id)?.query(named: nick)?.log
                 .markUnreadPosition(with: renderer.unreadRule())
         case .settingsAndDebug:
             break

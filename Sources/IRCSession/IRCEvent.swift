@@ -47,6 +47,26 @@ public enum IRCEvent: Sendable, Equatable {
         tags: IRCTags
     )
 
+    /// A CTCP request — a `PRIVMSG` whose text is wrapped in `\u{01}`.
+    ///
+    /// Separate from ``message(target:sender:text:kind:isAction:tags:)`` because it is not
+    /// something anybody said: a `VERSION` request is a question addressed to the
+    /// *client*, and rendering it as a line of conversation is how it used to appear in
+    /// a channel window as control characters. `ACTION` is deliberately not here — it is
+    /// a message wearing a CTCP's wrapper, and arrives as one.
+    ///
+    /// The session answers what it knows how to answer, subject to ``CTCPThrottle``.
+    /// Emitting the request regardless is what makes a flood visible rather than silent.
+    case ctcpRequest(target: Target, sender: IRCSource, request: CTCPMessage, tags: IRCTags)
+
+    /// A CTCP reply — a `NOTICE` whose text is wrapped in `\u{01}`, answering a request
+    /// we sent.
+    ///
+    /// **Never answered, by anyone.** The request/reply split between `PRIVMSG` and
+    /// `NOTICE` is the only thing standing between two clients and an infinite exchange,
+    /// and this case existing separately is what makes that rule mechanical.
+    case ctcpReply(target: Target, sender: IRCSource, reply: CTCPMessage, tags: IRCTags)
+
     /// A `JOIN`. `account` and `realName` are populated only under `extended-join`, and
     /// `account` is `nil` for someone who is not logged in — the wire's `*`.
     case joined(

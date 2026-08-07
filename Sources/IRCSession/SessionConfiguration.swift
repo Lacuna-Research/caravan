@@ -23,6 +23,13 @@ public struct SessionConfiguration: Sendable {
     /// How to prove who we are: SASL, NickServ, or neither. Also a live credential.
     public var authentication: AuthenticationMethod
 
+    /// What a CTCP `VERSION` request is answered with.
+    ///
+    /// Configured rather than hardcoded because this module has no bundle to read a
+    /// version out of, and a client that reports "Caravan" with no version is no use to
+    /// whoever is asking why it misbehaves. The app fills it in from `Info.plist`.
+    public var clientVersion: String
+
     /// How many lines to ask `draft/chathistory` for when a channel opens.
     ///
     /// Zero turns backfill off. The default is a screenful and a bit: enough that
@@ -65,6 +72,7 @@ public struct SessionConfiguration: Sendable {
         realName: String? = nil,
         password: String? = nil,
         authentication: AuthenticationMethod = .none,
+        clientVersion: String = "Caravan (macOS)",
         chatHistoryLimit: Int = 50,
         bouncerNetworkID: String? = nil,
         connectTimeout: Duration = .seconds(30),
@@ -81,6 +89,7 @@ public struct SessionConfiguration: Sendable {
         self.realName = realName ?? nick
         self.password = password
         self.authentication = authentication
+        self.clientVersion = clientVersion
         self.chatHistoryLimit = chatHistoryLimit
         self.bouncerNetworkID = bouncerNetworkID
         self.connectTimeout = connectTimeout

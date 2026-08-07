@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 4/17 complete. Next: prompt 5.
+**Status:** 5/17 complete. Next: prompt 6.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -215,39 +215,19 @@ Do not: DCC. CHAT and SEND are stage 3, and they are a transport problem rather 
 message-handling one.
 ```
 
-**Carry-forward** *(consumed when this prompt runs)*
+**Status:** complete. Every carry-forward note above was consumed and is deleted; what each
+turned into is in `BUILD-LOG.md`. `BouncerServ` needs nothing further — the bouncer's control
+connection is an ordinary `ConnectionViewModel`, so a `PRIVMSG` from it opens a query like
+any other, and `/query BouncerServ` opens one before it has spoken.
 
-- From stage 1 prompt 6: `ACTION` is already unwrapped — `IRCEvent.message` carries
-  `isAction` with the `\u{01}` wrapper stripped. Every *other* CTCP still arrives as an
-  ordinary message with its delimiters intact, so a `VERSION` request currently renders as
-  control characters in a channel window. `EventTranslator.unwrapAction` is where the
-  general version belongs.
-- From stage 1 prompt 8: the tree, the buffer and the selection are all channel-shaped.
-  `ChannelBuffer` wraps a `Channel`, `AppModel.SidebarItem` has `.status` and `.channel`,
-  and `ConnectionViewModel.destinations(for:)` routes a message at a nick to the status
-  window. A query is a third case in each of those three, and the sort-after-channels rule
-  is the ordering of one array.
-- From stage 1 prompt 8: `HeaderBand` is general and already built — never hidden,
-  shrink-to-two-lines, expand-into-a-scroller. The query case is content, not behaviour.
-- From prompt 4: **`BouncerServ` still has nowhere of its own to go.** The prompt-4 brief
-  said it "needs nothing special: it is a query window" — true, and query windows are this
-  prompt's. Until then its messages land in the bouncer's status window, which is at least
-  the right *network*. Nothing needs building for it here beyond the query buffer itself:
-  the bouncer's control connection is an ordinary `ConnectionViewModel` and
-  `destinations(for:)` will route a nick-targeted message to the new query case like any
-  other.
-- From prompt 3: **`echo-message` changes where a private message's echo comes from.** With
-  the capability on, `ConnectionViewModel.send` draws nothing and the server's copy arrives
-  as an ordinary `.message` whose target is a *nick* — which `destinations(for:)` routes to
-  the status window. So the `-> *bob* hi` form is currently reached only when the capability
-  is off. Once query buffers exist, the server's echo should land in the query, and the
-  `-> *nick*` form should stay for a message aimed at a window you are not in.
-- From stage 1 prompt 11: an outgoing `/msg bob hi` typed in a channel echoes *there* as
-  `-> *bob* hi`, deliberately marked as leaving the window. Query buffers change where
-  that echo goes, not how it reads: a message to a window that *is* the query renders
-  `<you> hi`, and the `-> *nick*` form stays for messages aimed elsewhere. `LineKind
-  .ownPrivateMessage`/`.ownPrivateNotice` and `ConnectionViewModel.isThisWindow` are the
-  two places.
+**One deviation from mIRC, argued in `BUILD-LOG.md`:** `/msg <nick>` opens the conversation
+window. mIRC's does not, but `echo-message` forces it — the server's copy of what we sent
+arrives inbound and opens the window regardless, so matching it is the only way the client
+behaves the same with the capability and without.
+
+**Verified live against Libera**, including the throttle: twenty requests, five answers.
+Fifty at once was not sent and could not be — a public network throttles the *sender* — so
+that case is a socket-level test instead.
 
 ---
 
@@ -294,6 +274,25 @@ deferred (§2): revisit once the treebar is in real use.
   yet is the thing MRU order and the ⌘K switcher both want: one flat list of *buffers across
   every network* — `connections.flatMap` over their channels plus each status buffer —
   which is also the list next-unread and next-highlight walk.
+- From prompt 5: **there are now three buffer shapes, and the flat list wants all three.**
+  `ConnectionViewModel.channels: [ChannelBuffer]`, `.queries: [QueryBuffer]` and the status
+  `log`; `AppModel.SidebarItem` has `.status`, `.channel`, `.query` and `.settingsAndDebug`.
+  `ChannelBuffer` and `QueryBuffer` share `log` and `input` and nothing else — **this is the
+  third occurrence, so the shared protocol is now earned** rather than premature. The flat
+  list, activity state and ⌘1–9 binding identity all want it; note that a binding attaching
+  to "network + buffer name" has to distinguish `#bob` from `bob`, which `SidebarItem`
+  already does and a bare name would not.
+- From prompt 5: **§18's default notification triggers are highlights *and private
+  messages*.** A PM now has a buffer to belong to, so "which buffer just got a private
+  message" is answerable — `ConnectionViewModel.destinations(for:)` is where a `.message`
+  first meets its query. Activity state is this prompt's; notifications are prompt 13's, and
+  both read the same answer.
+- From prompt 5: **a query has no `chathistory` backfill.**
+  `IRCSession.requestHistoryIfOurJoin` fires on our own `JOIN` only, so a conversation
+  reattached through a bouncer opens empty where a channel opens mid-conversation. Opening
+  a query is a client-side act with no wire event to hang a `CHATHISTORY LATEST` off; the
+  natural hook is `ConnectionViewModel.openQuery(with:)`. Deferred to prompt 12, which owns
+  chathistory's interaction with the local log.
 
 ---
 
@@ -341,6 +340,19 @@ them apart means writing `/ban` twice.
   user typed something in a window". A case that reaches for the selection, a view model or
   a sheet is one those two cannot use, and the divergence is invisible until the second
   front end is built.
+- From prompt 5: **`/ctcp` and `/ping` have everything they need already.**
+  `IRCProtocol.CTCPMessage` builds the wire form and `IRCEvent.ctcpReply` renders the
+  answer, so both commands are one `.send` each. Two things to get right: the request goes
+  out as a `PRIVMSG` (a `NOTICE` is a *reply*, and the split is the only thing stopping two
+  clients answering each other forever), and `ConnectionViewModel.echo` deliberately draws
+  nothing for an outgoing non-`ACTION` CTCP — so `/ctcp bob VERSION` currently shows only
+  the answer coming back. Decide there whether asking deserves a line of its own; a
+  `.ownCtcpRequest` kind beside `.ownCtcpReply` is the shape if so.
+- From prompt 5: **`/query` and `/msg` are now different commands**, not aliases.
+  `CommandAction.openQuery(nick:message:)` opens a window with an optional message;
+  `/msg` sends and opens the recipient's window as a side effect. `/say` belongs with
+  `/msg`. Note that `/query` refuses a channel name via `CommandError.notAPerson`, which is
+  the pattern for any later command that wants a person rather than a target.
 
 ---
 
@@ -529,6 +541,16 @@ auto-ignore.
   The backoff ceiling bounds it; recognising the permanent cases would be better. The
   signal is available: an `ERROR` arriving *before* 001 is far more likely to be a ban or
   a throttle than a dropped link.
+- From prompt 5: **there is already one outbound rate limit, and it is not this one.**
+  `CTCPThrottle` in `IRCSession` bounds *auto-replies* — burst 5, one token back every 5s,
+  one bucket per connection — because a CTCP flood would otherwise make the client an
+  amplifier. It is a policy about answering strangers; this prompt's is a policy about not
+  tripping `Excess Flood` on what the user typed. **Decide explicitly whether they compose
+  or the CTCP bucket folds into the general limiter**, and say which in `BUILD-LOG.md`: two
+  limiters silently queueing behind each other is the kind of thing that shows up as
+  "replies stopped and nobody knows why". The live run measured the real constraint —
+  Libera throttles the *sender*, answering twenty rapid `PRIVMSG`s with `*** Message to
+  <nick> throttled due to flooding` — so the outbound limit has a number to aim at.
 
 ---
 

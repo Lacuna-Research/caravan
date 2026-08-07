@@ -8,11 +8,6 @@ import IRCProtocol
 /// ``IRCEvent/clientError(_:)`` — do not come from here, because they do not come from
 /// a message.
 public enum EventTranslator {
-    /// CTCP's delimiter. Only `ACTION` is understood at this stage; every other CTCP
-    /// request stays wrapped inside an ordinary message event, and is visible in `.raw`
-    /// either way.
-    public static let ctcpDelimiter: Character = "\u{01}"
-
     /// The events for one inbound message, `.raw` first.
     public static func events(
         for message: IRCMessage,
@@ -43,13 +38,37 @@ public enum EventTranslator {
         switch verb.uppercased() {
         case "PRIVMSG", "NOTICE":
             guard let sender = message.source, parameters.count >= 2 else { return [] }
+            let isRequest = verb.uppercased() == "PRIVMSG"
+            let target = Target(parameters[0], capabilities: capabilities)
+
+            // A CTCP is an ordinary message whose text is wrapped in `\u{01}`. `ACTION`
+            // is the exception in both directions: it is unwrapped into the message it
+            // is, and it is never treated as a request.
+            if let ctcp = CTCPMessage(text: parameters[1]), !ctcp.isAction {
+                return [
+                    isRequest
+                        ? .ctcpRequest(
+                            target: target,
+                            sender: sender,
+                            request: ctcp,
+                            tags: message.tags
+                        )
+                        : .ctcpReply(
+                            target: target,
+                            sender: sender,
+                            reply: ctcp,
+                            tags: message.tags
+                        )
+                ]
+            }
+
             let (text, isAction) = unwrapAction(parameters[1])
             return [
                 .message(
-                    target: Target(parameters[0], capabilities: capabilities),
+                    target: target,
                     sender: sender,
                     text: text,
-                    kind: verb.uppercased() == "PRIVMSG" ? .privmsg : .notice,
+                    kind: isRequest ? .privmsg : .notice,
                     isAction: isAction,
                     tags: message.tags
                 )
@@ -312,17 +331,13 @@ public enum EventTranslator {
     /// `\u{01}ACTION waves\u{01}` is `* nick waves`. A malformed one — no closing
     /// delimiter, which happens when a message was truncated — is still recognized,
     /// because showing the action is better than showing the control characters.
+    ///
+    /// Anything that is not an `ACTION` comes back unchanged and not-an-action, including
+    /// another CTCP: the caller above has already split those off into
+    /// ``IRCEvent/ctcpRequest(target:sender:request:tags:)``, and the local-echo path
+    /// uses this to render `/me` without needing to know the difference.
     public static func unwrapAction(_ text: String) -> (text: String, isAction: Bool) {
-        let marker = "\(ctcpDelimiter)ACTION"
-        guard text.hasPrefix(marker) else { return (text, false) }
-        var body = text.dropFirst(marker.count)
-        // The keyword has to end here, or a CTCP called `ACTIONS` would be mistaken for
-        // one of ours and lose its first character.
-        guard body.isEmpty || body.first == " " || body.first == ctcpDelimiter else {
-            return (text, false)
-        }
-        if body.last == ctcpDelimiter { body = body.dropLast() }
-        if body.first == " " { body = body.dropFirst() }
-        return (String(body), true)
+        guard let ctcp = CTCPMessage(text: text), ctcp.isAction else { return (text, false) }
+        return (ctcp.argument ?? "", true)
     }
 }

@@ -233,29 +233,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     `VERSION`, `PING`, `TIME`, `USERINFO`, `CLIENTINFO`, `FINGER`, `ACTION`
     handling and replies, with reply throttling.
 
-    ### Carry-forward
-
-    - From prompt 6: `ACTION` is already unwrapped — `IRCEvent.message` carries
-      `isAction` and text with the `\u{01}` wrapper stripped. Every *other* CTCP still
-      arrives as an ordinary message with its delimiters intact, so a `VERSION` request
-      currently renders as control characters in a channel window. That is the gap this
-      item closes; `EventTranslator.unwrapAction` is where the general version belongs.
-    - From prompt 8: the tree, the buffer and the selection are all channel-shaped.
-      `ChannelBuffer` wraps a `Channel` snapshot, `AppModel.SidebarItem` has `.status`
-      and `.channel`, and `ConnectionViewModel.destinations(for:)` routes a `.message`
-      at a nick to the status window. A query buffer is a third case in each of those
-      three places, and the sort-after-channels rule is the ordering of one array.
-    - From prompt 8: `HeaderBand` is general and already built — never hidden,
-      shrink-to-two-lines, expand-into-a-scroller. The query case is content and a
-      placeholder, not new behaviour.
-    - From prompt 11: an outgoing `/msg bob hi` typed in a channel currently echoes *in
-      that channel* as `-> *bob* hi` — mIRC's form, and deliberately marked as leaving the
-      window, because the live acceptance run caught it rendering as an ordinary channel
-      line. Query buffers change where that echo goes, not how it reads: a message to a
-      window that *is* the query renders `<you> hi`, and the `-> *nick*` form stays for
-      messages aimed somewhere other than the window you typed in. `LineKind
-      .ownPrivateMessage` / `.ownPrivateNotice` and `ConnectionViewModel.isThisWindow` are
-      the two places.
+    *Done. `CTCPMessage` lives in `IRCProtocol`, where this file's module table always said
+    CTCP belonged; `IRCEvent` gained `.ctcpRequest` and `.ctcpReply`; `CTCPReplies` and
+    `CTCPThrottle` are the answer table and the rate limit, both pure. `QueryBuffer` is a
+    third buffer shape beside `ChannelBuffer` and the status window, sorted after channels
+    with a bullet sigil. **One deviation from mIRC:** `/msg <nick>` opens the conversation
+    window, because `echo-message` opens it anyway and one behaviour beats two —
+    `BUILD-LOG.md` argues it. Deferred: `chathistory` backfill for a query, which has no
+    wire event to hang a request off, noted on stage 2 prompt 12.*
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
     /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.

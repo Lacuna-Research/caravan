@@ -66,6 +66,13 @@ public final class ConnectionViewModel: Identifiable {
     /// Channel buffers in join order, which is the order the tree shows them in.
     public private(set) var channels: [ChannelBuffer] = []
 
+    /// Query buffers, in the order the conversations started.
+    ///
+    /// A second array rather than a `kind` on one, because the tree sorts queries *after*
+    /// channels (§12) and that rule is then the order two arrays are concatenated in
+    /// rather than a comparator that has to be right everywhere it is written.
+    public private(set) var queries: [QueryBuffer] = []
+
     /// The status window's input box and its history. Per buffer, like every other.
     public let statusInput = InputState()
 
@@ -84,6 +91,7 @@ public final class ConnectionViewModel: Identifiable {
     private var renderer: LineRenderer { settings.renderer }
 
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
+    @ObservationIgnored private var queriesByNick: [IRCNick: QueryBuffer] = [:]
 
     /// The casemapping the session is folding names under, learned from the events that
     /// carry one. Starts at the `ISUPPORT` default, as the session's own does.
@@ -152,6 +160,34 @@ public final class ConnectionViewModel: Identifiable {
 
     public func buffer(named name: IRCChannelName) -> ChannelBuffer? { buffersByName[name] }
 
+    public func query(named nick: IRCNick) -> QueryBuffer? { queriesByNick[nick] }
+
+    /// Opens a conversation window, or returns the one already open. `/query`'s action.
+    ///
+    /// The one public way to create a query buffer without a message arriving, which is
+    /// what makes `/query bob` a complete command rather than a message with no text.
+    ///
+    /// **Asynchronous for the casemapping, which is not decoration.** Query buffers are
+    /// keyed by nick, and the mirrored mapping is only refreshed by events that carry a
+    /// folded name — so `/query bob` before any traffic would key the buffer under the
+    /// `ISUPPORT` default while bob's reply arrives folded under the server's real one,
+    /// and the same person would get two windows.
+    @discardableResult
+    public func openQuery(with nick: String) async -> QueryBuffer {
+        caseMapping = await session.capabilities.caseMapping
+        return query(creating: IRCNick(nick, mapping: caseMapping))
+    }
+
+    /// Closes a conversation window.
+    ///
+    /// **Nothing goes on the wire.** A query has no membership to leave — closing it is
+    /// closing a window, which is exactly why ⌘W on one is not the same act as ⌘W on a
+    /// channel, where it parts.
+    public func closeQuery(_ nick: IRCNick) {
+        guard queriesByNick.removeValue(forKey: nick) != nil else { return }
+        queries.removeAll { $0.nick == nick }
+    }
+
     // MARK: - Control
 
     public func connect() async {
@@ -186,14 +222,19 @@ public final class ConnectionViewModel: Identifiable {
             .actions(for: text, activeTarget: activeTarget)
     }
 
-    /// Sends a message, echoing what we said into the window it came from.
+    /// Sends a message, echoing what we said into the windows it belongs in.
     ///
-    /// **Local echo only where the server is not doing it for us.** Without
-    /// `echo-message` the server never sends our own messages back, so a client rendering
-    /// only inbound traffic would show nothing of what you typed. With it, the server's
-    /// copy is the better one — it carries the `server-time` the message was actually
-    /// accepted at and its message id, and it arrives in the order everyone else sees —
-    /// so the local line is the one that goes.
+    /// Two echoes, and they answer different questions.
+    ///
+    /// - **The window you typed in**, when the message was aimed somewhere else: `/msg
+    ///   bob hi` typed in `#swift` shows `-> *bob* hi` there. mIRC's form, and the only
+    ///   way to see that it sent without leaving the window. Drawn whether or not
+    ///   `echo-message` is on, because the server's copy goes to bob's window and says
+    ///   nothing about where you were standing when you sent it.
+    /// - **The recipient's own window**: `<you> hi` in bob's query, or in `#swift`.
+    ///   Drawn *only* without `echo-message` — with it, the server's copy is the better
+    ///   one, since it carries the `server-time` the message was accepted at and its
+    ///   message id, and arrives in the order everyone else sees it.
     ///
     /// This is the filter `LineKind.isSelfEcho` was built for: one condition on the way
     /// out, rather than trying to recognise our own words coming back.
@@ -201,12 +242,11 @@ public final class ConnectionViewModel: Identifiable {
     /// The wire form goes to the status window instead, and only when the raw-traffic
     /// toggle is on — that is where `>>` markers belong.
     public func send(_ message: IRCMessage, from target: Target?) async {
+        // Read off the actor rather than mirrored: classifying the recipient needs
+        // `CHANTYPES`, and this path is one keystroke rather than one line of scrollback.
+        let serverCapabilities = await session.capabilities
         appendRaw(message.wireForm, kind: .rawOutbound)
-        if !capabilities.isEnabled(.echoMessage),
-            let echo = selfEchoLine(for: message, in: target)
-        {
-            log(for: target).append([echo])
-        }
+        echo(message, from: target, capabilities: serverCapabilities)
         await session.send(message)
     }
 
@@ -236,52 +276,92 @@ public final class ConnectionViewModel: Identifiable {
     public func applySettings() {
         let font = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
         let palette = settings.palette
-        for controller in [log] + channels.map(\.log) {
+        for controller in [log] + channels.map(\.log) + queries.map(\.log) {
             controller.chatFont = font
             controller.lineCap = settings.scrollbackLines
             controller.palette = palette
         }
     }
 
-    /// The line for a message we just sent, or `nil` for anything that is not one.
+    /// Draws what we just sent, wherever it belongs. See ``send(_:from:)``.
     ///
     /// `PRIVMSG` and `NOTICE` only. A `JOIN` or a `MODE` produces no echo because the
     /// server will tell us about it in a moment, and echoing it here would show it twice.
-    ///
-    /// **A message addressed somewhere other than this window is marked as such.** `/msg
-    /// bob hi` typed in `#swift` echoes there — mIRC's behaviour, and the only way to see
-    /// that it sent without leaving the window — but as `-> *bob* hi`, with the recipient
-    /// in the nick column. The live acceptance run found it rendered as `<@you> hi`,
-    /// indistinguishable from something said in the channel, which is a client lying about
-    /// where your words went.
-    private func selfEchoLine(for message: IRCMessage, in target: Target?) -> AttributedString? {
+    /// A CTCP *request* we sent produces none either: it is a question addressed to a
+    /// client, not something said, and it arrives back as its own reply line. `ACTION` is
+    /// the exception, being a message wearing a CTCP's wrapper.
+    private func echo(
+        _ message: IRCMessage,
+        from target: Target?,
+        capabilities serverCapabilities: ServerCapabilities
+    ) {
         guard case .verb(let verb) = message.command, message.parameters.count >= 2 else {
-            return nil
+            return
         }
         let isNotice: Bool
         switch verb.uppercased() {
         case "PRIVMSG": isNotice = false
         case "NOTICE": isNotice = true
-        default: return nil
+        default: return
         }
 
-        let (text, isAction) = EventTranslator.unwrapAction(message.parameters[1])
+        let body = message.parameters[1]
+        if let ctcp = CTCPMessage(text: body), !ctcp.isAction { return }
+        let (text, isAction) = EventTranslator.unwrapAction(body)
         let recipient = message.parameters[0]
+
+        // **A message addressed somewhere other than this window is marked as such.** The
+        // live acceptance run found `/msg bob hi` rendering in `#swift` as `<@you> hi`,
+        // indistinguishable from something said in the channel — a client lying about
+        // where your words went.
+        if !isThisWindow(recipient, target) {
+            var fields = LineFields()
+            fields.text = text
+            fields.nick = recipient
+            log(for: target)
+                .append([
+                    renderer.line(
+                        kind: isNotice ? .ownPrivateNotice : .ownPrivateMessage,
+                        fields: fields
+                    )
+                ])
+        }
+
+        // The window is opened whether or not the server will echo for us; only the
+        // *line* is conditional. Otherwise `/msg bob hi` would open a conversation on a
+        // network without `echo-message` and, for as long as the round trip takes, not on
+        // one with it — the capability leaking into behaviour by way of a race.
+        let destination = Target(recipient, capabilities: serverCapabilities)
+        guard let buffer = echoDestination(destination, isNotice: isNotice) else { return }
+        guard !capabilities.isEnabled(.echoMessage) else { return }
+
         var fields = LineFields()
         fields.text = text
+        fields.nick = ownDisplayName(in: destination)
+        let kind: LineKind = isAction ? .ownAction : (isNotice ? .ownNotice : .ownMessage)
+        buffer.append([renderer.line(kind: kind, fields: fields)])
 
-        guard isThisWindow(recipient, target) else {
-            fields.nick = recipient
-            return renderer.line(
-                kind: isNotice ? .ownPrivateNotice : .ownPrivateMessage,
-                fields: fields
-            )
+        if case .nick(let nick) = destination {
+            queriesByNick[nick]?
+                .record(sender: currentNick, text: text, isAction: isAction, at: Date())
         }
+    }
 
-        fields.nick = ownDisplayName(in: target)
-        let kind: LineKind =
-            isAction ? .ownAction : (isNotice ? .ownNotice : .ownMessage)
-        return renderer.line(kind: kind, fields: fields)
+    /// The recipient's own window, opening a query for it where that is the right thing.
+    ///
+    /// **A `PRIVMSG` to a nick opens the window; a `NOTICE` does not.** The same rule the
+    /// inbound side follows, and it has to be the same rule: under `echo-message` the
+    /// server's copy of what we sent comes back through the inbound path, so a `/msg` that
+    /// opened a window on one network and not on another would be the capability leaking
+    /// into behaviour. `nil` means there is nowhere for it to go and nothing to draw.
+    private func echoDestination(_ target: Target, isNotice: Bool) -> MessageLogController? {
+        switch target {
+        case .channel(let name):
+            return buffersByName[name]?.log
+        case .nick(let nick):
+            if isNotice { return queriesByNick[nick]?.log }
+            return query(creating: nick).log
+        }
     }
 
     /// Whether a recipient names the window the message was typed in.
@@ -330,8 +410,11 @@ public final class ConnectionViewModel: Identifiable {
 
     /// The scrollback a window's input writes into.
     private func log(for target: Target?) -> MessageLogController {
-        guard case .channel(let name)? = target else { return log }
-        return buffersByName[name]?.log ?? log
+        switch target {
+        case .channel(let name)?: buffersByName[name]?.log ?? log
+        case .nick(let nick)?: queriesByNick[nick]?.log ?? log
+        case nil: log
+        }
     }
 
     // MARK: - Events
@@ -402,6 +485,39 @@ public final class ConnectionViewModel: Identifiable {
         for destination in destinations(for: event) {
             destination.append([line])
         }
+        noteConversation(event, at: context.now)
+    }
+
+    /// Records a private message in its query's header band (§14).
+    ///
+    /// After ``destinations(for:)``, which is what opened the buffer: a message that did
+    /// not earn a window has no conversation to be part of.
+    private func noteConversation(_ event: IRCEvent, at when: Date) {
+        guard case .message(let target, let sender, let text, _, let isAction, _) = event,
+            let who = sender.nick,
+            let other = correspondent(target: target, sender: sender),
+            let buffer = queriesByNick[other]
+        else { return }
+        buffer.record(sender: who, text: text, isAction: isAction, at: when)
+    }
+
+    /// The other party in a message addressed to a nick, or `nil` when there is not one.
+    ///
+    /// **Which end of it we are decides where to look.** An inbound message names us as
+    /// the target and the conversation is with the *sender*; our own message coming back
+    /// under `echo-message` — or replayed out of a bouncer's backlog — names us as the
+    /// sender and the conversation is with the *target*. One window either way, which is
+    /// the whole point.
+    ///
+    /// A message from a server rather than a person has no nick and gets no window: `:irc
+    /// .libera.chat NOTICE alice :...` is the network talking, and it belongs in the
+    /// status window with the rest of what the network says.
+    private func correspondent(target: Target, sender: IRCSource) -> IRCNick? {
+        guard case .nick(let targetNick) = target, let senderNick = sender.nick else {
+            return nil
+        }
+        return isOwn(nick: senderNick)
+            ? targetNick : IRCNick(senderNick, mapping: targetNick.mapping)
     }
 
     /// When a line was *said*, under `server-time`, or `nil` for one that has no such tag.
@@ -414,9 +530,14 @@ public final class ConnectionViewModel: Identifiable {
     /// Only messages carry their tags today. Prompt 4 replays joins and topics through
     /// `chathistory` and will want the same for those.
     private func serverTime(of event: IRCEvent) -> Date? {
-        guard case .message(_, _, _, _, _, let tags) = event,
-            let value = tags.value(for: "time")
-        else { return nil }
+        let tags: IRCTags
+        switch event {
+        case .message(_, _, _, _, _, let messageTags): tags = messageTags
+        case .ctcpRequest(_, _, _, let ctcpTags), .ctcpReply(_, _, _, let ctcpTags):
+            tags = ctcpTags
+        default: return nil
+        }
+        guard let value = tags.value(for: "time") else { return nil }
         return Self.parseServerTime(value)
     }
 
@@ -498,9 +619,29 @@ public final class ConnectionViewModel: Identifiable {
             .joinFailed(let channel, _, _):
             return [existing(channel) ?? log]
 
-        case .modeChanged(let target, _, _), .message(let target, _, _, _, _, _):
+        case .modeChanged(let target, _, _):
             guard case .channel(let name) = target else { return [log] }
             return [existing(name) ?? log]
+
+        case .message(let target, let sender, _, let kind, _, _):
+            if case .channel(let name) = target { return [existing(name) ?? log] }
+            guard let other = correspondent(target: target, sender: sender) else { return [log] }
+            // **A notice never opens a window.** Services, the bouncer and half the
+            // network send them, and a window per sender is how mIRC's status window came
+            // to exist in the first place. One that is already open is still the right
+            // place for it — NickServ answering in the NickServ query is what you want.
+            if kind == .notice { return [queriesByNick[other]?.log ?? log] }
+            return [query(creating: other).log]
+
+        case .ctcpRequest(let target, let sender, _, _),
+            .ctcpReply(let target, let sender, _, _):
+            // Shown, never window-opening. A CTCP is a client talking to a client, and a
+            // `VERSION` from a stranger — or from fifty of them — must not be able to
+            // conjure fifty windows. It lands in the conversation if there is one, and in
+            // the status window otherwise.
+            if case .channel(let name) = target, let buffer = existing(name) { return [buffer] }
+            guard let other = correspondent(target: target, sender: sender) else { return [log] }
+            return [queriesByNick[other]?.log ?? log]
 
         case .quit(let who, _):
             return buffersContaining(nick: who.nick).map(\.log)
@@ -563,8 +704,11 @@ public final class ConnectionViewModel: Identifiable {
             caseMapping = channel.mapping
         case .channelChanged(let channel):
             caseMapping = channel.mapping
-        case .message(let target, _, _, _, _, _), .modeChanged(let target, _, _):
-            if case .channel(let name) = target { caseMapping = name.mapping }
+        case .message(let target, _, _, _, _, _), .modeChanged(let target, _, _),
+            .ctcpRequest(let target, _, _, _), .ctcpReply(let target, _, _, _):
+            // Every target was folded under the live mapping on its way here, channel or
+            // nick — which is what makes a nick-keyed query dictionary safe.
+            caseMapping = target.mapping
         case .raw, .stateChanged, .registered, .quit, .nickChanged, .numeric,
             .clientError, .clientNotice, .capabilitiesChanged, .authenticated,
             .standardReply, .awayChanged, .accountChanged, .hostChanged, .realNameChanged,
@@ -589,6 +733,20 @@ public final class ConnectionViewModel: Identifiable {
         buffer.log.palette = settings.palette
         buffersByName[name] = buffer
         channels.append(buffer)
+        return buffer
+    }
+
+    private func query(creating nick: IRCNick) -> QueryBuffer {
+        if let existing = queriesByNick[nick] { return existing }
+        let buffer = QueryBuffer(nick: nick)
+        buffer.log.chatFont = ChatFont.nsFont(
+            family: settings.fontFamily,
+            size: settings.fontSize
+        )
+        buffer.log.palette = settings.palette
+        buffer.log.lineCap = settings.scrollbackLines
+        queriesByNick[nick] = buffer
+        queries.append(buffer)
         return buffer
     }
 

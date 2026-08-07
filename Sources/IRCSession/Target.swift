@@ -39,5 +39,13 @@ public enum Target: Sendable, Hashable, CustomStringConvertible {
         if case .channel = self { true } else { false }
     }
 
+    /// The casemapping the name was folded under, which is the server's live one.
+    public var mapping: IRCCaseMapping {
+        switch self {
+        case .channel(let channel): channel.mapping
+        case .nick(let nick): nick.mapping
+        }
+    }
+
     public var description: String { raw }
 }

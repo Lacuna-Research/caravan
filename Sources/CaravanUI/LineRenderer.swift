@@ -255,6 +255,20 @@ public struct LineRenderer: Sendable {
             fields.text = realName
             return (.realNameChange, fields)
 
+        case .ctcpRequest(_, let sender, let request, _):
+            fields.nick = sender.nick ?? sender.wireForm
+            fields.text = request.summary
+            return (.ctcpRequest, fields)
+
+        case .ctcpReply(let target, let sender, let reply, _):
+            // Our own auto-reply, handed back to us by `echo-message`, names *us* as the
+            // sender. Rendering it as an inbound answer would be the client claiming a
+            // stranger had replied to a question we never asked.
+            let isOurs = isOwn(sender.nick, context: context)
+            fields.nick = isOurs ? target.raw : (sender.nick ?? sender.wireForm)
+            fields.text = reply.summary
+            return (isOurs ? .ownCtcpReply : .ctcpReply, fields)
+
         case .invited(let by, let nick, let channel):
             // Two sentences, one kind: an invitation aimed at us reads as an offer, and
             // one we merely witnessed reads as news about someone else.

@@ -65,6 +65,8 @@ public struct RootView: View {
         } else if let connection = model.activeConnection {
             if let buffer = model.selectedChannel {
                 ChannelBufferView(model: model, buffer: buffer)
+            } else if let buffer = model.selectedQuery {
+                QueryBufferView(model: model, buffer: buffer)
             } else {
                 StatusBufferView(model: model, connection: connection)
             }
@@ -84,27 +86,34 @@ public struct RootView: View {
     /// two networks are different rooms.
     private var title: String {
         if model.isShowingCanvas { return "Settings & Debug" }
-        return model.selectedChannel?.name.raw ?? model.activeConnection?.displayName ?? "Caravan"
+        if let channel = model.selectedChannel { return channel.name.raw }
+        if let query = model.selectedQuery { return query.nick.raw }
+        return model.activeConnection?.displayName ?? "Caravan"
     }
 
     private var subtitle: String {
         guard !model.isShowingCanvas, let connection = model.activeConnection else { return "" }
-        return model.selectedChannel == nil ? connection.statusSummary : connection.displayName
+        return model.selectedTarget == nil ? connection.statusSummary : connection.displayName
     }
 
-    /// ⌘W closes the selected *channel*, which parts it — membership never outlives its
-    /// buffer.
+    /// ⌘W closes the selected buffer. On a channel that *parts* it — membership never
+    /// outlives its buffer — and on a conversation it closes a window and nothing more.
     ///
-    /// Disabled when no channel is selected, so the shortcut falls back to the window's
-    /// own Close rather than swallowing it. A status window is not closable: it is the
-    /// network row, and closing a network is disconnecting from it.
+    /// The title says which, because the two are not the same act. Disabled when neither
+    /// is selected, so the shortcut falls back to the window's own Close rather than
+    /// swallowing it: a status window is not closable, being the network row, and closing
+    /// a network is disconnecting from it.
     private var closeChannelButton: some View {
-        Button("Close Channel") {
-            Task { await model.closeSelectedChannel() }
+        Button(model.closeBufferTitle ?? "Close Channel") {
+            Task { await model.closeSelectedBuffer() }
         }
         .keyboardShortcut("w", modifiers: .command)
-        .disabled(model.selectedChannel == nil)
-        .help("Close this channel's buffer and part the channel")
+        .disabled(model.closeBufferTitle == nil)
+        .help(
+            model.selectedQuery != nil
+                ? "Close this conversation's window"
+                : "Close this channel's buffer and part the channel"
+        )
     }
 }
 
