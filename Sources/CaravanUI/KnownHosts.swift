@@ -53,6 +53,22 @@ public final class KnownHosts {
         write()
     }
 
+    /// One accepted certificate, for the list on the Connect tab.
+    public struct Entry: Sendable, Hashable {
+        public let host: String
+        public let fingerprint: String
+    }
+
+    /// Everything accepted so far, host order.
+    ///
+    /// Sorted rather than in file order: this is a list somebody scans for a hostname, and
+    /// dictionary order would move the rows between launches.
+    public func accepted() -> [Entry] {
+        entries
+            .map { Entry(host: $0.key, fingerprint: $0.value) }
+            .sorted { $0.host < $1.host }
+    }
+
     private static func read(_ url: URL) -> [String: String] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
         var entries: [String: String] = [:]

@@ -1,5 +1,8 @@
+import AppKit
 import Foundation
+import IRCFormat
 import Observation
+import SwiftUI
 
 /// The handful of appearance settings that exist by now.
 ///
@@ -37,7 +40,54 @@ public final class ChatSettings {
         /// What a Tab-completed nick is followed by. mIRC's defaults, and configurable
         /// for the same reason mIRC made them so: people are particular about it.
         public static let completionSuffix = CompletionStyle()
+
+        /// mIRC's density was near-zero leading, not small text (§15.5) — but "normal"
+        /// here is the natural line height rather than the tightest, so the default is a
+        /// readable window and Compact is a thing you choose.
+        public static let density = Density.normal
+
+        /// Actual size. Zoom is a multiplier over the chosen font size rather than a
+        /// second size, so ⌥⌘0 has something to return to.
+        public static let zoom = 1.0
     }
+
+    /// Line height, as a multiplier over the font's natural one (§15.5, §15.6).
+    ///
+    /// **Density is line height, not point size**, and the presets are multipliers rather
+    /// than absolutes so that a user who has asked for large text keeps it — §15.6 is
+    /// explicit that a requested size is never clamped downward. Compact is 1.0, the
+    /// font's own natural height, so nothing here can make a line shorter than the glyphs
+    /// in it need.
+    public enum Density: String, Sendable, Hashable, CaseIterable, Identifiable {
+        case compact
+        case normal
+        case comfortable
+
+        public var id: String { rawValue }
+
+        public var title: String {
+            switch self {
+            case .compact: "Compact"
+            case .normal: "Normal"
+            case .comfortable: "Comfortable"
+            }
+        }
+
+        public var lineHeightMultiplier: Double {
+            switch self {
+            case .compact: 1.0
+            case .normal: 1.15
+            case .comfortable: 1.35
+            }
+        }
+    }
+
+    /// What ⌘+ and ⌘− walk between, and what a hand-edited file is held to.
+    public static let zoomRange = 0.5...3.0
+
+    /// One step of ⌘+ or ⌘−. Multiplicative, so zooming out and back in returns exactly
+    /// where it started rather than drifting.
+    public static let zoomStep = 1.1
 
     /// The range the form offers, and the range a hand-edited file is clamped to.
     ///
@@ -62,6 +112,16 @@ public final class ChatSettings {
         public static let coloursNicks = "chat.colour-nicks"
         public static let completionSuffixAtLineStart = "chat.completion-suffix-line-start"
         public static let completionSuffix = "chat.completion-suffix"
+        public static let density = "chat.density"
+        public static let zoom = "chat.zoom"
+
+        /// One key per overridden colour index — `chat.colour.4 = FF0000`. A *set* rather
+        /// than a scalar, and the only setting of that shape so far: indices the user has
+        /// not touched are absent rather than written out with their default, so the file
+        /// stays as short as what was actually changed.
+        public static let colourPrefix = "chat.colour."
+
+        public static func colour(_ index: Int) -> String { "\(colourPrefix)\(index)" }
     }
 
     /// What a Tab-completed nick is followed by, at the start of a line and elsewhere.
@@ -100,6 +160,55 @@ public final class ChatSettings {
     /// Whether nicks are coloured by hash (§6).
     public var coloursNicks: Bool {
         didSet { config.set(coloursNicks, forKey: Key.coloursNicks) }
+    }
+
+    /// The user's replacements for mIRC's colour indices 0–15 (§5).
+    ///
+    /// **Only 0–15.** The extended 16–98 range is fixed RGB in the specification, so it is
+    /// not the user's to retune; the two 16-colour tables are the ones tuned per appearance
+    /// and therefore the ones somebody might disagree with.
+    ///
+    /// One value for both appearances, matching `Palette.overrides`: the user named a
+    /// colour, and re-tuning what they typed would defeat the point of having named it.
+    public var colourOverrides: [Int: RGB] {
+        didSet {
+            guard colourOverrides != oldValue else { return }
+            // Removals first, read back from the file rather than diffed against `oldValue`
+            // — a `chat.colour.7` somebody added by hand is a key this owns and must be
+            // able to clear, and it was never in `oldValue` to be diffed.
+            for key in config.keys(withPrefix: Key.colourPrefix) {
+                let index = Int(key.dropFirst(Key.colourPrefix.count))
+                if index == nil || colourOverrides[index!] == nil {
+                    config.set(nil, forKey: key)
+                }
+            }
+            for (index, colour) in colourOverrides {
+                config.set(colour.hexString, forKey: Key.colour(index))
+            }
+        }
+    }
+
+    /// The indices a user may override. See ``colourOverrides``.
+    public static let overridableColours = 0...15
+
+    /// Line height, as a preset multiplier (§15.5).
+    public var density: Density {
+        didSet { config.set(density.rawValue, forKey: Key.density) }
+    }
+
+    /// The global zoom multiplier (§15.5). One for every buffer, never per window.
+    public var zoom: Double {
+        didSet {
+            // The same re-entrant clamp `fontSize` documents: under `@Observable` a stored
+            // property is a computed one, so writing to it inside its own `didSet` needs
+            // the `return` or it recurses.
+            let clamped = Self.zoomRange.clamping(zoom)
+            guard clamped == zoom else {
+                zoom = clamped
+                return
+            }
+            config.set(zoom, forKey: Key.zoom)
+        }
     }
 
     /// The nick list's width and whether it is showing.
@@ -205,11 +314,48 @@ public final class ChatSettings {
             elsewhere: config.string(Key.completionSuffix)
                 .map(Self.decodeSuffix) ?? Default.completionSuffix.elsewhere
         )
+        self.density =
+            config.string(Key.density).flatMap(Density.init(rawValue:)) ?? Default.density
+        self.zoom = Self.zoomRange.clamping(config.double(Key.zoom) ?? Default.zoom)
+        // An index outside 0–15, or a value that is not six hex digits, is skipped rather
+        // than refused: this file is hand-edited, and a typo should cost you the one
+        // colour, not the launch.
+        var overrides: [Int: RGB] = [:]
+        for key in config.keys(withPrefix: Key.colourPrefix) {
+            guard let index = Int(key.dropFirst(Key.colourPrefix.count)),
+                Self.overridableColours.contains(index),
+                let value = config.string(key),
+                let colour = RGB(hex: value)
+            else { continue }
+            overrides[index] = colour
+        }
+        self.colourOverrides = overrides
+    }
+
+    /// The size text is actually drawn at: the chosen size, zoomed.
+    ///
+    /// Clamped to the font-size range at the end so that zooming a 36pt font cannot leave
+    /// the grid somewhere the size stepper could never have put it.
+    public var effectiveFontSize: Double {
+        Self.fontSizeRange.clamping(fontSize * zoom)
+    }
+
+    /// The one chat font, as AppKit and as SwiftUI want it.
+    ///
+    /// **Here rather than at each call site.** Four places used to build this expression
+    /// from `fontFamily` and `fontSize`, which was three chances to forget the zoom the
+    /// moment zoom existed.
+    public var chatNSFont: NSFont {
+        ChatFont.nsFont(family: fontFamily, size: effectiveFontSize)
+    }
+
+    public var chatFont: Font {
+        ChatFont.font(family: fontFamily, size: effectiveFontSize)
     }
 
     /// The colours configured here, as the buffers and the renderer want them.
     public var palette: Palette {
-        Palette(mode: paletteMode, coloursNicks: coloursNicks)
+        Palette(mode: paletteMode, overrides: colourOverrides, coloursNicks: coloursNicks)
     }
 
     /// A renderer configured from these settings.

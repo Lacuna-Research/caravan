@@ -100,6 +100,45 @@ public struct Palette: Sendable, Hashable {
         )
     }
 
+    /// The pair of colours a run's recorded indices draw as, `^R` included.
+    ///
+    /// **The one place the reverse-video rule lives.** `^R` swaps the two, and where one
+    /// side is absent it swaps in the *window's* own colours — which is why it cannot be
+    /// resolved in the pure `IRCFormat` module. Both the renderer, drawing a line for the
+    /// first time, and ``MessageLogController/restyle()``, redrawing one after the palette
+    /// changed, come through here, so the two cannot disagree about what a run looks like.
+    @MainActor
+    public func resolved(_ colours: InlineColours) -> (foreground: NSColor?, background: NSColor?) {
+        var pair = self.colours(
+            foreground: colours.foreground.map(InlineColour.indexed),
+            background: colours.background.map(InlineColour.indexed)
+        )
+        if colours.isReversed {
+            pair = (
+                pair.background ?? NSColor.textBackgroundColor,
+                pair.foreground ?? NSColor.textColor
+            )
+        }
+        return pair
+    }
+
+    /// What index `index` actually draws as right now — the override if there is one, the
+    /// table's own value if not.
+    ///
+    /// For the Colours tab's swatches, which must show what a sender's code *would* do
+    /// rather than only what has been overridden: a well that is blank until you touch it
+    /// tells you nothing about the colour it stands for.
+    ///
+    /// Resolved against one appearance rather than dynamic, because a `ColorPicker` binding
+    /// has to hand back a concrete value. `mode` decides which, and `auto` reads light —
+    /// the swatch is chrome, and chrome follows the system rather than the buffer.
+    public func swatch(at index: Int) -> NSColor {
+        if let override = overrides[index] { return Self.nsColor(override) }
+        let appearance: MIRCPalette.Appearance = mode == .dark ? .dark : .light
+        let value = MIRCPalette.colour(at: index, appearance: appearance)
+        return value.map(Self.nsColor) ?? .textColor
+    }
+
     /// The pair as plain RGB, for one appearance.
     ///
     /// The appearance is a parameter rather than a property because every colour is

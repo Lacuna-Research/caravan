@@ -38,6 +38,13 @@ public struct RGB: Sendable, Hashable {
         self.init(bytes[0], bytes[1], bytes[2])
     }
 
+    /// `RRGGBB`, upper case — the form ``init(hex:)`` reads back, and the form a colour
+    /// override is written to `caravan.conf` in. Upper case because the file is read by
+    /// people and `FF0000` is easier to scan than `ff0000`.
+    public var hexString: String {
+        String(format: "%02X%02X%02X", red, green, blue)
+    }
+
     /// Relative luminance, per WCAG. Used to check a generated nick palette against both
     /// backgrounds rather than trusting a hue wheel to be readable.
     public var relativeLuminance: Double {

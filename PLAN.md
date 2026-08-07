@@ -312,11 +312,13 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     zoom model from §15.5: density is line height, not point size — a line-height
     multiplier with Compact / Normal / Comfortable presets as multipliers over the
     user's text-size preference (never clamping a requested size downward), zero
-    paragraph spacing by default; zoom is global, with actual-size on ⌥⌘0 and in
-    the View menu, since ⌘0 is the canvas; and the "Force monospaced grid" toggle from §15.3, off by
-    default, clamping everything including emoji to one cell. The project-wide
+    paragraph spacing by default; and zoom is global, with actual-size on ⌥⌘0 and in
+    the View menu, since ⌘0 is the canvas. The project-wide
     convention (§15.5): settings are global first; per-window overrides are added
     later if wanted.
+
+    *"Force monospaced grid" was here and is now stage 4's — it is a text-pipeline change
+    rather than a checkbox, and stage 2 prompt 10 found that out while scoping this.*
 19. **Server list — the Dashboard.** The Dashboard (GUI-DESIGN-NOTES.md §13) is a
     canvas, not a buffer: a peer row above the networks, bracketing the tree with
     Settings & Debug pinned at the bottom. It is the splash screen and the empty
@@ -501,13 +503,16 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       use. Making it user-editable is serialising those two types; an unknown `$variable`
       already survives expansion as written, so a bad theme is visibly bad rather than
       silently empty.
-    - From stage 2's formatting-codes item: **the per-index and per-nick overrides §5 and
-      §6 ask for are built but have no UI.** `Palette.overrides` and
-      `Palette.nickOverrides` are carried, applied and tested; nothing writes them, and
-      `ChatSettings` does not persist them. The Colors dialog is where a 99-swatch grid
-      belongs — bolted onto the settings list it would dwarf every other row. Persisting
-      them is the piece to design: the config file is one `key = value` per line, so
-      either `chat.palette.4 = FF0000` per index or a separate theme file.
+    - From stage 2's formatting-codes item, **half-answered by stage 2 prompt 10**:
+      `Palette.overrides` now has UI and persistence — sixteen swatches on the Colours tab,
+      one `chat.colour.N = RRGGBB` key per overridden index, absent when not overridden.
+      Only 0–15, because §5 leaves the extended 16–98 range fixed by the specification; the
+      "99-swatch grid" this note asked about turned out to be the wrong shape rather than
+      merely the wrong place. **`Palette.nickOverrides` is still built, applied, tested and
+      unwritten.** Prompt 10 left it deliberately: the affordance is "Set Colour…" on a
+      nick's own context menu, which is `BufferMenu` in `CaravanUI` and therefore this
+      stage's scripted-menu work, not a row in a settings form. Persistence will want the
+      folded nick as the key, since that is what `Palette.colour(forNick:)` looks up.
     - From stage 2's formatting-codes item: a colour that must survive an appearance
       switch is an appearance-resolving `NSColor`, not a resolved one — see `Palette`.
       A theme that bakes RGB at load time gives back the bug that item removed.
@@ -551,6 +556,18 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 43. **Localization.** String catalogs; RTL layout sanity.
 44. **Performance.** 10k+ lines/sec ingest, virtualized scrollback with memory caps,
     instrument the text pipeline.
+44a. **Force monospaced grid** (GUI-DESIGN-NOTES.md §15.3). One toggle, off by default,
+    clamping every glyph including emoji to a single cell, for users whose art still
+    breaks. *Split out of stage 2's Options item by prompt 10, which found it is not a
+    checkbox.* "Clamp to one cell" means owning glyph advancement, and TextKit 1 exposes no
+    supported per-glyph advance — the honest implementation measures each wide grapheme
+    against the cell width and applies compensating `.kern`, so the grid holds while the
+    glyph is allowed to overdraw, which is what a terminal does. Stripping VS16 instead
+    would fix §15.3's six-character overlap set (`☺ ☻ ♠ ♣ ♥ ♦`) and nothing else, under a
+    label promising everything, so it was not shipped. It is here rather than with Options
+    because it is a change to the text pipeline and wants item 44's benchmark before it
+    goes near the render path. `MessageLogController.styled` is the seam; the toggle itself
+    is a few lines of `ChatSettings` whenever the layout work exists to back it.
 45. **Diagnostics.** OSLog structured logging, opt-in crash reporting. (The
     raw-traffic debug surface shipped in stage 1: the status window's toggle and the
     Debug & Settings canvas.)

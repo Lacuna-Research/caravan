@@ -83,6 +83,7 @@ extension AttributeScopes {
     public struct CaravanAttributes: AttributeScope {
         public let inlineTraits: InlineTraitsAttribute
         public let nickColumn: NickColumnAttribute
+        public let inlineColours: InlineColoursAttribute
 
         /// **Nested, and load-bearing.** `NSAttributedString(_:including:)` carries the
         /// named scope and *only* the named scope, so a scope holding nothing but our two

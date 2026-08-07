@@ -377,12 +377,18 @@ public struct LineRenderer: Sendable {
             else { continue }
 
             let style = run.style
+            // Hex is the sender naming an exact value and no override applies to it (§5),
+            // so only the indexed cases are recorded — and a run whose colours are all hex
+            // records nothing and is never touched by a restyle.
+            let indices = InlineColours(
+                foreground: Self.index(of: style.foreground),
+                background: Self.index(of: style.background),
+                isReversed: style.isReversed
+            )
             var (foreground, background) = palette.colours(
                 foreground: style.foreground,
                 background: style.background
             )
-            // `^R` swaps the two, and where one is absent it swaps in the window's own
-            // colours — which is why it is resolved here rather than in the pure module.
             if style.isReversed {
                 let swapped = (
                     background ?? NSColor.textBackgroundColor, foreground ?? NSColor.textColor
@@ -392,6 +398,10 @@ public struct LineRenderer: Sendable {
 
             if let foreground { attributed[range].foregroundColor = foreground }
             if let background { attributed[range].backgroundColor = background }
+            // Recorded whether or not anything overrides it today, for the same reason
+            // ``NickColumn`` is: a setting that reached only the next line to arrive would
+            // leave the buffer in two palettes.
+            if !indices.isEmpty { attributed[range].inlineColours = indices }
             if style.isUnderlined { attributed[range].underlineStyle = Self.singleLine }
             if style.isStruckThrough { attributed[range].strikethroughStyle = Self.singleLine }
             // Bold, italic and monospace are traits of the *font*, and a font cannot go
@@ -399,6 +409,12 @@ public struct LineRenderer: Sendable {
             // `MessageLogController` reads when it fills in the chat font.
             attributed[range].inlineTraits = InlineTraits(style: style)
         }
+    }
+
+    /// The index a colour names, or `nil` for a hex triple or for no colour at all.
+    private static func index(of colour: InlineColour?) -> Int? {
+        if case .indexed(let index) = colour { return index }
+        return nil
     }
 
     /// **Typed, not a bare `.single`.** `underlineStyle` and `strikethroughStyle` exist in
