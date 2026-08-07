@@ -116,12 +116,6 @@ decision entry.
   is the one case where a user most needs it. Prompt 11 retires `ConnectSheet` for the
   Dashboard's server list, so this may not be worth fixing in place; if it is, the sheet
   wants about 60pt more height.
-- **The website's progress numbers are hand-maintained.** *(not blocking)*
-  `www/index.html` states stage 2 progress — a "N/17 prompts" count and a meter width —
-  that `Scripts/check-docs.sh` does not check, so it drifts exactly the way the README
-  badge would without rule 5. It already has: the page shipped saying 3/17 against a `main`
-  at 4/17, inside a day. Either the badge check grows a sibling that greps
-  `www/index.html`, or the numbers come off the page.
 - **Where does a live GUI acceptance run happen when the machine is locked?**
   *(not blocking, but it will recur)* Prompt 3 could confirm nothing on screen:
   `screencapture` returns black and `System Events` reports zero windows for a running app

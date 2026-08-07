@@ -22,6 +22,53 @@ err() {
 }
 ok() { printf '  ok    %s\n' "$1"; }
 
+# The website's copy of a stage's progress, checked against the status line it has to
+# agree with. Called from the two status-line rules below, beside the README checks it
+# mirrors — the site is a third place the same number is written down, and until now the
+# only one nobody checked. It drifted to 4/17 against a `main` at 9/17.
+#
+# Reads the numbers out of the page rather than grepping for an expected string, so a
+# failure can say what the page actually claims. Both are scoped to their own stage
+# section: there are three, and an unscoped match would read stage 1's meter for stage 2.
+site_progress() {
+	local stage=$1 done_count=$2 total=$3
+	[ -f www/index.html ] || return 0
+
+	local shown expected
+	shown=$(site_field "$stage" '[0-9]+/[0-9]+ prompts' 0 8)
+	expected="$done_count/$total"
+	if [ "$shown" = "$expected" ]; then
+		ok "website stage $stage count matches ($expected)"
+	else
+		err "website stage $stage says '${shown:-nothing}' prompts, status line says $expected"
+	fi
+
+	# Derived, not eyeballed: one decimal place, which is the convention the page already
+	# used, with a trailing `.0` trimmed so a finished stage reads `width:100%`.
+	shown=$(site_field "$stage" 'width:[0-9.]+%' 6 7)
+	expected=$(awk -v d="$done_count" -v t="$total" \
+		'BEGIN { w = sprintf("%.1f", d * 100 / t); sub(/\.0$/, "", w); print w }')
+	if [ "$shown" = "$expected" ]; then
+		ok "website stage $stage meter matches (${expected}%)"
+	else
+		err "website stage $stage meter is '${shown:-missing}%', should be ${expected}%"
+	fi
+}
+
+# The first match of `pattern` inside stage `want`'s section of the page, with `lead`
+# characters trimmed from the front of the match and `trim` from its length.
+site_field() {
+	awk -v want="$1" -v pattern="$2" -v lead="$3" -v trim="$4" '
+		match($0, /<h3>Stage [0-9]+ /) {
+			stage = substr($0, RSTART + 10, RLENGTH - 11) + 0
+		}
+		stage == want && match($0, pattern) {
+			print substr($0, RSTART + lead, RLENGTH - trim)
+			exit
+		}
+	' www/index.html
+}
+
 if [ $# -ge 1 ]; then
 	base="$1"
 	scope="$base...HEAD"
@@ -92,6 +139,8 @@ else
 		err "README progress table shows $done_rows done, status line says $completed"
 	fi
 
+	site_progress 1 "$completed" "$TOTAL_PROMPTS"
+
 	# 6. Carry-forward notes must not outlive the prompt they were addressed to.
 	# A note that survives its prompt means the note was never consumed.
 	stale=$(awk -v done="$completed" '
@@ -129,6 +178,8 @@ else
 	else
 		err "README stage 2 table shows $stage2_rows done, status line says $stage2"
 	fi
+
+	site_progress 2 "$stage2" "$STAGE2_TOTAL_PROMPTS"
 
 	stale2=$(awk -v done="$stage2" '
 		/^## Prompt [0-9]+ / { n = $3 + 0; next }
@@ -209,7 +260,7 @@ if [ -d www ]; then
 			ok "www/ matches the published gh-pages branch"
 		else
 			err "www/ and the gh-pages branch differ; the live site is not what main says."
-			printf '        copy www/* to the root of gh-pages. Differences:\n' >&2
+			printf '        run ./Scripts/publish-site.sh. Differences:\n' >&2
 			diff \
 				<(git ls-tree "$source_tree" | awk '{ print $4, $3 }' | sort) \
 				<(git ls-tree "$published_tree" | awk '{ print $4, $3 }' | sort) \
