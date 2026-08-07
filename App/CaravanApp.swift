@@ -53,5 +53,25 @@ struct CaravanApp: App {
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
         }
+
+        // One buffer per window, opened by `openWindow(id:value:)` (§1, §10). Declared
+        // beside the main window rather than inside it: a `Scene` is the only thing that
+        // can make a window, and `openWindow` with a value SwiftUI has already seen raises
+        // that window instead of making a second one — which is exactly the "focus it"
+        // behaviour ⌘0 and the tree both want.
+        WindowGroup(id: RootView.detachedWindowID, for: AppModel.SidebarItem.self) { $item in
+            if let item {
+                DetachedBufferView(model: model, item: item)
+            }
+        }
+        .defaultSize(width: 620, height: 480)
+        // **Never restored, and never opened on launch.** A detached window names a buffer
+        // on a connection that exists only for the life of a run — the live run found the
+        // previous session's `##caravan-win-a` window coming back, on a network that had
+        // not been connected yet, showing the "buffer closed" placeholder. Suppressing the
+        // launch behaviour alone was not enough: restoration is a separate mechanism and
+        // needs turning off separately.
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
 }

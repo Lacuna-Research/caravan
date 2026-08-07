@@ -306,6 +306,27 @@ public final class AppModel {
     /// Whether ⌘K's palette is up.
     public var isShowingQuickSwitcher = false
 
+    /// Rows ejected into windows of their own (§1, §10), in the order they were ejected.
+    ///
+    /// Session state, not settings: which windows are open is the sort of thing macOS
+    /// restores for itself, and writing it into `caravan.conf` would make a hand-edited
+    /// file fight the window server.
+    public internal(set) var detachedItems: [SidebarItem] = []
+
+    /// A detached window the model wants raised, or closed. Set here and cleared by the
+    /// view that acts on it — `openWindow` and `dismissWindow` are environment values, so
+    /// only a `View` can call them, and the model must not reach for a `View`.
+    public var windowToFocus: SidebarItem?
+    public var windowToClose: SidebarItem?
+
+    /// Which window the user is actually in front of.
+    ///
+    /// ⌘W means "close this channel" with the tree in front of you and "close this window"
+    /// with a detached buffer in front of you. A global menu item cannot tell the
+    /// difference without being told, and acting on the main window's selection while the
+    /// user looks at a detached one would close a buffer they were not looking at.
+    public var keyWindow: KeyWindow = .main
+
     /// One trace buffer for the process. Redacted on insert, exported by "Copy
     /// Diagnostics" — which is what makes the export safe to paste into a public issue.
     @ObservationIgnored public let trace: TraceBuffer
@@ -319,6 +340,9 @@ public final class AppModel {
 
     /// TLS fingerprints the user has already accepted.
     @ObservationIgnored public let knownHosts: KnownHosts
+
+    /// Where the user has dragged each network's buffers (§12). Empty until they drag.
+    public let bufferOrder: BufferOrder
 
     /// Which buffer each of ⌘1–9 reaches. Empty until the user binds something (§11).
     public let bindings: BufferBindings
@@ -400,7 +424,15 @@ public final class AppModel {
     public var isShowingCanvas: Bool { selection == .settingsAndDebug }
 
     /// ⌘0, ⌘, and the pinned row all land here.
+    ///
+    /// **Once the canvas is ejected, these focus its window rather than taking over the
+    /// chat area** (§10). One place had to learn the difference and this is it — which is
+    /// why both shortcuts and the tree's pinned row have always gone through one function.
     public func showSettingsAndDebug() {
+        if isDetached(.settingsAndDebug) {
+            windowToFocus = .settingsAndDebug
+            return
+        }
         selection = .settingsAndDebug
     }
 
@@ -423,6 +455,7 @@ public final class AppModel {
         self.knownHosts = knownHosts ?? .shared
         self.credentials = credentials ?? Keychain.shared
         self.bindings = BufferBindings(config: config)
+        self.bufferOrder = BufferOrder(config: config)
         self.debug = DebugController(trace: trace, settings: settings)
     }
 
@@ -629,6 +662,7 @@ public final class AppModel {
             credentials: credentials(for: settings),
             name: name
         )
+        connection.bufferOrder = bufferOrder
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in
@@ -639,8 +673,7 @@ public final class AppModel {
         // is the app's, so the connection is told how to ask rather than given a copy that
         // could go stale.
         connection.isSelected = { [weak self] buffer in
-            guard let self, let selection else { return false }
-            return self.buffer(for: selection) === buffer
+            self?.onScreenBuffers.contains { $0 === buffer } ?? false
         }
         connections.append(connection)
         if selecting { selection = .status(connection.id) }
@@ -839,7 +872,7 @@ public final class AppModel {
     /// Only on the way out. A rule drawn on arrival would sit at the bottom of a buffer
     /// you are looking at, marking nothing; drawn on the way out it marks the last thing
     /// you saw, and it stays there until the next time you leave.
-    private func markUnread(leaving previous: SidebarItem?) {
+    func markUnread(leaving previous: SidebarItem?) {
         guard let previous, previous != selection else { return }
         let renderer = settings.renderer
         switch previous {

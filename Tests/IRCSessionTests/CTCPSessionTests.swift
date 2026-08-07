@@ -103,6 +103,17 @@ struct CTCPSessionTests {
                 .count == 50
             }
         )
+        // **Wait for the reply to come back, not merely for the request to be seen.**
+        // Having observed 50 `.ctcpRequest` events says nothing about whether the `NOTICE`
+        // we sent in answer has crossed the socket and been recorded by the server — the
+        // two are not synchronised, and this raced its way to a failure once the rest of
+        // the suite got slower. The ceiling assertion is sound at any moment, because the
+        // bucket can never release more than its burst.
+        #expect(
+            await waitUntil {
+                await server.receivedLines().contains { $0.hasPrefix("NOTICE mallory") }
+            }
+        )
 
         let replies = await server.receivedLines().filter { $0.hasPrefix("NOTICE mallory") }
         #expect(replies.count < 50)

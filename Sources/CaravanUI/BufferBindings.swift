@@ -114,8 +114,13 @@ public struct BufferBinding: Hashable, Sendable {
 }
 
 extension ConnectionViewModel {
-    /// How a binding names this network.
-    public var bindingNetworkKey: String {
+    /// How the config names this network.
+    ///
+    /// Two features key on it now — ⌘1–9 bindings and the manual tree order — which is why
+    /// it is no longer called `bindingNetworkKey`. Both inherit the same caveat: it is
+    /// `host:port` for want of a stable user-facing network name, and the server-list
+    /// prompt migrates both together.
+    public var networkKey: String {
         let base = "\(host):\(port)"
         guard let bouncerNetworkID else { return base }
         return "\(base)[\(bouncerNetworkID)]"
@@ -129,13 +134,13 @@ extension AppModel {
         switch item {
         case .status(let id):
             guard let connection = connection(id: id) else { return nil }
-            return BufferBinding(network: connection.bindingNetworkKey, buffer: "")
+            return BufferBinding(network: connection.networkKey, buffer: "")
         case .channel(let id, let name):
             guard let connection = connection(id: id) else { return nil }
-            return BufferBinding(network: connection.bindingNetworkKey, buffer: name.raw)
+            return BufferBinding(network: connection.networkKey, buffer: name.raw)
         case .query(let id, let nick):
             guard let connection = connection(id: id) else { return nil }
-            return BufferBinding(network: connection.bindingNetworkKey, buffer: nick.raw)
+            return BufferBinding(network: connection.networkKey, buffer: nick.raw)
         case .settingsAndDebug:
             return nil
         }
@@ -150,7 +155,7 @@ extension AppModel {
     public func activateBinding(digit: Int) async {
         guard let binding = bindings.binding(for: digit) else { return }
         guard
-            let connection = connections.first(where: { $0.bindingNetworkKey == binding.network })
+            let connection = connections.first(where: { $0.networkKey == binding.network })
         else {
             // The network is not open at all, so there is no buffer to reveal and nothing
             // to join. Said out loud rather than swallowed — a shortcut that does nothing

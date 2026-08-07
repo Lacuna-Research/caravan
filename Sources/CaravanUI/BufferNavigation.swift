@@ -72,6 +72,14 @@ extension AppModel {
     /// group and leaving the group shut would be a jump to somewhere invisible. Every way
     /// of reaching a buffer that is not a click goes through here.
     public func reveal(_ item: SidebarItem) {
+        // **A buffer in its own window is reached by raising that window.** Otherwise
+        // next-unread, ⌘K and ⌘1–9 would each "go" to a detached buffer by selecting a row
+        // whose chat area only says the buffer is somewhere else — a jump that lands
+        // nowhere.
+        if isDetached(item) {
+            windowToFocus = item
+            return
+        }
         if case .settingsAndDebug = item {
             selection = item
             return

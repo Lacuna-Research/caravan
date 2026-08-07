@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 6/17 complete. Next: prompt 7.
+**Status:** 7/17 complete. Next: prompt 8.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -18,7 +18,7 @@ malformed.
 
 ### Prompts are written just-in-time, and that is deliberate
 
-Prompts 1–6 are written out in full. **Prompts 7–17 carry their scope, their grouping and
+Prompts 1–7 are written out in full. **Prompts 8–17 carry their scope, their grouping and
 their fence, but not yet their detail** — and are to be fleshed out immediately before
 they start, not now.
 
@@ -284,29 +284,58 @@ model and the config round-trip, and the digit it produces is verified in the tr
 
 **Item:** Multi-window model (second half).
 
-Detachable windows, sharing **one** eject affordance between buffers and canvases (§1,
-§10) — this is where the Settings & Debug canvas gains its standalone mode, and where ⌘0
-and ⌘, learn to focus that window instead of taking over the chat area. Manual
-drag-to-reorder within a network, persisted, on top of join order. `NSToolbar` rather than
-a hand-rolled bar (§8).
+```
+Let a buffer leave the window, let the tree be reordered by hand, and give the window
+real chrome. GUI-DESIGN-NOTES.md §1, §8, §10 and §12.
 
-*To be written out before it starts.*
+The other half of the multi-window model. Prompt 6 was model-and-keyboard work; this is
+window-and-chrome work, and they share almost no code.
 
-**Carry-forward** *(consumed when this prompt runs)*
+- One eject affordance, shared by buffers and canvases (§1, §10). A detached window holds
+  exactly one buffer and has no tree — "detach this" rather than "open a second copy of
+  the app". The tree still lists a detached buffer; selecting its row raises its window
+  and says so in the chat area rather than drawing the buffer in two places.
+- The Settings & Debug canvas gains its standalone mode from that same affordance, and
+  ⌘0 and ⌘, learn to focus that window instead of taking over the chat area.
+  `AppModel.showSettingsAndDebug()` is the one place that has to learn the difference.
+- Per-window ownership of what prompt 6 hung off `AppModel.selection.didSet`: clearing a
+  buffer's activity, marking its unread rule, and pushing its MRU entry. A detached
+  buffer is on screen whether or not the main window's selection names it.
+- Manual drag-to-reorder within a network, persisted, on top of join order. It has to
+  change `ConnectionViewModel.channels`/`.queries` — the property `SidebarTree`,
+  `AppModel.allBuffers` and the ⌘K palette all read — or the keyboard and the mouse will
+  disagree about where #swift is. §12's channels-before-queries rule survives reordering.
+- `NSToolbar` with the system's customization palette rather than a hand-rolled bar (§8),
+  visible on first launch with the minimal set §8 names: connection state, sidebar
+  toggle, nick-list toggle.
+- **The menu bar carries everything the toolbar might not.** §8's other half — "menu bar
+  always" — and it is load-bearing the moment the toolbar becomes customizable: prompt
+  4's live run found that hiding Connect left multi-network unreachable, and a user who
+  drags it out of the toolbar must not be able to reproduce that.
 
-- From prompt 6: **`ConnectionViewModel.buffers` is the one place tree order is written** —
-  status, then channels in join order, then queries. Three readers depend on it agreeing with
-  itself: `SidebarTree` draws it, `AppModel.allBuffers` flattens it for navigation, and the
-  ⌘K palette lists it. Manual drag-to-reorder has to change *that* property, not the tree
-  view, or the keyboard and the mouse will disagree about where `#swift` is.
-- From prompt 6: **a detached window needs an owner for the selection.** `AppModel.selection`
-  is a single optional today, and clearing a buffer's activity, marking its unread rule and
-  pushing its MRU entry all hang off its `didSet`. Two windows showing two buffers means
-  "the selected buffer" becomes "the selected buffer *per window*", and those three effects
-  have to follow focus rather than the one global value.
-- From prompt 6: **`CtrlTabMonitor` is installed per view, from `onAppear`.** With a second
-  window there would be two monitors racing to handle the same ⌃⇥. Move it to the app, or
-  scope it to the key window.
+Acceptance: detach a channel and the canvas, watch both keep working while the main
+window carries on; reorder a network by hand and confirm the order survives a relaunch
+and that ⌘K and next-unread agree with it; drag every item out of the toolbar and
+confirm the app is still fully operable from the menu bar.
+
+Do not: the switchbar — still deferred (§2), and revisit only once the treebar is in real
+use. No per-window settings; appearance stays global-first.
+```
+
+**Status:** complete. All three notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`. `CtrlTabMonitor` needed no change in the end — a detached window
+has no tree to walk, so it is installed only by `RootView` and there is never a second one.
+
+**Two departures from the brief**, both made by the live run: the detach shortcut is ⌃⌘O
+rather than the obvious ⌃⌘D, which macOS swallows as "Look Up in Dictionary"; and §8's
+"minimal default set" is achieved by *declaring* only three toolbar items rather than by
+`defaultCustomization(.hidden)`, which macOS 26.5 ignores.
+
+**Not verified: an actual drag, and the customization palette sheet.** System Events cannot
+synthesise a drag, and clicking "Customize Toolbar…" through the accessibility API does not
+take — the same limitation prompt 6 hit with the `Bind to` submenu. The palette's *presence*
+was confirmed by opening the toolbar's context menu; the reorder was verified through the
+model and through its load path live.
 
 ---
 
@@ -353,6 +382,12 @@ them apart means writing `/ban` twice.
   `/msg` sends and opens the recipient's window as a side effect. `/say` belongs with
   `/msg`. Note that `/query` refuses a channel name via `CommandError.notAPerson`, which is
   the pattern for any later command that wants a person rather than a target.
+- From prompt 7: **new keyboard shortcuts are not done until they have been pressed.** This
+  stage has now lost two to system shortcuts that report no conflict at build time and
+  simply never fire — ⌥⌘H is Hide Others (prompt 6) and ⌃⌘D is Look Up in Dictionary
+  (prompt 7). This prompt roughly triples the command table; if any of it gains shortcuts,
+  budget a live pass for them. The taken ones so far: ⌘K, ⌥⌘A, ⇧⌥⌘A, ⌘1–9, ⌘0, ⌘,, ⌘W,
+  ⇧⌘N, ⌃⌘O, ⌃⌘L, ⇧⌘D, ⌃⇥.
 
 ---
 
@@ -429,6 +464,11 @@ delete rather than a paper plan. Statistics stay deferred to stage 4.
   stable, user-facing name?", so it is also the prompt that migrates these keys** — and
   `caravan.conf`'s keys are public API, so the migration has to read the old form rather than
   silently dropping bindings people made.
+- From prompt 7: **the same network key now carries a second family of settings** —
+  `order.<network>.channels` and `order.<network>.queries`, the manual tree order (§12). Both
+  are built by `ConnectionViewModel.networkKey`, so the migration is one function and two key
+  prefixes. Retiring `ConnectSheet` also has to keep `ConnectionSettings.lastUsed` working
+  or the seeded-config trick every acceptance run since prompt 3 has relied on stops working.
 
 *To be written out before it starts.*
 

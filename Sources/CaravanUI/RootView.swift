@@ -9,6 +9,10 @@ public struct RootView: View {
         self._model = Bindable(wrappedValue: model)
     }
 
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.controlActiveState) private var activeState
+
     public var body: some View {
         NavigationSplitView {
             SidebarTree(model: model)
@@ -24,24 +28,44 @@ public struct RootView: View {
             \.chatFont,
             ChatFont.font(family: model.settings.fontFamily, size: model.settings.fontSize)
         )
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                closeChannelButton
+        // **An identified toolbar, so macOS gives customization for free** (§8): a
+        // drag-and-drop palette sheet, with the layout persisted by the system. mIRC's
+        // toolbar editor becomes mostly not-work-we-do.
+        //
+        // Everything here is also in the menu bar, which is §8's other half and is
+        // load-bearing precisely *because* this is customizable: prompt 4's live run found
+        // that hiding Connect left multi-network unreachable, and a user who drags it out
+        // of the toolbar must not be able to reproduce that.
+        // **An identified toolbar, so macOS gives customization for free** (§8): a
+        // drag-and-drop palette sheet, with the layout persisted by the system. mIRC's
+        // toolbar editor becomes mostly not-work-we-do.
+        //
+        // Placed `.secondaryAction`, which is the customizable body of the toolbar;
+        // `.primaryAction` pins an item to the trailing edge and takes it out of the
+        // palette entirely, which is the whole feature §8 asks for.
+        //
+        // **Exactly §8's minimal set, and no more.** `defaultCustomization(.hidden)` is
+        // the API for shipping an item available-but-not-shown, and the live run found
+        // macOS 26.5 ignores it — every item declared here appears whatever it says. So
+        // the set is kept minimal by *declaring* it minimal, and everything else lives in
+        // the menu bar, which is §8's other half and never customizable away.
+        //
+        // Connect is here although §8's list does not name it: §8 was written when there
+        // could be one connection and "connect" meant "connect *this*"; it now means "open
+        // another network", and prompt 4 already found once that hiding it makes
+        // multi-network unreachable.
+        .toolbar(id: "main") {
+            ToolbarItem(id: "connection", placement: .secondaryAction) {
+                ConnectionIndicator(model: model)
             }
-            // **Both, not one or the other.** They used to alternate, which was right when
-            // there could be one connection: "connect" meant "connect *this*". Now it means
-            // "open another network", so hiding it while one is connected leaves no way to
-            // reach the second one — which is the entire feature. Found by the live run.
-            ToolbarItem(placement: .primaryAction) {
-                Button("Disconnect") {
-                    Task { await model.disconnect() }
+            ToolbarItem(id: "nicklist", placement: .secondaryAction) {
+                nickListToggle
+            }
+            ToolbarItem(id: "connect", placement: .secondaryAction) {
+                Button("Connect\u{2026}", systemImage: "plus") {
+                    model.isShowingConnectSheet = true
                 }
-                .disabled(model.activeConnection?.isConnected != true)
-                .help("Disconnect the selected network")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button("Connect…") { model.isShowingConnectSheet = true }
-                    .help("Open another network")
+                .help("Open another network")
             }
         }
         .sheet(isPresented: $model.isShowingConnectSheet) {
@@ -59,13 +83,33 @@ public struct RootView: View {
         }
         // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
         .modifier(CtrlTabModifier(model: model))
+        .onChange(of: activeState, initial: true) { _, state in
+            if state == .key { model.keyWindow = .main }
+        }
+        // `openWindow` and `dismissWindow` are environment values, so only a view can call
+        // them. The model asks by setting a property; this clears it once acted on.
+        .onChange(of: model.windowToFocus) { _, item in
+            guard let item else { return }
+            openWindow(id: RootView.detachedWindowID, value: item)
+            model.windowToFocus = nil
+        }
+        .onChange(of: model.windowToClose) { _, item in
+            guard let item else { return }
+            dismissWindow(id: RootView.detachedWindowID, value: item)
+            model.windowToClose = nil
+        }
     }
+
+    /// The `WindowGroup` every detached buffer opens in.
+    public static let detachedWindowID = "caravan.buffer"
 
     @ViewBuilder
     private var detail: some View {
-        // The canvas replaces the chat area, and takes precedence over whatever buffer
-        // was selected — which is what makes selecting a buffer bring the chat area back.
-        if model.isShowingCanvas {
+        // A buffer cannot be in two places, so the chat area says where it went rather
+        // than drawing a second copy of it.
+        if let selection = model.selection, model.isDetached(selection) {
+            DetachedElsewhere(model: model, item: selection)
+        } else if model.isShowingCanvas {
             SettingsDebugCanvas(model: model)
         } else if let connection = model.activeConnection {
             if let buffer = model.selectedChannel {
@@ -90,10 +134,7 @@ public struct RootView: View {
     /// to — the same "always say which network" rule the tree follows, since `#music` on
     /// two networks are different rooms.
     private var title: String {
-        if model.isShowingCanvas { return "Settings & Debug" }
-        if let channel = model.selectedChannel { return channel.name.raw }
-        if let query = model.selectedQuery { return query.nick.raw }
-        return model.activeConnection?.displayName ?? "Caravan"
+        model.selection.map { model.title(of: $0) } ?? "Caravan"
     }
 
     private var subtitle: String {
@@ -101,24 +142,66 @@ public struct RootView: View {
         return model.selectedTarget == nil ? connection.statusSummary : connection.displayName
     }
 
-    /// ⌘W closes the selected buffer. On a channel that *parts* it — membership never
-    /// outlives its buffer — and on a conversation it closes a window and nothing more.
-    ///
-    /// The title says which, because the two are not the same act. Disabled when neither
-    /// is selected, so the shortcut falls back to the window's own Close rather than
-    /// swallowing it: a status window is not closable, being the network row, and closing
-    /// a network is disconnecting from it.
-    private var closeChannelButton: some View {
-        Button(model.closeBufferTitle ?? "Close Channel") {
-            Task { await model.closeSelectedBuffer() }
+    /// The nick list's toggle, moved out of the channel header band and into the toolbar
+    /// where §8's minimal set puts it.
+    private var nickListToggle: some View {
+        Button {
+            model.settings.isNickListVisible.toggle()
+        } label: {
+            Label(
+                "Nick List",
+                systemImage: model.settings.isNickListVisible ? "sidebar.right" : "sidebar.trailing"
+            )
         }
-        .keyboardShortcut("w", modifiers: .command)
-        .disabled(model.closeBufferTitle == nil)
-        .help(
-            model.selectedQuery != nil
-                ? "Close this conversation's window"
-                : "Close this channel's buffer and part the channel"
-        )
+        .disabled(model.selectedChannel == nil)
+        .help(model.settings.isNickListVisible ? "Hide the nick list" : "Show the nick list")
+    }
+}
+
+/// The chat area for a buffer that is in a window of its own.
+///
+/// Says where it went and offers both ways back — raise that window, or bring it home.
+/// An empty pane would read as a bug, and the window it belongs to may well be behind
+/// this one.
+private struct DetachedElsewhere: View {
+    let model: AppModel
+    let item: AppModel.SidebarItem
+
+    var body: some View {
+        ContentUnavailableView {
+            Label("In its own window", systemImage: "macwindow.on.rectangle")
+        } description: {
+            Text("\(model.title(of: item)) is open in a separate window.")
+        } actions: {
+            Button("Bring to Front") { model.windowToFocus = item }
+            Button("Bring Back Into Main Window") { model.reattach(item) }
+        }
+    }
+}
+
+/// The connection state, as a toolbar item (§8's minimal set).
+private struct ConnectionIndicator: View {
+    let model: AppModel
+
+    var body: some View {
+        Label(summary, systemImage: "circle.fill")
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(colour)
+            .help(summary)
+    }
+
+    private var summary: String {
+        model.activeConnection?.statusSummary ?? "Not connected"
+    }
+
+    /// Three states, not two: connecting is worth distinguishing from connected, because
+    /// it is the one where waiting is the right thing to do.
+    private var colour: Color {
+        switch model.activeConnection?.state {
+        case .connected: .green
+        case .connecting, .registering, .reconnecting: .orange
+        case .disconnected, nil: .secondary
+        }
     }
 }
 

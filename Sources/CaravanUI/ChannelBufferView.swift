@@ -51,16 +51,10 @@ struct ChannelBufferView: View {
                 : "You are not in \(buffer.name.raw)",
             isExpanded: $isTopicExpanded
         ) {
-            Button {
-                settings.isNickListVisible.toggle()
-            } label: {
-                Image(systemName: settings.isNickListVisible ? "sidebar.right" : "sidebar.trailing")
-            }
-            .buttonStyle(.plain)
-            .help(settings.isNickListVisible ? "Hide the nick list" : "Show the nick list")
-            .accessibilityLabel(
-                settings.isNickListVisible ? "Hide the nick list" : "Show the nick list"
-            )
+            // The nick-list toggle used to live here. §8 puts it in the toolbar, where it
+            // is one of the three items the minimal default set names — and the View menu
+            // carries it too, so a detached channel window can still reach it.
+            EmptyView()
         }
         .font(chatFont)
     }
