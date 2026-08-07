@@ -192,8 +192,8 @@ struct DebugCanvasTests {
         await model.connect(
             using: ConnectionSettings(host: "127.0.0.1", port: port, useTLS: false, nick: "alice")
         )
-        #expect(await waitUntil { model.connection?.isConnected == true })
-        let connectionID = model.connection!.id
+        #expect(await waitUntil { model.activeConnection?.isConnected == true })
+        let connectionID = model.activeConnection!.id
 
         model.showSettingsAndDebug()
         #expect(model.isShowingCanvas)
@@ -219,9 +219,9 @@ struct DebugCanvasTests {
         await model.connect(
             using: ConnectionSettings(host: "127.0.0.1", port: port, useTLS: false, nick: "alice")
         )
-        #expect(await waitUntil { model.connection?.isConnected == true })
+        #expect(await waitUntil { model.activeConnection?.isConnected == true })
 
-        let log = model.connection!.log
+        let log = model.activeConnection!.log
         _ = log.displayView()
         #expect(await waitUntil { log.lineCount > 0 })
         #expect(!log.hasUnreadMarker)

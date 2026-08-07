@@ -25,7 +25,7 @@ struct CommandLineTests {
             self.server = server
         }
 
-        var connection: ConnectionViewModel { model.connection! }
+        var connection: ConnectionViewModel { model.activeConnection! }
 
         /// A real text view, because a `MessageLogController` with nowhere to write keeps
         /// its lines queued rather than rendering them.
@@ -60,7 +60,7 @@ struct CommandLineTests {
                 realName: "Alice Example"
             )
         )
-        #expect(await waitUntil { harness.model.connection?.isConnected == true })
+        #expect(await waitUntil { harness.model.activeConnection?.isConnected == true })
         #expect(
             await waitUntil {
                 await harness.server.receivedLines().contains("USER alice 0 * :Alice Example")

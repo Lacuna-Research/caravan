@@ -116,10 +116,11 @@ public enum EventTranslator {
                 )
             ]
 
-        case "CAP", "AUTHENTICATE":
-            // Negotiation, which the session drives and reports as
-            // `.capabilitiesChanged`/`.authenticated`. Visible as `.raw` either way, which
-            // is where someone debugging a failed handshake goes looking.
+        case "CAP", "AUTHENTICATE", "BOUNCER":
+            // Negotiation and the bouncer's own protocol, which the session drives and
+            // reports as `.capabilitiesChanged`, `.authenticated` and `.bouncerNetworks`.
+            // Visible as `.raw` either way, which is where someone debugging a failed
+            // handshake goes looking.
             return []
 
         case "PART":

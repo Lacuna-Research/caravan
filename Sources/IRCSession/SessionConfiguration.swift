@@ -23,6 +23,22 @@ public struct SessionConfiguration: Sendable {
     /// How to prove who we are: SASL, NickServ, or neither. Also a live credential.
     public var authentication: AuthenticationMethod
 
+    /// How many lines to ask `draft/chathistory` for when a channel opens.
+    ///
+    /// Zero turns backfill off. The default is a screenful and a bit: enough that
+    /// rejoining a channel lands you in the middle of the conversation rather than at a
+    /// blank window, and few enough that a slow bouncer is not asked for a novel per
+    /// channel on every reconnect.
+    public var chatHistoryLimit: Int
+
+    /// The bouncer network to `BOUNCER BIND` to during registration, if any.
+    ///
+    /// This is what makes one connection a *network* rather than the bouncer itself.
+    /// `nil` means an ordinary connection — either a direct one to an ircd, or the
+    /// unbound control connection to a bouncer, which is the only one that may enumerate
+    /// networks and the only place `BouncerServ` can be reached.
+    public var bouncerNetworkID: String?
+
     /// How long the whole of connecting *and* registering may take.
     ///
     /// One deadline for both because both fail the same way, and neither has a timeout
@@ -49,6 +65,8 @@ public struct SessionConfiguration: Sendable {
         realName: String? = nil,
         password: String? = nil,
         authentication: AuthenticationMethod = .none,
+        chatHistoryLimit: Int = 50,
+        bouncerNetworkID: String? = nil,
         connectTimeout: Duration = .seconds(30),
         idleInterval: Duration = .seconds(120),
         idleResponseTimeout: Duration = .seconds(60),
@@ -63,6 +81,8 @@ public struct SessionConfiguration: Sendable {
         self.realName = realName ?? nick
         self.password = password
         self.authentication = authentication
+        self.chatHistoryLimit = chatHistoryLimit
+        self.bouncerNetworkID = bouncerNetworkID
         self.connectTimeout = connectTimeout
         self.idleInterval = idleInterval
         self.idleResponseTimeout = idleResponseTimeout

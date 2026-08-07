@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 3/17 complete. Next: prompt 4.
+**Status:** 4/17 complete. Next: prompt 5.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -182,25 +182,16 @@ Do not: logging. Prompt 12 owns the interaction between chathistory and the loca
 it is a de-duplication problem, and it wants both halves to exist first.
 ```
 
-**Carry-forward** *(consumed when this prompt runs)*
+**Status:** complete, with **two outstanding items**. There is no soju to point at, so
+bouncer mode is proven against a scripted server that speaks the extension and against the
+spec, but not against soju itself — `PLAN.md`'s testing strategy has wanted a local instance
+since stage 1 and this is the prompt that needs it. And the machine was locked, so the tree
+was not looked at. Direct multi-network *is* verified live: Libera and OFTC at once, each
+with its own name, capabilities and selection.
 
-- From stage 1 prompt 8: the tree is a `List` of one `DisclosureGroup` per connection.
-  Rolled-up activity and a second network both need the expansion state to move off
-  `AppModel.isNetworkExpanded` — one flag for one network — and onto the connection.
-- From prompt 3: **`bouncer-networks` and `chathistory` are not in `ClientCapability`, and
-  adding them is this prompt's first move.** The negotiation machinery is done and generic:
-  add the two cases, and `IRCSession.wantedCapabilities()` asks for them. `batch` is already
-  negotiated and `IRCEvent.batchStarted`/`.batchEnded` already carry the reference and type,
-  so grouping a replay is a consumer problem rather than a protocol one.
-- From prompt 3: **only `IRCEvent.message` carries its `IRCTags`.** `server-time` lands in
-  `RenderContext.now` through `ConnectionViewModel.serverTime(of:)`, which matches on that
-  one case. A `chathistory` replay backfills joins, parts and topics too, and every one of
-  those will be stamped with the moment it arrived unless the tags are widened. Either add
-  `tags` to the replayed cases or give the events a common envelope — the second is the
-  larger change and probably the right one by then.
-- From prompt 3: `CAP NEW`/`CAP DEL` are handled and `cap-notify` is negotiated, which is
-  how soju announces an upstream network appearing. `IRCSession.handleCapability` is where
-  a `bouncer-networks-notify` would join them.
+One deviation from the brief, recorded in `BUILD-LOG.md`: **a bouncer keeps a row of its
+own**, so the tree is not byte-identical between the two modes. It earns the row —
+`BouncerServ` is reachable there — and the networks and their channels *are* identical.
 
 ---
 
@@ -238,6 +229,13 @@ message-handling one.
   is the ordering of one array.
 - From stage 1 prompt 8: `HeaderBand` is general and already built — never hidden,
   shrink-to-two-lines, expand-into-a-scroller. The query case is content, not behaviour.
+- From prompt 4: **`BouncerServ` still has nowhere of its own to go.** The prompt-4 brief
+  said it "needs nothing special: it is a query window" — true, and query windows are this
+  prompt's. Until then its messages land in the bouncer's status window, which is at least
+  the right *network*. Nothing needs building for it here beyond the query buffer itself:
+  the bouncer's control connection is an ordinary `ConnectionViewModel` and
+  `destinations(for:)` will route a nick-targeted message to the new query case like any
+  other.
 - From prompt 3: **`echo-message` changes where a private message's echo comes from.** With
   the capability on, `ConnectionViewModel.send` draws nothing and the server's copy arrives
   as an ordinary `.message` whose target is a *nick* — which `destinations(for:)` routes to
@@ -286,6 +284,16 @@ without the mouse.
 Do not: detaching windows, reordering, or the toolbar — prompt 7. The switchbar stays
 deferred (§2): revisit once the treebar is in real use.
 ```
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 4: **two networks is now real, and the tree is `AppModel.connections`.**
+  Expansion lives on `ConnectionViewModel.isExpanded`, one per network, which is what a
+  collapsed group rolling up its children's activity needs.
+  `AppModel.activeConnection` derives the network from the selection. What does not exist
+  yet is the thing MRU order and the ⌘K switcher both want: one flat list of *buffers across
+  every network* — `connections.flatMap` over their channels plus each status buffer —
+  which is also the list next-unread and next-highlight walk.
 
 ---
 
@@ -431,8 +439,19 @@ local log already covers, so the buffer needs de-duplication by message id or
 - From prompt 3: **the `msgid` you will de-duplicate on is already in hand.**
   `IRCEvent.message` carries the whole `IRCTags` section, so `tags.value(for: "msgid")` needs
   nothing new from the session — and `ConnectionViewModel.parseServerTime` already turns the
-  `time` tag into a `Date` for the fallback comparison. Both are `.message`-only; see the
-  note on prompt 4 about widening that.
+  `time` tag into a `Date` for the fallback comparison.
+- From prompt 4: **tags are still carried by `IRCEvent.message` and nothing else**, and this
+  is the prompt where that stops being enough. Prompt 4 left it deliberately: soju's
+  `chathistory` replays messages, so the general case would have been built for events soju
+  does not send. A local log holds joins, parts and topic changes too, and reconciling those
+  against a replay needs their `time` and `msgid` as much as a message's. Either add `tags`
+  to the replayed cases or give every event a common envelope — the envelope is the larger
+  change and by now probably the right one.
+- From prompt 4: `CHATHISTORY LATEST <target> * <limit>` fires on our own `JOIN`, in
+  `IRCSession.requestHistoryIfOurJoin`, with the count in
+  `SessionConfiguration.chatHistoryLimit`. De-duplication wants `BEFORE`/`AFTER` against the
+  newest line already in the log instead, which is the same function with a different
+  selector — the request site is already in one place.
 
 ---
 

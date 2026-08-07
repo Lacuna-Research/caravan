@@ -34,6 +34,11 @@ struct ConnectSheet: View {
                 TextField("Port", value: $port, format: .number.grouping(.never))
                 Toggle("Use TLS", isOn: $settings.useTLS)
                 SecureField("Server password (optional)", text: $settings.password)
+                TextField(
+                    "Bouncer network",
+                    text: $settings.bouncerNetwork,
+                    prompt: Text("Only for a bouncer that cannot list its own")
+                )
             }
             Section("Identity") {
                 TextField("Nickname", text: $settings.nick)

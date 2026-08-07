@@ -156,7 +156,7 @@ struct ChannelRoster {
         case .raw, .registered, .message, .numeric, .clientError, .clientNotice,
             .joinFailed, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply, .invited,
-            .batchStarted, .batchEnded:
+            .batchStarted, .batchEnded, .bouncerNetworks:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
             // the channel it names may be one we have never seen. `.invited` likewise —
             // an invitation is not a membership.

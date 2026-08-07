@@ -20,7 +20,48 @@ public final class ConnectionViewModel: Identifiable {
 
     public private(set) var state: SessionState = .disconnected(reason: .notStarted)
     public private(set) var currentNick: String
-    public let displayName: String
+
+    /// What the tree calls this network.
+    ///
+    /// The host, until something better is known: a bouncer-bound connection takes the
+    /// upstream network's own name, and `NETWORK=` from `ISUPPORT` improves on a bare
+    /// hostname for a direct one. A user reading the tree wants "Libera.Chat", not
+    /// "irc.libera.chat", and certainly not "soju.example.org" for both of two networks
+    /// reached through the same bouncer.
+    public private(set) var displayName: String
+
+    /// Whether this network's channels are showing in the tree.
+    ///
+    /// Per connection, not per app: with two networks open, one flag collapses both. Moved
+    /// off `AppModel` in prompt 4, which is what stage 1 prompt 8's note asked for.
+    public var isExpanded = true
+
+    /// The upstream networks this bouncer is holding, empty for everything else.
+    ///
+    /// Only ever non-empty on the *unbound* connection to a bouncer — the one allowed to
+    /// enumerate. `AppModel` reconciles the tree against this.
+    public private(set) var bouncerNetworks: [BouncerNetwork] = []
+
+    /// The bouncer network this connection is bound to, or `nil` for a direct connection
+    /// and for the bouncer's own control connection.
+    public var bouncerNetworkID: String? { configuration.bouncerNetworkID }
+
+    /// Called when ``bouncerNetworks`` changes, so the app can open and close the rows.
+    ///
+    /// A callback rather than the app observing the property: opening a network is an
+    /// `async` operation on `AppModel`, and `@Observable` gives no hook to run one from.
+    @ObservationIgnored
+    public var bouncerNetworksDidChange: (@MainActor (ConnectionViewModel) -> Void)?
+
+    /// Renames the row, for a bouncer network the bouncer has renamed under us.
+    public func rename(to name: String) {
+        guard !name.isEmpty, name != displayName else { return }
+        displayName = name
+    }
+
+    /// Where this connection points, which is what makes two of them the same network.
+    public let host: String
+    public let port: UInt16
 
     /// Channel buffers in join order, which is the order the tree shows them in.
     public private(set) var channels: [ChannelBuffer] = []
@@ -55,21 +96,31 @@ public final class ConnectionViewModel: Identifiable {
     public private(set) var capabilities = NegotiatedCapabilities()
 
     @ObservationIgnored private let session: IRCSession
+    @ObservationIgnored public let configuration: SessionConfiguration
     @ObservationIgnored private var pump: Task<Void, Never>?
+
+    /// A name supplied by whoever created this connection, which outranks anything learned
+    /// from the wire. The bouncer's own word for a network beats that network's `NETWORK=`.
+    @ObservationIgnored private let givenName: String?
 
     public init(
         configuration: SessionConfiguration,
         trace: TraceBuffer,
         settings: ChatSettings = ChatSettings(),
-        credentials: TLSCredentials = TLSCredentials()
+        credentials: TLSCredentials = TLSCredentials(),
+        name: String? = nil
     ) {
         self.session = IRCSession(
             configuration: configuration,
             trace: trace,
             credentials: credentials
         )
+        self.configuration = configuration
         self.currentNick = configuration.nick
-        self.displayName = configuration.host
+        self.host = configuration.host
+        self.port = configuration.port
+        self.givenName = name
+        self.displayName = name ?? configuration.host
         self.settings = settings
         log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
         log.palette = settings.palette
@@ -310,12 +361,30 @@ public final class ConnectionViewModel: Identifiable {
             removeBuffer(name)
         case .numeric(let code, let parameters):
             collectMOTD(code: code, parameters: parameters)
+            if code == 5 { adoptNetworkName(fromISUPPORT: parameters) }
         case .capabilitiesChanged(let negotiated):
             capabilities = negotiated
+        case .bouncerNetworks(let networks):
+            bouncerNetworks = networks
+            bouncerNetworksDidChange?(self)
         default:
             break
         }
         append(event)
+    }
+
+    /// Takes the network's own name from `ISUPPORT`, when nobody supplied a better one.
+    ///
+    /// `NETWORK=Libera.Chat` is what the network calls itself, and it is a better tree row
+    /// than `irc.libera.chat`. A name passed in at construction — the bouncer's word for an
+    /// upstream network — outranks it, because the bouncer is the thing that knows there
+    /// are several networks behind one host.
+    private func adoptNetworkName(fromISUPPORT parameters: [String]) {
+        guard givenName == nil else { return }
+        for token in parameters where token.hasPrefix("NETWORK=") {
+            let name = String(token.dropFirst("NETWORK=".count))
+            if !name.isEmpty { displayName = name }
+        }
     }
 
     private func append(_ event: IRCEvent) {
@@ -457,7 +526,7 @@ public final class ConnectionViewModel: Identifiable {
         case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
             .namesReply, .endOfNames, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply,
-            .batchStarted, .batchEnded:
+            .batchStarted, .batchEnded, .bouncerNetworks:
             return [log]
         }
     }
@@ -499,7 +568,7 @@ public final class ConnectionViewModel: Identifiable {
         case .raw, .stateChanged, .registered, .quit, .nickChanged, .numeric,
             .clientError, .clientNotice, .capabilitiesChanged, .authenticated,
             .standardReply, .awayChanged, .accountChanged, .hostChanged, .realNameChanged,
-            .batchStarted, .batchEnded:
+            .batchStarted, .batchEnded, .bouncerNetworks:
             break
         }
     }

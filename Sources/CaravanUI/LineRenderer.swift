@@ -112,8 +112,9 @@ public struct LineRenderer: Sendable {
             // where these land; `.raw` has the raw-traffic toggle.
             return nil
 
-        case .batchStarted, .batchEnded:
-            // Grouping, not content. The lines inside the batch are what gets rendered.
+        case .batchStarted, .batchEnded, .bouncerNetworks:
+            // Structure, not content. A batch's lines are what gets rendered, and the
+            // bouncer's network list is a shape the *tree* takes rather than a line.
             return nil
 
         case .message(_, let sender, let text, let kind, let isAction, _):
