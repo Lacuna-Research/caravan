@@ -98,6 +98,11 @@ public final class ConnectionViewModel: Identifiable {
     /// one raw-traffic toggle.
     @ObservationIgnored public let settings: ChatSettings
 
+    /// Where the user has dragged this network's buffers, so a rejoin lands back there
+    /// rather than at the bottom of a list they spent time arranging. `nil` in tests that
+    /// do not care, where everything simply keeps join order.
+    @ObservationIgnored public var bufferOrder: BufferOrder?
+
     private var renderer: LineRenderer { settings.renderer }
 
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
@@ -189,6 +194,24 @@ public final class ConnectionViewModel: Identifiable {
     /// hidden children when the group is shut.
     public var rolledUpActivity: BufferActivity {
         buffers.map(\.buffer.activity).max() ?? .none
+    }
+
+    /// Moves channels within this network, and reports the new order for persisting.
+    ///
+    /// **Mutates `channels`, which is what ``buffers`` is built from** — so the tree,
+    /// `AppModel.allBuffers`, next-unread and the ⌘K palette all move together. Reordering
+    /// the *view* instead would have left the keyboard and the mouse disagreeing about
+    /// where `#swift` is, which is exactly what prompt 6's carry-forward warned about.
+    @discardableResult
+    func moveChannels(fromOffsets source: IndexSet, toOffset destination: Int) -> [String] {
+        channels.move(fromOffsets: source, toOffset: destination)
+        return channels.map(\.name.raw)
+    }
+
+    @discardableResult
+    func moveQueries(fromOffsets source: IndexSet, toOffset destination: Int) -> [String] {
+        queries.move(fromOffsets: source, toOffset: destination)
+        return queries.map(\.nick.raw)
     }
 
     /// Opens a channel's buffer without joining it, for a ⌘1–9 binding whose target is not
@@ -807,7 +830,15 @@ public final class ConnectionViewModel: Identifiable {
         )
         buffer.log.palette = settings.palette
         buffersByName[name] = buffer
-        channels.append(buffer)
+        channels.insert(
+            buffer,
+            at: bufferOrder?.insertionIndex(
+                for: name.raw,
+                among: channels.map(\.name.raw),
+                network: networkKey,
+                section: .channels
+            ) ?? channels.count
+        )
         return buffer
     }
 
@@ -821,7 +852,15 @@ public final class ConnectionViewModel: Identifiable {
         buffer.log.palette = settings.palette
         buffer.log.lineCap = settings.scrollbackLines
         queriesByNick[nick] = buffer
-        queries.append(buffer)
+        queries.insert(
+            buffer,
+            at: bufferOrder?.insertionIndex(
+                for: nick.raw,
+                among: queries.map(\.nick.raw),
+                network: networkKey,
+                section: .queries
+            ) ?? queries.count
+        )
         return buffer
     }
 

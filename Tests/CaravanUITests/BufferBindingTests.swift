@@ -173,7 +173,7 @@ struct BindingActivationTests {
     func opensAndJoins() async throws {
         let harness = try await harness()
         let binding = BufferBinding(
-            network: harness.connection.bindingNetworkKey,
+            network: harness.connection.networkKey,
             buffer: "#later"
         )
         harness.model.bindings.bind(binding, to: 4)
@@ -196,7 +196,7 @@ struct BindingActivationTests {
     func doesNotDialOut() async throws {
         let harness = try await harness()
         let binding = BufferBinding(
-            network: harness.connection.bindingNetworkKey,
+            network: harness.connection.networkKey,
             buffer: "#later"
         )
         harness.model.bindings.bind(binding, to: 4)
@@ -221,7 +221,7 @@ struct BindingActivationTests {
     func opensQuery() async throws {
         let harness = try await harness()
         let binding = BufferBinding(
-            network: harness.connection.bindingNetworkKey,
+            network: harness.connection.networkKey,
             buffer: "bob"
         )
         harness.model.bindings.bind(binding, to: 2)

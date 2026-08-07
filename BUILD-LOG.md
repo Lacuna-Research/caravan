@@ -3496,3 +3496,104 @@ was read rather than clicked. Said plainly rather than filed under "verified liv
 All three are unit tests. The first two could only have been found by looking — one of them
 only by looking *on a machine configured this way*, which is worth remembering the next time
 a colour is chosen from a semantic role rather than a value.
+
+## Stage 2, prompt 7 — Windows and chrome
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+The other half of the multi-window model: a buffer can leave the window, the tree can be
+reordered by hand, and the window has real chrome.
+
+### Decisions
+
+**A detached window holds exactly one buffer and has no tree.** "Detach this", not "open a
+second copy of the app" — §1 keeps the single sidebar-driven window as the primary
+metaphor, and a second tree would be a second place for the selection to live and a second
+answer to "where am I". It reuses the same view bodies the main window's detail pane uses,
+so a detached channel is not a second implementation that can drift.
+
+**One affordance, and it takes a `SidebarItem`.** §10 asks that the canvas's standalone
+mode be "the *same general affordance* used to detach a chat buffer", not a mechanism
+special-cased for it. `SidebarItem` already spans buffers and the canvas, so `detach(_:)`
+takes one and the tree row, the View menu and the toolbar all call it. `showSettingsAndDebug()`
+is the single place §10's "⌘0 focuses the window instead" had to be taught, exactly as
+`PLAN.md` predicted.
+
+**Closing a detached window *is* reattaching.** Not a second, destructive meaning of
+"close": a buffer that existed in neither place would be one you could no longer reach.
+
+**A detached buffer never accumulates activity, whether or not its window is key.** The
+main window's selection has never been conditioned on key-ness either — a buffer you are
+looking at stays clear while the app is in the background — and one rule that is sometimes
+generous beats two rules that disagree. *Revisit if:* someone reports missing a highlight
+in a detached window buried behind other apps.
+
+**Channels and conversations are reordered separately**, which preserves §12's
+channels-before-queries rule through any amount of dragging. That rule exists to keep
+channel positions stable as transient PMs come and go, and a drag that could interleave
+them would give it away for nothing.
+
+**The saved order is a preference list, not the order.** A buffer named in it takes the
+position it names; one that has never been dragged keeps arriving in join order at the end.
+So joining a channel you never reordered does the obvious thing, and rejoining `#swift`
+after a reconnect does not send it to the bottom of a list you spent time arranging.
+
+**`bindingNetworkKey` became `networkKey`**, because two features now key on it — ⌘1–9
+bindings and the tree order. Both inherit the same caveat and both migrate together when
+the server-list prompt answers `PLAN.md`'s stable-network-name question.
+
+**⌘W moved from a toolbar button to the menu bar.** A customizable toolbar cannot hold a
+keyboard shortcut: dragging the button away would take the key with it. It is also disabled
+unless the main window is key, since with a detached buffer in front ⌘W means "close this
+window" and acting on the main window's selection would close a buffer nobody was looking at.
+
+### The live run, against Libera
+
+Three channels, detached and reattached by keyboard and by menu; the canvas ejected and ⌘0
+confirmed to raise its window rather than take over the chat area (§10); a manual tree order
+**written into `caravan.conf` by hand before launch** — the half of "persisted" the app
+cannot demonstrate on its own — with the channels joined `a, b, c` and coming up `c, a, b`,
+and the ⌘K palette listing them in the same order, which is prompt 6's carry-forward
+satisfied. The menu bar carries Connect, Disconnect, Close Buffer, Close Network, Detach,
+the nick list and all of Navigate. The hand-written config kept its comments and its order
+line unchanged.
+
+**Not verified: an actual drag.** System Events cannot synthesise a drag, so the reorder was
+exercised through the model and through the *load* path live; the mouse gesture itself was
+not. **Nor the customization palette sheet** — clicking "Customize Toolbar…" through the
+accessibility API did not take, the same limitation prompt 6 hit with the `Bind to` submenu.
+Its *presence* was confirmed by opening the toolbar's context menu and photographing it.
+
+### Five defects the live run found
+
+1. **⌃⌘D is macOS's "Look Up in Dictionary".** The obvious mnemonic for detach, bound and
+   displayed correctly in the menu with its shortcut, and it simply never fired — a
+   system-wide text service swallows it first. Now ⌃⌘O. **The second time this stage has
+   been caught by a system shortcut that reports no conflict at build time**, after prompt
+   6's ⌥⌘H/Hide Others. Worth a habit: a new shortcut is not done until it has been pressed.
+2. **`.primaryAction` toolbar items are not customizable.** They pin to the trailing edge
+   and never appear in the palette, which is the whole of what §8 asks for. `.secondaryAction`
+   is the customizable body of the toolbar.
+3. **`.defaultCustomization(.hidden)` is ignored on macOS 26.5.** Every item declared showed
+   regardless. Rather than ship a call that does nothing, the toolbar now *declares* only
+   §8's minimal set and everything else lives in the menu bar — which is §8's other half and
+   is the thing a customization palette can never take away.
+4. **Detached windows came back on relaunch, onto buffers that no longer exist.** A detached
+   window names a connection whose identity lasts one run, so a restored one always names a
+   dead network — the run watched last session's `##caravan-win-a` reappear on a launch that
+   had not connected to anything. Neither `defaultLaunchBehavior(.suppressed)` nor
+   `restorationBehavior(.disabled)` stopped it, so restoration is made *harmless* instead:
+   the window adopts itself into the model if its target is real, and dismisses itself if not.
+5. **Detaching the canvas left the main window claiming "Not connected".** The fallback was
+   "this row's network", the canvas belongs to no network, so the selection went nil — and an
+   empty selection is also how the app says there is nothing to show. It falls back to the
+   first connection now.
+
+### Also fixed: a real race in prompt 5's suite
+
+`CTCPSessionTests.floodIsThrottled` failed once here and passed on six re-runs. It was not a
+flake to shrug at: the test waited for the *client* to observe fifty requests and then read
+what the *server* had received, and the reply round trip is not synchronised with the event
+count at all. It now waits for a reply to actually arrive. `BUILD-LOG`'s own note from prompt
+4 — that an intermittent failure is "the kind of failure it is very tempting to re-run and
+call a flake" — is what made me go and look.

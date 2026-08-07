@@ -17,6 +17,69 @@ public struct NavigationCommands: Commands {
     }
 
     public var body: some Commands {
+        // **Everything the toolbar can hide, the menu bar keeps** (§8). The toolbar became
+        // customizable in prompt 7, so any item in it can be dragged away; prompt 4's live
+        // run already found once that losing Connect makes multi-network unreachable, and
+        // a customization palette must not be a way to reproduce that.
+        CommandMenu("Network") {
+            Button("Connect…") { model.isShowingConnectSheet = true }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+            Button("Disconnect") { Task { await model.disconnect() } }
+                .disabled(model.activeConnection?.isConnected != true)
+
+            Divider()
+
+            // ⌘W was a toolbar button carrying a shortcut until prompt 7. A customizable
+            // toolbar cannot hold a keyboard shortcut, because dragging the button away
+            // would take the key with it.
+            //
+            // **Only when the main window is in front.** With a detached buffer key, ⌘W
+            // means "close this window" — acting on the main window's selection would
+            // close a buffer the user is not looking at.
+            Button(model.closeBufferTitle ?? "Close Buffer") {
+                Task { await model.closeSelectedBuffer() }
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            .disabled(model.closeBufferTitle == nil || model.keyWindow != .main)
+
+            Button("Close Network") {
+                Task {
+                    if let connection = model.activeConnection { await model.close(connection) }
+                }
+            }
+            .disabled(model.activeConnection == nil)
+        }
+
+        CommandGroup(after: .sidebar) {
+            // **One affordance, buffers and canvases alike** (§1, §10) — the same command
+            // the tree's context menu and the toolbar item invoke.
+            Button(detachTitle) {
+                guard let selection = model.selection else { return }
+                if model.isDetached(selection) {
+                    model.reattach(selection)
+                } else {
+                    model.detachSelected()
+                }
+            }
+            // **Not ⌃⌘D.** That was the obvious mnemonic for "detach" and the live run
+            // killed it: ⌃⌘D is macOS's system-wide "Look Up in Dictionary" text service,
+            // which swallows it before any menu sees it. The menu item showed the shortcut
+            // correctly and simply never fired — the second time this stage has been caught
+            // by a system shortcut that reports no conflict at build time.
+            .keyboardShortcut("o", modifiers: [.command, .control])
+            .disabled(model.selection == nil)
+
+            // Also a toolbar item, and therefore droppable from the toolbar — so it lives
+            // here as well. A detached channel window has no toolbar item for it at all.
+            Button(
+                model.settings.isNickListVisible ? "Hide Nick List" : "Show Nick List"
+            ) {
+                model.settings.isNickListVisible.toggle()
+            }
+            .keyboardShortcut("l", modifiers: [.command, .control])
+            Divider()
+        }
+
         CommandMenu("Navigate") {
             Button("Quick Switcher…") { model.isShowingQuickSwitcher = true }
                 .keyboardShortcut("k", modifiers: .command)
@@ -54,6 +117,13 @@ public struct NavigationCommands: Commands {
                 .disabled(model.bindings.binding(for: digit) == nil)
             }
         }
+    }
+
+    private var detachTitle: String {
+        guard let selection = model.selection, model.isDetached(selection) else {
+            return "Open in New Window"
+        }
+        return "Bring Back Into Main Window"
     }
 
     private func title(for digit: Int) -> String {

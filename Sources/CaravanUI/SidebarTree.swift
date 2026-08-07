@@ -87,10 +87,21 @@ private struct NetworkGroup: View {
                 )
                 ChannelRow(
                     buffer: buffer,
-                    digit: model.bindings.digit(for: model.binding(for: item))
+                    digit: model.bindings.digit(for: model.binding(for: item)),
+                    isDetached: model.isDetached(item)
                 )
                 .tag(item)
-                .contextMenu { BindToMenu(model: model, item: item) }
+                .contextMenu {
+                    DetachMenuItem(model: model, item: item)
+                    Divider()
+                    BindToMenu(model: model, item: item)
+                }
+            }
+            // **Drag-to-reorder mutates `connection.channels`**, which is what
+            // `ConnectionViewModel.buffers` is built from — so the tree, the ⌘K palette and
+            // next-unread all move together rather than the view holding a private opinion.
+            .onMove { source, destination in
+                model.moveChannels(in: connection, fromOffsets: source, toOffset: destination)
             }
             // **Queries after channels, in the same list** (§12). Not a labelled section:
             // one flat list keeps channel positions stable as transient PMs come and go,
@@ -100,23 +111,36 @@ private struct NetworkGroup: View {
                     connection: connection.id,
                     nick: buffer.nick
                 )
-                QueryRow(buffer: buffer, digit: model.bindings.digit(for: model.binding(for: item)))
-                    .tag(item)
-                    .contextMenu {
-                        Button("Close Conversation") {
-                            connection.closeQuery(buffer.nick)
-                        }
-                        Divider()
-                        BindToMenu(model: model, item: item)
+                QueryRow(
+                    buffer: buffer,
+                    digit: model.bindings.digit(for: model.binding(for: item)),
+                    isDetached: model.isDetached(item)
+                )
+                .tag(item)
+                .contextMenu {
+                    Button("Close Conversation") {
+                        connection.closeQuery(buffer.nick)
                     }
+                    DetachMenuItem(model: model, item: item)
+                    Divider()
+                    BindToMenu(model: model, item: item)
+                }
+            }
+            // Conversations reorder among themselves. §12's channels-before-queries rule
+            // survives any amount of dragging, because the two sections are two arrays.
+            .onMove { source, destination in
+                model.moveQueries(in: connection, fromOffsets: source, toOffset: destination)
             }
         } label: {
             NetworkRow(
                 connection: connection,
-                digit: model.bindings.digit(for: model.binding(for: .status(connection.id)))
+                digit: model.bindings.digit(for: model.binding(for: .status(connection.id))),
+                isDetached: model.isDetached(.status(connection.id))
             )
             .tag(AppModel.SidebarItem.status(connection.id))
             .contextMenu {
+                DetachMenuItem(model: model, item: .status(connection.id))
+                Divider()
                 Button(connection.isConnected ? "Disconnect" : "Connect") {
                     Task {
                         if connection.isConnected {
@@ -172,6 +196,41 @@ private struct BindToMenu: View {
     }
 }
 
+/// `Open in New Window` / `Bring Back` — **the one eject affordance** (§1, §10).
+///
+/// The same control on every row, and the canvas's row is a row like any other, which is
+/// what §10 asks for: the canvas's standalone mode should be "the *same general
+/// affordance* used to detach a chat buffer", not a mechanism special-cased for it.
+private struct DetachMenuItem: View {
+    let model: AppModel
+    let item: AppModel.SidebarItem
+
+    var body: some View {
+        if model.isDetached(item) {
+            Button("Bring Back Into Main Window") { model.reattach(item) }
+        } else {
+            Button("Open in New Window") { model.detach(item) }
+        }
+    }
+}
+
+/// The mark a detached row wears, so the tree says where a buffer went.
+///
+/// Without it, a row whose buffer is in another window looks exactly like one that is not,
+/// and clicking it appears to do nothing — the window it raises may be behind the main one.
+private struct DetachedMarker: View {
+    let isDetached: Bool
+
+    var body: some View {
+        if isDetached {
+            Image(systemName: "macwindow.on.rectangle")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("In its own window")
+        }
+    }
+}
+
 /// The digit a bound row shows, in the trailing edge of the tree (§11).
 ///
 /// Unbound-by-default has a real discoverability cost, and showing the digit is what pays
@@ -200,6 +259,7 @@ private struct BindingDigit: View {
 private struct NetworkRow: View {
     let connection: ConnectionViewModel
     let digit: Int?
+    let isDetached: Bool
 
     private var activity: BufferActivity {
         connection.isExpanded ? connection.status.activity : connection.rolledUpActivity
@@ -217,6 +277,7 @@ private struct NetworkRow: View {
                 .fontWeight(activity.isBold ? .bold : .regular)
             Spacer(minLength: 4)
             HighlightBadge(activity: activity)
+            DetachedMarker(isDetached: isDetached)
             BindingDigit(digit: digit)
         }
         .help(connection.statusSummary)
@@ -243,6 +304,7 @@ private struct NetworkRow: View {
 private struct QueryRow: View {
     let buffer: QueryBuffer
     let digit: Int?
+    let isDetached: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -252,6 +314,7 @@ private struct QueryRow: View {
                 .fontWeight(buffer.activity.isBold ? .bold : .regular)
             Spacer(minLength: 4)
             HighlightBadge(activity: buffer.activity)
+            DetachedMarker(isDetached: isDetached)
             BindingDigit(digit: digit)
         }
         .help("Conversation with \(buffer.nick.raw)")
@@ -280,6 +343,7 @@ private struct HighlightBadge: View {
 private struct ChannelRow: View {
     let buffer: ChannelBuffer
     let digit: Int?
+    let isDetached: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -289,6 +353,7 @@ private struct ChannelRow: View {
                 .fontWeight(buffer.activity.isBold ? .bold : .regular)
             Spacer(minLength: 4)
             HighlightBadge(activity: buffer.activity)
+            DetachedMarker(isDetached: isDetached)
             BindingDigit(digit: digit)
         }
         .help(buffer.isJoined ? buffer.topicText ?? buffer.name.raw : "Not in this channel")

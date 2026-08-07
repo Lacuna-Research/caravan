@@ -72,6 +72,9 @@ decision entry.
   `ConnectionViewModel.bindingNetworkKey`. So `caravan.conf` already ships `binding.N` keys
   in a form the answer will change, and the Dashboard prompt has to *migrate* them rather
   than merely adopt a name: those keys are public API and people will have made bindings.
+  **Stage 2 prompt 7 added a second family of keys on the same identifier** —
+  `order.<network>.channels` and `.queries`, the manual tree order — so the migration covers
+  both. `ConnectionViewModel.networkKey` is the one place that builds it.
 - **Is the control socket always on, or opt-in?** *(not blocking)* Always-on is one more
   thing listening, even at `0600`; opt-in is one more thing to discover was off after a
   script has silently done nothing for a week. If it becomes a setting it belongs on the
@@ -218,6 +221,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       optional but visible on first launch with a minimal set — connection state,
       sidebar toggle, nick-list toggle. The system customization palette makes
       mIRC's toolbar editor mostly not-work-we-do.
+
+    *All of the above are done (stage 2 prompt 7); this item is complete. Departures, argued
+    in `BUILD-LOG.md`: the detach shortcut is **⌃⌘O**, since macOS swallows ⌃⌘D as "Look Up
+    in Dictionary"; the minimal toolbar set is achieved by declaring only three items,
+    because `defaultCustomization(.hidden)` is ignored on macOS 26.5; and "Customize
+    Toolbar…" lives in the toolbar's own context menu on macOS 26 rather than the View menu.
+    The sidebar toggle is `NavigationSplitView`'s own and is not re-declared. Manual order
+    persists under the same `host:port` network key ⌘1–9 bindings use — see "Still open".*
     The switchbar — mIRC's flat button strip — is deferred, not rejected (§2):
     revisit once the treebar is in real use.
 
