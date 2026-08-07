@@ -3248,3 +3248,37 @@ the older, shorter convention that collides with nothing and reads correctly bes
 which still holds `index.html`, `style.css` and `CNAME`; only the name of the source
 directory on `main` moved. The two trees stay byte-identical, which is still checked by
 hand — see the open question in `PLAN.md`.
+
+## Decision — `check-docs.sh` compares `www/` against the branch that is served
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Answers and removes the "the published site is synced by hand" question from `PLAN.md`.
+Nothing copies `www/` to the `gh-pages` branch, and a deploy workflow was rejected, so the
+failure mode was silent and slow: edit the site, merge, and visitors keep seeing the old one
+until somebody happens to notice. Rule 10 makes it loud instead.
+
+**It compares tree object IDs, not files.** Git has already hashed both sides, so `HEAD:www`
+against `origin/gh-pages^{tree}` is one string comparison that covers additions, deletions
+and edits at once. Only when they differ does it spend anything, listing the per-file blob
+SHAs so the message names what to copy.
+
+**The mode distinction is the part that took a second attempt.** The first version compared
+`HEAD:www` unconditionally, and a test with a staged edit *passed the pre-commit hook* — HEAD
+does not yet contain what is about to be committed, so the hook waved through a commit that
+CI would reject a minute later. It now reads the index (`git ls-tree $(git write-tree) www`)
+when there is no base ref, and `HEAD` when there is. Found by trying to make it fail rather
+than by reading it, which is the same lesson as the harness bug earlier: a check nobody has
+watched fail is a check nobody knows works.
+
+**A missing `gh-pages` ref is a `skip`, not a failure.** A shallow or fresh clone genuinely
+has no remote-tracking branch for it, and failing there would make the script hostile on a
+first checkout. CI fetches it — `docs.yml` checks out with `fetch-depth: 0` — so the
+authoritative run always compares for real. The skip prints, because a check that goes quiet
+is a check nobody notices has stopped running.
+
+**`CLAUDE.md` stayed at 99 lines.** The enforcement sentence was re-wrapped rather than
+extended: adding the clause naively took the file to exactly 100 of its 100-line cap, which
+is not headroom, it is a trap for whoever adds the next one. Pruned by tightening the same
+sentence ("for every" to "per", dropping "progress" and "the") — the cap is meant to force
+exactly that.
