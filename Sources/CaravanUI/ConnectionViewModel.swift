@@ -103,6 +103,10 @@ public final class ConnectionViewModel: Identifiable {
     /// do not care, where everything simply keeps join order.
     @ObservationIgnored public var bufferOrder: BufferOrder?
 
+    /// Where the URLs in arriving lines are collected. Injected by `AppModel`, like
+    /// ``bufferOrder``, and `nil` in the tests that do not care.
+    @ObservationIgnored public var urlCatcher: URLCatcher?
+
     private var renderer: LineRenderer { settings.renderer }
 
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
@@ -539,7 +543,11 @@ public final class ConnectionViewModel: Identifiable {
     }
 
     /// The scrollback a window's input writes into.
-    private func log(for target: Target?) -> MessageLogController {
+    /// The scrollback a target names, falling back to the status window.
+    ///
+    /// Public since prompt 9: `/clear` used to reach for whatever the *tree* had selected,
+    /// which is the wrong buffer when the line was typed in a detached window.
+    public func log(for target: Target?) -> MessageLogController {
         switch target {
         case .channel(let name)?: buffersByName[name]?.log ?? log
         case .nick(let nick)?: queriesByNick[nick]?.log ?? log
@@ -623,6 +631,15 @@ public final class ConnectionViewModel: Identifiable {
         guard let line = renderer.line(for: event, context: context) else { return }
         for destination in destinations(for: event) {
             destination.log.append([line])
+            // Read back off the line rather than scanned for again: the renderer's
+            // `NSDataDetector` pass already decided what a URL is, and a second opinion
+            // would eventually disagree with the underline the user can see.
+            urlCatcher?.record(
+                line,
+                network: displayName,
+                buffer: destination.displayName,
+                date: context.now
+            )
             raise(
                 destination,
                 to: BufferActivity.caused(

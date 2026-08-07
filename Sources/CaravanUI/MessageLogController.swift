@@ -436,6 +436,21 @@ public final class MessageLogController {
         self.scrollView = scrollView
         scrollView.contentView.postsBoundsChangedNotifications = true
         applyPaletteAppearance()
+        applyContextMenu()
+    }
+
+    /// Builds the right-click menu for whatever the pointer is over.
+    ///
+    /// Set by the buffer's view, which is the only thing that knows which connection and
+    /// which channel this scrollback belongs to — the controller knows neither, and giving
+    /// it either would make it the second place that has to be told when a buffer moves
+    /// between windows.
+    @ObservationIgnored public var contextMenu: ((BufferTarget) -> NSMenu?)? {
+        didSet { applyContextMenu() }
+    }
+
+    private func applyContextMenu() {
+        (textView as? ScrollbackTextView)?.contextMenu = contextMenu
     }
 
     /// The scroll view this buffer is drawn in, built once and reused for the life of the

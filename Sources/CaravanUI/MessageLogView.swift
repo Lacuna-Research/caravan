@@ -97,7 +97,7 @@ public struct MessageLogView: NSViewRepresentable {
         // `NSTextView(frame:textContainer:)` with a hand-built network requires the
         // caller to keep the storage alive — get that wrong and the view silently ends
         // up with no text system at all.
-        let textView = NSTextView(usingTextLayoutManager: usesTextKit2)
+        let textView = ScrollbackTextView(usingTextLayoutManager: usesTextKit2)
         textView.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         textView.isEditable = false
         textView.isSelectable = true

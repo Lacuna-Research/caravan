@@ -3699,3 +3699,172 @@ which is true before anything arrives at all; one waited for the entries and the
 on the end marker, which comes after them; one waited on the collected data and then read
 the *scrollback*, which is written later in the same handler. All three passed under
 `--filter` and failed in the full suite, which is slower and therefore more honest.
+
+## Stage 2, prompt 9 — Things you can do to what is in the buffer
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Context menus on nicks, links and the buffer itself, and the URL catcher behind the links
+the scrollback was already drawing.
+
+### Decisions
+
+**A menu item is a command string.** Every item on a nick submits `/whois bob`, `/op bob`,
+`/kickban bob` through `AppModel.submit` — the same path a typed line takes — rather than
+calling into `ConnectionViewModel`. Two things follow. The menu cannot drift from the
+command, so `/op` fixed once is fixed in both; and stage 3's script-driven menus become a
+change to `BufferMenu.items(for:channel:canSetModes:)` rather than a rewrite of any
+plumbing. Slap needed no new command at all: it is `/me slaps …`, which the table already
+carries. Revisit only if some future item has no command form — and the answer then is
+probably to give it one.
+
+**The menu table is pure and returns groups, not a flat list.** `BufferMenu` takes a
+`BufferTarget`, a channel and a `canSetModes` flag, and answers `[[BufferMenuItem]]` where a
+group boundary *is* a separator. That keeps divider logic out of both renderers — SwiftUI's
+`BufferMenuItems` and AppKit's `NSMenu.buffer(_:perform:)` — and means the whole table is
+tested as data rather than by putting a window on screen.
+
+**Operator items are disabled, never hidden.** A menu whose contents come and go teaches
+nobody what the client can do. The live run made the case better than the argument does:
+the same menu, opened twice a minute apart, greys out seven items the moment you lose `+o`.
+
+**`canSetModes` moved onto `ChannelBuffer` and takes a nick.** It was private to
+`ChannelModesSheet` *and* asked `model.activeConnection?.currentNick` — the tree's
+selection, not the sheet's own network. `ChannelBuffer.canSetModes(as:)` now answers for
+whichever nick it is handed, and three callers share the one guess.
+
+**`BufferActions` holds references, not a snapshot.** The struct the buffer views hand to
+the nick list and the scrollback carries the `ChannelBuffer`, not a `Bool` — because the
+scrollback's menu is built when the pointer is over something, long after the view that
+supplied it was laid out. A `canSetModes` snapshotted at build time would still say "you
+are not an operator" ten minutes after somebody opped you. The first draft did exactly
+that, and the live run is where it would have shown.
+
+**The scrollback's hit test reads the text storage.** `LineRenderer` already leaves a
+`NickColumn` on every nick column and `applyLinks` already leaves a `.link` on every URL it
+detects, so `ScrollbackTextView.menu(for:)` is one attribute lookup rather than a second
+parse of text parsed twice already. `target(in:at:)` is static and takes the storage so the
+attribute half is testable without a laid-out window; the geometry half — which character a
+point is over — is TextKit 1 only and answers `nil` under TextKit 2, degrading to the
+buffer's own menu rather than crashing.
+
+**A right-click on or beside a selection keeps AppKit's own menu.** Copy, Look Up and
+Services are what a selection means on macOS, and replacing them with "Whois" for whichever
+word is under the pointer would be this client overriding a system convention in the one
+view where selecting text is the point.
+
+**The catcher collects inbound only, off the rendered line.** It walks the `.link` runs of
+each line as it lands rather than running a second `NSDataDetector`: a second detector is a
+second opinion about what a URL is, and the two would eventually disagree with the underline
+the user can see. Outbound is deliberately not collected — what you typed is in your own
+command history and in the buffer in front of you, and catching it would mean a second seam
+in `echo(_:from:capabilities:)`, which has no buffer name in hand. One line to add if it
+turns out to matter.
+
+**Identity is the URL *and* the buffer.** The same link posted in two channels is two rows,
+because "where did I see this" is half of what the window is for. A repeat in the *same*
+buffer moves to the front and takes the new time rather than adding a row — otherwise a bot
+reposting hourly is the whole window.
+
+**The catcher is a sheet, and it remembers which window opened it.** Not a third kind of
+window: §1 keeps the single sidebar-driven window as the primary metaphor, and the modes
+sheet is the precedent. `AppModel.urlCatcherPresentation` records the `KeyWindow` at the
+moment it is asked for, and `RootView` and `DetachedBufferView` each present only their own
+— a plain `isShowing` flag would put the sheet on the main window, quite possibly behind
+the one holding the link. Recorded at open time rather than read from `keyWindow` while
+presenting, because presenting a sheet is itself something that changes which window is key.
+Worth revisiting if anyone wants the catcher open *beside* a conversation; the answer then
+is the `SidebarItem` detach mechanism, not a bespoke window.
+
+**Open All asks above five.** Twenty browser tabs from one mis-click is not something a
+client should be able to do without a question, and five is where "a handful" stops.
+
+### The defect this prompt fixed on the way past
+
+**Everything a buffer view sent went to the tree's selection.** `AppModel.submit(_:from:)`
+resolved its connection from `selection`, so a detached channel window on one network with
+the main window pointed at another sent every typed line to the wrong server — and the
+context menus would have inherited it exactly. `submit` now takes `on connection:`, and
+`ChannelBufferView`, `QueryBufferView` and `StatusBufferView` pass the connection they are
+showing. The same lookup was wrong in three more places, all fixed with it: `/clear` cleared
+whichever buffer the tree had selected (`clearScrollback` now takes the connection and asks
+`ConnectionViewModel.log(for:)`, which is public for it); `completionSources` offered the
+selected network's channel names in a detached window's completion; and `ChannelModesSheet`
+read `lastKnownCapabilities` and `currentNick` off `activeConnection`.
+
+`DetachedBufferView` also resolves its connection from `item.connectionID` rather than
+letting the views reach for `activeConnection`, which is what makes the fix structural
+rather than three careful call sites.
+
+### Deliberately not built
+
+**Ignore**, which `PLAN.md` item 17 lists in this menu. The matching machinery is prompt
+13's, with the ignore list, and an item that silently did nothing is worse than no item. A
+carry-forward note on prompt 13 names the file and the group to add it to.
+
+**DCC chat/send**, also listed in item 17 — stage 3, item 31, and a transport problem rather
+than a menu one. Noted on that item.
+
+**A reason prompt for Kick and Ban.** The default kick reason is an Options setting and
+Options is prompt 10; until then the parser's default stands, which Libera showed as
+`caravan-peer9 was kicked … (caravan-peer9)` — mIRC's convention, the target's own nick.
+
+**No new keyboard shortcuts.** This stage has lost two to system bindings that report no
+conflict at build time. "URL Catcher…" is a View-menu item without a key; the scrollback's
+right-click is the affordance it is a fallback for.
+
+### The live run, against Libera in `##caravan-p9` with a scripted peer
+
+Every acceptance item except the last, and it went cleanly:
+
+- The MOTD's three URLs arrived underlined and clickable, with working link tooltips, and
+  accessibility exposes them as real link elements inside the text area.
+- The nick list's menu on `caravan-peer9`: all four groups with their separators. **Op**
+  from it produced `+o caravan-peer9` and the nick list redrew as `@caravan-peer9`; then
+  **Deop** and **Voice**, both landing.
+- The scrollback's menu on the `<caravan-peer9>` column produced the same menu — the
+  `NickColumn` hit test working against a real text storage — and **Kick** from it kicked.
+- **Slap** rendered as `* caravan-p9 slaps caravan-peer9 around a bit with a large trout`.
+- Deopping ourselves and reopening the menu greyed out Op, Deop, Voice, Devoice, Kick, Ban
+  and Kick and Ban, leaving Whois, Query and Slap alone. This is the assertion that the
+  menu recomputes rather than snapshots.
+- **Copy Link** put exactly `https://example.com/prompt-nine` on the pasteboard; **Open
+  Link** opened it in the browser.
+- The catcher opened scoped to This Buffer with the channel's two links, and **Everywhere**
+  showed five including the MOTD's three under `Libera.Chat on Libera.Chat`. **Copy All**
+  produced the five newline-separated, newest first. With six caught, **Open All** asked
+  "Open 6 links in your browser?" — cancelled rather than opening them.
+- Double-clicking the peer in the nick list opened and selected the conversation.
+- Detached the channel window, right-clicked a link in it, and chose URL Catcher: the sheet
+  presented on the **detached** window and the main window had none. That is the per-window
+  presentation claim, checked the only way it can be.
+
+**Not verified live: the two-network case**, where the tree is on network A and a detached
+window on network B sends something. Covered instead by `BufferConnectionTests`, which runs
+two scripted servers over real sockets and asserts the `WHOIS` and the `KICK` arrive at the
+second and never at the first — the same claim, and more precise than an eye on two windows.
+**Also not verified live:** that a right-click inside a selection falls through to AppKit's
+menu; selecting text needs a synthesised drag, which System Events cannot do — prompt 7
+recorded the same limit for the tree's reorder.
+
+### Learned
+
+**System Events cannot right-click.** `click at` is left-button only and there is no
+right-click verb, so a twenty-line Swift helper posting `rightMouseDown`/`rightMouseUp`
+`CGEvent`s was needed to open a context menu at a point at all — and a second one setting
+`mouseEventClickState` to 2 for the double-click. `AXShowMenu` works for the SwiftUI rows,
+which have accessibility elements of their own; it cannot target a *character* inside an
+`NSTextView`, which is exactly what the scrollback's menu is about.
+
+**`keystroke` silently does nothing until the field is focused**, and `set value of text
+area` followed by `key code 36` is the reliable pair. Two commands were typed into the void
+before this was noticed — the same shape as the wrong-binary lesson: check that what you did
+landed, not that the command returned.
+
+**`NSMenuItem.target` is weak.** The closure-carrying handler needs `representedObject` as
+well, or the action is deallocated between building the menu and choosing from it. There is
+a test for it, and it exists because the first version had the bug.
+
+**`autoenablesItems` has to be off.** Otherwise AppKit asks the responder chain whether each
+selector is valid and greys out every item whose target is not a responder — which, with a
+closure handler, is all of them.

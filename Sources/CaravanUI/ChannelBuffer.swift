@@ -82,4 +82,22 @@ public final class ChannelBuffer: Identifiable {
         guard let topic = channel.topic, !topic.isEmpty else { return nil }
         return topic.text
     }
+
+    /// Whether the given nick holds a prefix here, and so is likely to be allowed to set
+    /// modes and kick people.
+    ///
+    /// **A guess, and deliberately a permissive one.** `PREFIX` says which prefixes a
+    /// network has but not which of them may do what, and half-op and owner both can on the
+    /// networks that have them — so this greys items out rather than refusing anything the
+    /// server might have allowed.
+    ///
+    /// On the buffer since prompt 9, where the modes sheet and the two context menus all
+    /// need the same answer. It used to be private to `ChannelModesSheet` *and* asked about
+    /// `activeConnection`, which is the tree's selection rather than this window's network.
+    public func canSetModes(as nick: String?) -> Bool {
+        guard let nick else { return false }
+        let key = IRCNick(nick, mapping: name.mapping)
+        guard let member = channel.members[key] else { return false }
+        return channel.prefix(for: member) != nil
+    }
 }

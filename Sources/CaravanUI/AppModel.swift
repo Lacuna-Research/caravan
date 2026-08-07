@@ -309,6 +309,34 @@ public final class AppModel {
     /// Whether the channel modes sheet is up, for the selected channel.
     public var isShowingChannelModes = false
 
+    /// Every URL the client has drawn, and where each came from.
+    ///
+    /// On the app rather than per connection: "where did I see that link" is a question
+    /// asked across networks as often as within one, and a catcher per connection would be
+    /// three windows to search instead of one filter to change.
+    public let urlCatcher = URLCatcher()
+
+    /// The catcher window, and **which window it is a sheet on**.
+    ///
+    /// A plain `isShowing` flag would put the sheet on the main window even when it was
+    /// asked for from a detached buffer — behind it, quite possibly. Recorded at the moment
+    /// it is opened rather than read from ``keyWindow`` while presenting, because
+    /// presenting a sheet is itself something that changes which window is key.
+    public var urlCatcherPresentation: URLCatcherPresentation?
+
+    /// Where a catcher window was opened from, which is what its scope filter starts on.
+    public struct URLCatcherPresentation: Hashable, Sendable {
+        public let window: KeyWindow
+        public let network: String?
+        public let buffer: String?
+
+        public init(window: KeyWindow, network: String?, buffer: String?) {
+            self.window = window
+            self.network = network
+            self.buffer = buffer
+        }
+    }
+
     /// Rows ejected into windows of their own (§1, §10), in the order they were ejected.
     ///
     /// Session state, not settings: which windows are open is the sort of thing macOS
@@ -548,7 +576,22 @@ public final class AppModel {
     /// *app* at a new host, and a connection cannot replace itself. Everything else is
     /// the connection's, and this hands it straight over.
     public func submit(_ text: String, from target: Target?) async {
-        guard let connection = activeConnection else { return }
+        await submit(text, from: target, on: activeConnection)
+    }
+
+    /// The same, against a named connection rather than the selected one.
+    ///
+    /// **The window a line was typed in is not always the window the tree has selected.** A
+    /// detached channel on one network with the main window pointed at another was sending
+    /// to whichever network the *tree* was showing — the buffer views had a perfectly good
+    /// connection in hand and threw it away. Prompt 9's context menus have the same shape of
+    /// problem, so the connection became a parameter rather than a lookup.
+    public func submit(
+        _ text: String,
+        from target: Target?,
+        on connection: ConnectionViewModel?
+    ) async {
+        guard let connection else { return }
         for action in await connection.actions(for: text, activeTarget: target) {
             switch action {
             case .send(let message):
@@ -572,7 +615,7 @@ public final class AppModel {
                     from: target
                 )
             case .clearScrollback(let everywhere):
-                clearScrollback(everywhere: everywhere, from: target)
+                clearScrollback(everywhere: everywhere, from: target, on: connection)
             case .openQuery(let nick, let message):
                 // Selected, unlike a query opened by an arriving message: this one was
                 // asked for, and `/query bob` that did not take you to bob would be a
@@ -629,9 +672,13 @@ public final class AppModel {
     ///
     /// Scrollback belongs to the view models, so this is the app's to do rather than
     /// anything the session could be asked for.
-    private func clearScrollback(everywhere: Bool, from target: Target?) {
+    private func clearScrollback(
+        everywhere: Bool,
+        from target: Target?,
+        on connection: ConnectionViewModel
+    ) {
         guard everywhere else {
-            (selection.flatMap(buffer(for:))?.log ?? activeConnection?.log)?.clear()
+            connection.log(for: target).clear()
             return
         }
         for connection in connections {
@@ -715,6 +762,7 @@ public final class AppModel {
             name: name
         )
         connection.bufferOrder = bufferOrder
+        connection.urlCatcher = urlCatcher
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in
@@ -893,18 +941,27 @@ public final class AppModel {
     /// the buffer's membership, the connection's open channels, and the command table.
     /// Nothing in it needs a round trip — completing against anything the server would
     /// have to be asked for is the line this stage does not cross.
-    public func completionSources(in buffer: ChannelBuffer?) -> CompletionSources {
+    public func completionSources(
+        in buffer: ChannelBuffer?,
+        on connection: ConnectionViewModel?
+    ) -> CompletionSources {
         // The nick list's own order, which is rank then casemapped alphabetical.
-        completionSources(nicks: buffer?.members.map(\.nick.raw) ?? [])
+        completionSources(nicks: buffer?.members.map(\.nick.raw) ?? [], on: connection)
     }
 
     /// The same, for a window whose "membership" is the two people in it.
-    public func completionSources(nicks: [String]) -> CompletionSources {
+    ///
+    /// The connection is the *window's*, not the tree's: completing a channel name in a
+    /// detached window used to offer whichever network the tree had selected.
+    public func completionSources(
+        nicks: [String],
+        on connection: ConnectionViewModel?
+    ) -> CompletionSources {
         CompletionSources(
             nicks: nicks,
             // This network's channels only. With two open, offering the other one's would
             // complete to a channel this connection cannot join.
-            channels: activeConnection?.channels.map(\.name.raw) ?? [],
+            channels: connection?.channels.map(\.name.raw) ?? [],
             commands: CompletionSources.allCommands
         )
     }

@@ -4,7 +4,16 @@ import SwiftUI
 /// A channel window: topic band, scrollback, input field, and the nick list beside them.
 struct ChannelBufferView: View {
     let model: AppModel
+
+    /// **The network this window belongs to, not the one the tree has selected.** A
+    /// detached channel window is quite often looking at a different network from the main
+    /// window, and everything this view sends has to go to the one it is showing.
+    let connection: ConnectionViewModel
+
     let buffer: ChannelBuffer
+
+    /// Which window this view is in, so a sheet opened from it lands on the right one.
+    let window: KeyWindow
 
     /// App-wide, not per buffer. One setting to find and one to change, per the
     /// global-first rule the design notes take for everything of this kind — and in the
@@ -15,9 +24,16 @@ struct ChannelBufferView: View {
 
     @Environment(\.chatFont) private var chatFont
 
-    init(model: AppModel, buffer: ChannelBuffer) {
+    init(
+        model: AppModel,
+        connection: ConnectionViewModel,
+        buffer: ChannelBuffer,
+        window: KeyWindow = .main
+    ) {
         self.model = model
+        self.connection = connection
         self.buffer = buffer
+        self.window = window
         self._settings = Bindable(wrappedValue: model.settings)
     }
 
@@ -27,7 +43,7 @@ struct ChannelBufferView: View {
             Divider()
             HStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    ScrollbackView(log: buffer.log)
+                    ScrollbackView(log: buffer.log, actions: actions)
                     Divider()
                     inputField
                 }
@@ -36,11 +52,23 @@ struct ChannelBufferView: View {
                         width: $settings.nickListWidth,
                         range: ChatSettings.nickListWidthRange
                     )
-                    NickListPane(buffer: buffer)
+                    NickListPane(buffer: buffer, actions: actions)
                         .frame(width: settings.nickListWidth)
                 }
             }
         }
+    }
+
+    /// Everything this window can do to a nick, a link or itself — one value handed to both
+    /// the nick list and the scrollback, which is what keeps the two menus the same menu.
+    private var actions: BufferActions {
+        BufferActions(
+            model: model,
+            connection: connection,
+            channel: buffer,
+            target: .channel(buffer.name),
+            window: window
+        )
     }
 
     private var header: some View {
@@ -64,11 +92,11 @@ struct ChannelBufferView: View {
             state: buffer.input,
             target: .channel(buffer.name),
             placeholder: "Message \(buffer.name.raw), or /command",
-            sources: { model.completionSources(in: buffer) },
+            sources: { model.completionSources(in: buffer, on: connection) },
             palette: settings.palette,
             completionStyle: settings.completionSuffix,
             submit: { text in
-                await model.submit(text, from: .channel(buffer.name))
+                await model.submit(text, from: .channel(buffer.name), on: connection)
             }
         )
     }
@@ -80,6 +108,7 @@ struct ChannelBufferView: View {
 /// would be a second implementation of the same rule and a chance for the two to differ.
 struct NickListPane: View {
     let buffer: ChannelBuffer
+    let actions: BufferActions
 
     @Environment(\.chatFont) private var chatFont
 
@@ -96,6 +125,18 @@ struct NickListPane: View {
             List(buffer.members, id: \.nick) { member in
                 Text(buffer.channel.displayName(for: member))
                     .lineLimit(1)
+                    // The whole row, not just its glyphs: a right-click in the empty space
+                    // beside a short nick is still a right-click on that person.
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                    // **Double-click opens a conversation.** The one thing done to a name
+                    // often enough that going through a menu for it is friction.
+                    .onTapGesture(count: 2) {
+                        actions.perform(.command("/query \(member.nick.raw)"))
+                    }
+                    .contextMenu {
+                        BufferMenuItems(target: .nick(member.nick.raw), actions: actions)
+                    }
             }
             .listStyle(.plain)
             .font(chatFont)

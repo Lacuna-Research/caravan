@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 8/17 complete. Next: prompt 9.
+**Status:** 9/17 complete. Next: prompt 10.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -405,14 +405,61 @@ ban path already did.
 
 **Items:** Context menus · URL catcher.
 
-Nick-list and channel right-click menus — whois, query, op/deop, voice, kick, ban,
-kickban, ignore, DCC chat/send, slap — hard-coded now and script-driven in stage 3. Plus
-clickable links, a URL history window, and copy/open-all.
+```
+Right-click, everywhere it means something, and the URL catcher behind the links the
+buffer already draws.
 
 Together because they are one question asked of two kinds of target: what can I do with
-the thing under the pointer.
+the thing under the pointer. A nick and a URL are answered by the same hit test, and
+writing them apart means writing that test twice.
 
-*To be written out before it starts.*
+- **One menu builder, three call sites.** A nick is a nick whether it sits in the nick
+  list, in a `<bob>` column in the scrollback, or on a query's tree row. Build the items
+  once and have all three ask for them: Whois, Query, Op/Deop, Voice/Devoice, Kick, Ban,
+  Kick & Ban, Slap.
+- **Every item is a command string through `AppModel.submit`**, not a bespoke call into
+  `ConnectionViewModel`. `/whois bob`, `/op bob`, `/kickban bob` — the same path a typed
+  line takes. That is what makes stage 3's script-driven version a change to the table
+  rather than a rewrite, and what stops the menu and the command drifting apart. Slap
+  needs no new command: it is `/me slaps …`, which the table already carries.
+- **The scrollback's hit test is already in the text storage.** `LineRenderer` leaves a
+  `NickColumn` attribute on every nick column and `applyLinks` leaves a `.link` on every
+  URL. An `NSTextView` subclass overriding `menu(for:)` reads what is under the click and
+  picks the menu — nick, link, or the channel itself — with no second parser.
+- **A command has to know its connection.** `AppModel.submit(_:from:)` resolves one from
+  `selection`, which is the *main window's* — so a menu in a detached channel window would
+  act on whatever the tree happens to have selected, and the detached input field does
+  exactly that today. A live defect on the way past: give `submit` an explicit connection
+  and have `ChannelBufferView`, `QueryBufferView` and `StatusBufferView` pass theirs.
+- **Operator items are disabled, not absent.** `ChannelModesSheet.canSetModes` already
+  makes the "do we hold a prefix" guess; it moves somewhere both call sites can reach it.
+- **The URL catcher collects from the `.link` runs of each rendered line as it lands** —
+  no second `NSDataDetector` pass over text already scanned — recording the URL, the
+  buffer it came from, the sender and the time, capped the way the scrollback is. A sheet
+  lists them newest first, scoped to this buffer / this network / everywhere, with Open,
+  Copy, Copy All and Open All.
+- **Open All asks first above a handful.** Twenty browser tabs from one mis-click is not
+  something a client should be able to do without a question.
+- Double-clicking a nick in the nick list opens a query; double-clicking a catcher row
+  opens the URL.
+
+Acceptance: op, deop, voice and kick a scripted second client from both the nick list and
+from its nick in the buffer; slap it; confirm the operator items are disabled when we hold
+no prefix; right-click a URL in a real MOTD and open it; open the catcher after a busy
+channel has scrolled and copy the lot. Do the last of it in a detached channel window on a
+*second* network with the main window pointed at the first — that is the case the
+connection fix exists for, and the only one that proves it.
+
+Do not:
+  - **Ignore.** The matching machinery is prompt 13's, with the ignore list. A menu item
+    that silently did nothing is worse than no item; it arrives with the machinery.
+  - **DCC chat/send.** Stage 3, `PLAN.md` item 31 — a transport problem, not a menu one.
+  - A reason prompt for Kick and Ban. The default kick reason is an Options setting, and
+    Options is prompt 10; until then the parser's default stands.
+  - New keyboard shortcuts. This stage has lost two to system bindings that report no
+    conflict at build time, and nothing here is reached for often enough to be worth a
+    live verification pass.
+```
 
 ---
 
@@ -564,6 +611,20 @@ decides what is worth interrupting you for, the other what is not worth showing 
   buffer that goes pink for a message you never see is worse than no ignore at all. Both
   happen in `ConnectionViewModel.append(_:)`, a few lines apart — the line goes to
   `destinations(for:)` and the state to `raise(_:to:)`.
+- From prompt 9: **the Ignore menu item is this prompt's to add**, and its slot is already
+  shaped. `BufferMenu.nickItems(_:channel:canSetModes:)` in `Sources/CaravanUI/BufferMenu.swift`
+  builds the groups; Ignore belongs in the third group beside Kick and Ban, as
+  `BufferMenuItem("Ignore", .command("/ignore \(nick)"))` — enabled unconditionally, since
+  ignoring somebody needs no prefix. Prompt 9 left it out rather than shipping an item that
+  silently did nothing. Nothing else has to change: every item is a command string, so the
+  item works the moment `/ignore` is in `CommandParser`'s switch (and its `knownCommands`).
+  `Tests/CaravanUITests/BufferActionsTests.swift` asserts the exact command strings and the
+  exact enabled set, so both tests need the new item adding — which is the point of their
+  being exhaustive.
+- From prompt 9: **the catcher's line-by-line seam is where ignore has to bite too.**
+  `ConnectionViewModel.append(_:)` now calls `urlCatcher?.record(...)` in the same loop that
+  appends the line and raises the activity. An ignored message must not put its links in the
+  URL catcher either — a third thing to suppress, in the same three lines.
 
 ---
 

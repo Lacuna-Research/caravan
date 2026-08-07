@@ -8,7 +8,14 @@ import SwiftUI
 /// pane restating the title.
 struct QueryBufferView: View {
     let model: AppModel
+
+    /// This window's network. See ``ChannelBufferView/connection``.
+    let connection: ConnectionViewModel
+
     let buffer: QueryBuffer
+
+    /// Which window this view is in, so a sheet opened from it lands on the right one.
+    var window: KeyWindow = .main
 
     @State private var isContextExpanded = false
 
@@ -18,10 +25,21 @@ struct QueryBufferView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollbackView(log: buffer.log)
+            ScrollbackView(log: buffer.log, actions: actions)
             Divider()
             inputField
         }
+    }
+
+    /// No channel, so no membership items: `/op` in a conversation has nothing to name.
+    private var actions: BufferActions {
+        BufferActions(
+            model: model,
+            connection: connection,
+            channel: nil,
+            target: .nick(buffer.nick),
+            window: window
+        )
     }
 
     /// The band shows *conversational context* rather than a topic (§14): how much has
@@ -47,14 +65,14 @@ struct QueryBufferView: View {
             // the one completion a conversation window has any use for.
             sources: {
                 model.completionSources(
-                    nicks: [buffer.nick.raw, model.activeConnection?.currentNick]
-                        .compactMap(\.self)
+                    nicks: [buffer.nick.raw, connection.currentNick],
+                    on: connection
                 )
             },
             palette: model.settings.palette,
             completionStyle: model.settings.completionSuffix,
             submit: { text in
-                await model.submit(text, from: .nick(buffer.nick))
+                await model.submit(text, from: .nick(buffer.nick), on: connection)
             }
         )
     }
