@@ -229,15 +229,15 @@
     <div class="stage">
       <header>
         <h3>Stage 2 — a mIRC daily driver</h3>
-        <span class="status wip">3/17 prompts · in progress</span>
+        <span class="status wip">4/17 prompts · in progress</span>
       </header>
       <p>Formatting codes and the 99-colour palette ✓ · a multi-line input that authors
-      codes and completes what you type ✓ · capability negotiation and SASL ✓ · next:
-      multi-network and the bouncer, queries and CTCP, activity states and a ⌘K switcher,
-      the full command set, mode tracking, options, logging with <code>chathistory</code>
-      de-duplication, highlights and notifications, flood protection. Done when you would
-      use this instead of your current client.</p>
-      <div class="meter"><i style="width:17.6%"></i></div>
+      codes and completes what you type ✓ · capability negotiation and SASL ✓ ·
+      multi-network and the bouncer ✓ · next: queries and CTCP, activity states and a ⌘K
+      switcher, the full command set, mode tracking, options, logging with
+      <code>chathistory</code> de-duplication, highlights and notifications, flood
+      protection. Done when you would use this instead of your current client.</p>
+      <div class="meter"><i style="width:23.5%"></i></div>
     </div>
 
     <div class="stage">
@@ -382,6 +382,17 @@
       fingerprint prompt in the trust-on-first-use style of SSH, and declining that
       certificate ends the matter — a first build that nagged again on reconnect was
       caught live and fixed the same day.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-06</span><span class="kind-milestone">milestone</span></div>
+      <h3>Two networks at once, and one bouncer pretending to be several</h3>
+      <p>The sidebar holds several networks now, each with its own nick, capabilities and
+      channels — verified against Libera and OFTC at the same time. Bouncer support went in
+      alongside it rather than after, because they are the same problem: soju&rsquo;s
+      <code>bouncer-networks</code> turns out to need one connection per upstream network,
+      exactly as a direct setup does, so the tree is a flat list of networks either way and
+      the interface never has to know which mode is in play. The brief said otherwise; the
+      specification was read, and the brief was wrong.</p>
     </div>
   </div>
 </section>

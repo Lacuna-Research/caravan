@@ -155,6 +155,17 @@ public enum IRCEvent: Sendable, Equatable {
     /// event stream when it does, rather than only in `.raw`.
     case batchStarted(reference: String, type: String, parameters: [String])
     case batchEnded(reference: String)
+
+    // MARK: - The bouncer
+
+    /// The upstream networks a bouncer is holding, as they now stand.
+    ///
+    /// The whole list rather than a delta, even when the change was one network: the
+    /// consumer opens and closes buffers from this, and reconciling a list is a great deal
+    /// easier to get right than applying a stream of edits to one. Fires on the reply to
+    /// `BOUNCER LISTNETWORKS` and again on every `BOUNCER NETWORK` under
+    /// `soju.im/bouncer-networks-notify`.
+    case bouncerNetworks([BouncerNetwork])
 }
 
 /// Why a `JOIN` was refused.

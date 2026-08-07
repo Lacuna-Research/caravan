@@ -47,6 +47,13 @@ public enum ClientCapability: String, Sendable, Hashable, CaseIterable {
     case labeledResponse = "labeled-response"
     /// Authentication, which rides on the same negotiation.
     case sasl = "sasl"
+
+    /// soju's bouncer extension: enumerate the upstream networks, and bind to one.
+    case bouncerNetworks = "soju.im/bouncer-networks"
+    /// The same, plus `BOUNCER NETWORK` when a network is added, changed or removed.
+    case bouncerNetworksNotify = "soju.im/bouncer-networks-notify"
+    /// Backfill what was said while we were detached.
+    case chatHistory = "draft/chathistory"
 }
 
 /// What the server offers and what it has agreed to, for one connection.

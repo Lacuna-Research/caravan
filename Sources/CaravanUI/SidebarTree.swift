@@ -21,21 +21,12 @@ struct SidebarTree: View {
 
     var body: some View {
         List(selection: $model.selection) {
-            if let connection = model.connection {
-                DisclosureGroup(isExpanded: $model.isNetworkExpanded) {
-                    ForEach(connection.channels) { buffer in
-                        ChannelRow(buffer: buffer)
-                            .tag(
-                                AppModel.SidebarItem.channel(
-                                    connection: connection.id,
-                                    channel: buffer.name
-                                )
-                            )
-                    }
-                } label: {
-                    NetworkRow(connection: connection)
-                        .tag(AppModel.SidebarItem.status(connection.id))
-                }
+            // One group per network, and a bouncer's upstream networks are siblings of the
+            // direct ones rather than nested under it. Nesting would make the tree two
+            // levels deep for a bouncer and one for a direct connection, which is exactly
+            // the UI caring which mode is in play.
+            ForEach(model.connections) { connection in
+                NetworkGroup(model: model, connection: connection)
             }
         }
         .listStyle(.sidebar)
@@ -73,6 +64,46 @@ struct SidebarTree: View {
             .background(model.isShowingCanvas ? Color.accentColor.opacity(0.2) : Color.clear)
         }
         .background(.bar)
+    }
+}
+
+/// One network and its channels.
+///
+/// Its own view so the expansion binding can hang off the *connection* rather than off a
+/// single flag on the app — with two networks open, one flag collapses both.
+private struct NetworkGroup: View {
+    let model: AppModel
+    @Bindable var connection: ConnectionViewModel
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $connection.isExpanded) {
+            ForEach(connection.channels) { buffer in
+                ChannelRow(buffer: buffer)
+                    .tag(
+                        AppModel.SidebarItem.channel(
+                            connection: connection.id,
+                            channel: buffer.name
+                        )
+                    )
+            }
+        } label: {
+            NetworkRow(connection: connection)
+                .tag(AppModel.SidebarItem.status(connection.id))
+                .contextMenu {
+                    Button(connection.isConnected ? "Disconnect" : "Connect") {
+                        Task {
+                            if connection.isConnected {
+                                await connection.disconnect()
+                            } else {
+                                await connection.connect()
+                            }
+                        }
+                    }
+                    Button("Close Network") {
+                        Task { await model.close(connection) }
+                    }
+                }
+        }
     }
 }
 

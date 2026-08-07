@@ -28,8 +28,9 @@ public actor ScriptedIRCServer {
 
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.lacuna-research.caravan.tests.server")
-    private var connection: NWConnection?
-    private var framer = LineFramer()
+    /// Every client currently attached. Several at once is the bouncer case.
+    private var connections: [NWConnection] = []
+    private var framers: [ObjectIdentifier: LineFramer] = [:]
     private var rules: [Rule] = []
     private var received: [String] = []
     private var acceptedConnections = 0
@@ -184,25 +185,42 @@ public actor ScriptedIRCServer {
     /// How many connections have been accepted. A reconnect shows up here.
     public func connectionCount() -> Int { acceptedConnections }
 
-    /// Writes a line to the connected client.
+    /// Writes a line to **every** connected client.
     ///
     /// Does nothing if no client has been accepted yet, which is a real hazard: a client
     /// reaches `.ready` as soon as TCP completes, while accepting here still has an
     /// actor hop to make. Wait for ``connectionCount()`` before sending unprompted —
     /// scripted replies are immune, since a rule can only fire on a line that arrived.
+    ///
+    /// **Broadcast**, for a line the server volunteers rather than one it is answering.
+    /// A bouncer holds a control connection *and* one per bound network at the same time,
+    /// and a `BOUNCER NETWORK` notification has to reach the control connection even
+    /// though the bound ones connected after it.
+    ///
+    /// Scripted *replies* do not come through here — they go to whoever asked, via
+    /// ``send(_:to:)``. See the note on `handle(line:from:)` for what broadcasting them
+    /// instead cost.
     public func send(_ line: String) {
-        connection?.send(content: WireDecoding.data(for: line), completion: .idempotent)
+        let data = WireDecoding.data(for: line)
+        for connection in connections {
+            connection.send(content: data, completion: .idempotent)
+        }
     }
 
-    /// Hangs up on the client without stopping the listener, so it can reconnect.
+    /// Writes a line to one client — an answer going back to whoever asked.
+    private func send(_ line: String, to connection: NWConnection) {
+        connection.send(content: WireDecoding.data(for: line), completion: .idempotent)
+    }
+
+    /// Hangs up on every client without stopping the listener, so they can reconnect.
     public func closeConnection() {
-        connection?.cancel()
-        connection = nil
+        for connection in connections { connection.cancel() }
+        connections = []
+        framers = [:]
     }
 
     public func stop() {
-        connection?.cancel()
-        connection = nil
+        closeConnection()
         listener.cancel()
     }
 
@@ -211,10 +229,11 @@ public actor ScriptedIRCServer {
     private func markReady() { isReady = true }
 
     private func accept(_ connection: NWConnection) {
-        self.connection?.cancel()
-        self.connection = connection
+        connections.append(connection)
+        // A framer per connection: two clients' bytes interleave on the way in, and one
+        // shared framer would splice a line from each into nonsense.
+        framers[ObjectIdentifier(connection)] = LineFramer()
         acceptedConnections += 1
-        framer = LineFramer()
         // A new connection is a new server-side session, so one-shot rules are armed
         // again — otherwise a reconnect test could never re-run registration.
         for index in rules.indices { rules[index].hasFired = false }
@@ -223,16 +242,29 @@ public actor ScriptedIRCServer {
     }
 
     private func receiveLoop(_ connection: NWConnection) async {
+        let key = ObjectIdentifier(connection)
         while !Task.isCancelled {
-            guard let chunk = await nextChunk(from: connection) else { return }
-            guard self.connection === connection else { return }
-            for bytes in framer.push(chunk).lines {
-                handle(line: WireDecoding.line(from: bytes))
+            guard let chunk = await nextChunk(from: connection) else { break }
+            guard connections.contains(where: { $0 === connection }) else { return }
+            let lines = framers[key]?.push(chunk).lines ?? []
+            for bytes in lines {
+                handle(line: WireDecoding.line(from: bytes), from: connection)
             }
         }
+        connections.removeAll { $0 === connection }
+        framers.removeValue(forKey: key)
     }
 
-    private func handle(line: String) {
+    /// Handles one line, **replying only to the client that sent it.**
+    ///
+    /// A scripted reply is an answer, and an answer goes to whoever asked. Broadcasting
+    /// them instead — which this did briefly — means a welcome burst triggered by one
+    /// client's `CAP END` lands on every other client too. With a bouncer that is not a
+    /// cosmetic difference: the control connection sees a second `001`, re-runs
+    /// registration and re-sends `BOUNCER LISTNETWORKS`, which re-adds a network the test
+    /// had just removed. That produced a genuine-looking product bug that was entirely
+    /// this harness's doing.
+    private func handle(line: String, from connection: NWConnection) {
         received.append(line)
         guard let message = IRCMessage(line: line) else { return }
         if let acknowledgement, message.command.isVerb("CAP"),
@@ -241,7 +273,10 @@ public actor ScriptedIRCServer {
             let requested = message.parameters.count > 1 ? message.parameters[1] : ""
             let granted = acknowledgement.fixed?.joined(separator: " ") ?? requested
             let verb = acknowledgement.isRefusal ? "NAK" : "ACK"
-            send(":irc.example.org CAP \(acknowledgement.nick) \(verb) :\(granted)")
+            send(
+                ":irc.example.org CAP \(acknowledgement.nick) \(verb) :\(granted)",
+                to: connection
+            )
         }
         guard
             let index = rules.firstIndex(where: { rule in
@@ -250,7 +285,7 @@ public actor ScriptedIRCServer {
         else { return }
         rules[index].hasFired = true
         for response in rules[index].responses {
-            send(response)
+            send(response, to: connection)
         }
     }
 

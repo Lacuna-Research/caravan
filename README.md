@@ -22,7 +22,7 @@
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
 [![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-2ea44f)](STAGE1-PROMPTS.md)
-[![stage 2: 3/17](https://img.shields.io/badge/stage%202-3%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
+[![stage 2: 4/17](https://img.shields.io/badge/stage%202-4%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
 
 </div>
 
@@ -151,7 +151,7 @@ roadmap item below is attached to one of them.
 | 1 | Formatting codes: rendering | ✅ done |
 | 2 | The input field grows up | ✅ done |
 | 3 | Capabilities and authentication | ✅ done |
-| 4 | Multi-network, and the bouncer | ⬜ |
+| 4 | Multi-network, and the bouncer | ✅ done |
 | 5 | Queries and CTCP | ⬜ |
 | 6 | Activity and navigation at scale | ⬜ |
 | 7 | Windows and chrome | ⬜ |
