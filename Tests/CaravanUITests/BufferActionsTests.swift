@@ -127,8 +127,11 @@ struct BufferMenuTests {
         let whois = try #require(menu.item(withTitle: "Whois"))
         // The handler has to survive the builder returning: `NSMenuItem.target` is weak,
         // and this is the assertion that catches it being the only reference.
-        _ = try #require(whois.target)
-        whois.target?.perform(whois.action, with: whois)
+        let target = try #require(whois.target)
+        let action = try #require(whois.action)
+        // `perform` hands back an `Unmanaged<AnyObject>?` nobody wants, and CI builds
+        // warnings as errors.
+        _ = target.perform(action, with: whois)
         #expect(chosen == [.command("/whois bob")])
     }
 }
