@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caravan — a native macOS IRC client</title>
+<meta name="description" content="A native macOS IRC client loosely inspired by the good ol' days of mIRC. Swift 6, strict concurrency, zero dependencies, every decision written down.">
+<meta property="og:title" content="Caravan — a native macOS IRC client">
+<meta property="og:description" content="mIRC got a great deal right in 1995 and most of it is still right. Caravan is that client, rebuilt natively for macOS.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23101014'/%3E%3Ctext x='16' y='23' font-family='Menlo,monospace' font-size='19' font-weight='bold' fill='%233CC8C8' text-anchor='middle'%3E%E2%96%B8%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">caravan</a>
+    <a href="#features">features</a>
+    <a href="#architecture">architecture</a>
+    <a href="#roadmap">roadmap</a>
+    <a href="#buildlog">build log</a>
+    <a href="#building">building</a>
+    <a class="gh" href="https://github.com/Lacuna-Research/caravan">source ↗</a>
+  </div>
+</header>
+
+<main id="top">
+
+<div class="hero wrap">
+  <pre class="wordmark" aria-hidden="true">
+ ██████╗ █████╗ ██████╗  █████╗ ██╗   ██╗ █████╗ ███╗   ██╗
+██╔════╝██╔══██╗██╔══██╗██╔══██╗██║   ██║██╔══██╗████╗  ██║
+██║     ███████║██████╔╝███████║██║   ██║███████║██╔██╗ ██║
+██║     ██╔══██║██╔══██╗██╔══██║╚██╗ ██╔╝██╔══██║██║╚██╗██║
+╚██████╗██║  ██║██║  ██║██║  ██║ ╚████╔╝ ██║  ██║██║ ╚████║
+ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝</pre>
+
+  <h1>A native macOS IRC client, loosely inspired by the good ol&rsquo; days of mIRC.</h1>
+  <p class="sub">mIRC got a great deal right in 1995 and most of it is still right.
+  This is that client, rebuilt natively for macOS — a client that treats IRC as a
+  protocol rather than hiding it behind a chat metaphor.</p>
+
+  <div class="chips">
+    <span class="chip"><b>Swift 6</b> · strict concurrency</span>
+    <span class="chip"><b>macOS 15+</b></span>
+    <span class="chip"><b>0</b> dependencies</span>
+    <span class="chip"><b>BSD</b> 3-Clause</span>
+    <span class="chip">SwiftUI + AppKit</span>
+  </div>
+
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Lacuna-Research/caravan">View on GitHub</a>
+    <a class="btn" href="https://github.com/Lacuna-Research/caravan/blob/main/BUILD-LOG.md">Read the build log</a>
+  </div>
+
+  <!-- The full ^C 0–98 colour range, values lifted verbatim from
+       Sources/IRCFormat/MIRCPalette.swift (0–15 from the dark-appearance table). -->
+  <div class="palette-strip" title="The full mIRC ^C colour range, 0–98 — straight from MIRCPalette.swift" aria-hidden="true">
+<i style="background:#FFFFFF"></i><i style="background:#D0D0D0"></i><i style="background:#5A7BFF"></i><i style="background:#3AD93A"></i><i style="background:#FF5C5C"></i><i style="background:#C46A4A"></i><i style="background:#D96AD9"></i><i style="background:#FFA53C"></i><i style="background:#FFF75C"></i><i style="background:#66FF66"></i><i style="background:#3CC8C8"></i><i style="background:#6AFFFF"></i><i style="background:#8AA5FF"></i><i style="background:#FF8AFF"></i><i style="background:#A0A0A0"></i><i style="background:#6E6E6E"></i><i style="background:#470000"></i><i style="background:#472100"></i><i style="background:#474700"></i><i style="background:#324700"></i><i style="background:#004700"></i><i style="background:#00472C"></i><i style="background:#004747"></i><i style="background:#002747"></i><i style="background:#000047"></i><i style="background:#2E0047"></i><i style="background:#470047"></i><i style="background:#47002A"></i><i style="background:#740000"></i><i style="background:#743A00"></i><i style="background:#747400"></i><i style="background:#517400"></i><i style="background:#007400"></i><i style="background:#007449"></i><i style="background:#007474"></i><i style="background:#004074"></i><i style="background:#000074"></i><i style="background:#4B0074"></i><i style="background:#740074"></i><i style="background:#740045"></i><i style="background:#B50000"></i><i style="background:#B56300"></i><i style="background:#B5B500"></i><i style="background:#7DB500"></i><i style="background:#00B500"></i><i style="background:#00B571"></i><i style="background:#00B5B5"></i><i style="background:#0063B5"></i><i style="background:#0000B5"></i><i style="background:#7500B5"></i><i style="background:#B500B5"></i><i style="background:#B5006B"></i><i style="background:#FF0000"></i><i style="background:#FF8C00"></i><i style="background:#FFFF00"></i><i style="background:#B2FF00"></i><i style="background:#00FF00"></i><i style="background:#00FFA0"></i><i style="background:#00FFFF"></i><i style="background:#008CFF"></i><i style="background:#0000FF"></i><i style="background:#A500FF"></i><i style="background:#FF00FF"></i><i style="background:#FF0098"></i><i style="background:#FF5959"></i><i style="background:#FFB459"></i><i style="background:#FFFF71"></i><i style="background:#CFFF60"></i><i style="background:#6FFF6F"></i><i style="background:#65FFC9"></i><i style="background:#6DFFFF"></i><i style="background:#59B4FF"></i><i style="background:#5959FF"></i><i style="background:#C459FF"></i><i style="background:#FF66FF"></i><i style="background:#FF59BC"></i><i style="background:#FF9C9C"></i><i style="background:#FFD39C"></i><i style="background:#FFFF9C"></i><i style="background:#E2FF9C"></i><i style="background:#9CFF9C"></i><i style="background:#9CFFDB"></i><i style="background:#9CFFFF"></i><i style="background:#9CD3FF"></i><i style="background:#9C9CFF"></i><i style="background:#DC9CFF"></i><i style="background:#FF9CFF"></i><i style="background:#FF94D3"></i><i style="background:#000000"></i><i style="background:#131313"></i><i style="background:#282828"></i><i style="background:#363636"></i><i style="background:#4D4D4D"></i><i style="background:#656565"></i><i style="background:#818181"></i><i style="background:#9F9F9F"></i><i style="background:#BCBCBC"></i><i style="background:#E2E2E2"></i><i style="background:#FFFFFF"></i>
+  </div>
+</div>
+
+<section id="shape" class="wrap">
+  <p class="kicker">the shape of it</p>
+  <h2>A tree of windows you can actually navigate</h2>
+  <p class="lede">Network tree, header band, nick list, and a scrollback view that holds
+  a hundred thousand lines without complaint. A mockup, not a screenshot — the layout
+  the client is building toward, faithful to the one in the
+  <a href="https://github.com/Lacuna-Research/caravan#the-shape-of-it">README</a>.</p>
+
+  <div class="window" role="img" aria-label="Mockup of the Caravan main window: a network tree on the left, a channel scrollback in the middle, a nick list on the right, and an input bar below.">
+    <div class="titlebar">
+      <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+      <span class="title">Caravan</span>
+    </div>
+    <div class="client">
+      <div class="tree">
+        <div class="net">▾ Libera.Chat</div>
+        <div class="sel">   #caravan</div>
+        <div>   #swift</div>
+        <div class="hl">   ▸ NickServ ●</div>
+        <div>&nbsp;</div>
+        <div class="net">▾ soju (bouncer)</div>
+        <div class="act">   #ops</div>
+        <div>   #dev</div>
+      </div>
+      <div class="main">
+        <div class="headerband"><b>#caravan</b> — a native macOS IRC client · +nt · 5 users</div>
+        <div class="scrollback">
+          <div><span class="ts">[12:04:17]</span> <span class="join">*** Joins: alice (~a@example.net)</span></div>
+          <div><span class="ts">[12:04:22]</span> &lt;<span class="nick n-bob">bob</span>&gt; parser passes the corpus</div>
+          <div><span class="ts">[12:04:31]</span> &lt;<span class="nick n-alice">alice</span>&gt; all 66 cases?</div>
+          <div><span class="ts">[12:04:36]</span> <span class="action">* bob nods</span></div>
+          <div><span class="ts">[12:04:41]</span> <span class="notice">-NickServ- You are now identified for alice</span></div>
+          <div><span class="ts">[12:05:02]</span> <span class="evt">*** eve is now known as evelyn</span></div>
+          <div><span class="ts">[12:05:18]</span> &lt;<span class="nick n-alice">alice</span>&gt; formatting renders too: <span class="mirc-c4">red</span>, <span class="mirc-c7">orange</span>, <span class="mirc-c12">blue</span>, <span class="mirc-b">bold</span> — all 99 colours</div>
+          <div><span class="ts">[12:05:24]</span> &lt;<span class="nick n-eve">evelyn</span>&gt; on both light and dark palettes, no less</div>
+        </div>
+        <div class="inputbar"><span class="target">[#caravan]</span><span>/msg alice thanks!<span class="caret">▊</span></span></div>
+      </div>
+      <div class="nicklist">
+        <div class="op">@bob</div>
+        <div class="voice">+evelyn</div>
+        <div>alice</div>
+        <div>ann</div>
+        <div>joe</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">The window today: stage 1 shipped connect–join–chat with a status window
+  and live wire trace; stage 2 is making it a daily driver.</p>
+</section>
+
+<section id="features" class="wrap">
+  <p class="kicker">why another IRC client</p>
+  <h2>IRC as a protocol, not a metaphor</h2>
+
+  <div class="grid">
+    <div class="card">
+      <h3><span class="tag">/debug</span>The protocol is not hidden</h3>
+      <p>A status window shows raw traffic in both directions, <code>/debug</code> streams
+      it to a window or a file, and every unrecognized line still lands somewhere visible
+      instead of being silently dropped.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">soju</span>Bouncer-first</h3>
+      <p>soju is a primary target, not an afterthought: <code>bouncer-networks</code> and
+      <code>chathistory</code> land in stage&nbsp;2, not stage&nbsp;3, with backfill
+      de-duplicated against local logs.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">Keychain</span>Credentials handled like credentials</h3>
+      <p>Redaction happens on insert into the trace buffer, never at export, so a password
+      is never resident anywhere it could be scraped later. Secrets live in the macOS
+      Keychain — never in a file.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">^C 0–98</span>mIRC formatting, both appearances</h3>
+      <p>Bold, italic, underline, strikethrough, monospace, reverse, and the full 99-colour
+      palette — with a separate luminance-adjusted table for dark backgrounds, because
+      inverting white and black leaves the other fourteen unreadable.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">XDG</span>Nothing written to the source tree</h3>
+      <p>Settings, logs and caches follow XDG paths. The config file is plain text,
+      hand-editable, and only ever holds what you actually changed — your comments
+      survive the app writing it back.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">0 deps</span>No dependency chain</h3>
+      <p>One SwiftPM package, four modules, nothing vendored but test fixtures. Swift&nbsp;6
+      strict concurrency throughout, SwiftUI shell with AppKit where AppKit is genuinely
+      better — the scrollback is an <code>NSTextView</code>.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">SASL</span>Modern auth on an old protocol</h3>
+      <p><code>PLAIN</code>, <code>EXTERNAL</code> (CertFP) and <code>SCRAM-SHA-256</code>,
+      NickServ fallback, trust-on-first-use for TLS — and a refused certificate is a
+      terminal answer, never a prompt that re-asks until you give in.</p>
+    </div>
+    <div class="card">
+      <h3><span class="tag">stage 3</span>Scripting without the malware vector</h3>
+      <p>JavaScript via JavaScriptCore rather than mIRC&rsquo;s language. A bare
+      <code>JSContext</code> has no <code>require</code>, <code>fetch</code> or filesystem
+      at all — capabilities are granted, not restricted — and Safari Web Inspector
+      attaches for real breakpoints.</p>
+    </div>
+  </div>
+</section>
+
+<section id="architecture" class="wrap">
+  <p class="kicker">architecture</p>
+  <h2>Four modules, one app, dependencies point one way</h2>
+  <p class="lede"><code>IRCProtocol</code> has no I/O, no Foundation, no Darwin APIs —
+  nothing but the standard library. CI builds and runs its test suite on Linux, so the
+  moment someone reaches for <code>AppKit</code> in there, a job fails. The rule is
+  mechanical, not a comment in a file.</p>
+
+  <pre class="diagram" aria-label="Architecture diagram: the App layer sits on IRCSession, which sits on IRCTransport, which rests on Diagnostics and IRCProtocol.">
+                  ┌───────────────────────────┐
+                  │            App            │  SwiftUI shell
+                  │   NSTextView scrollback   │  AppKit where it counts
+                  └─────────────┬─────────────┘
+                                │
+                  ┌─────────────▼─────────────┐
+                  │        IRCSession         │  registration, ISUPPORT,
+                  │   actor · event stream    │  state machine, events
+                  └─────────────┬─────────────┘
+                                │
+                  ┌─────────────▼─────────────┐
+                  │       IRCTransport        │  NWConnection, TLS,
+                  │   actor · line framing    │  send queue, reconnect
+                  └─────────────┬─────────────┘
+                                │
+              ┌─────────────────┴───────────────────┐
+              │                                     │
+    ┌─────────▼─────────┐               ┌───────────▼───────────┐
+    │    Diagnostics    │               │      IRCProtocol      │
+    │ os.Logger         │               │ parse · serialize     │
+    │ Redactor          │               │ IRCv3 tags · masks    │
+    │ TraceBuffer       │               │ casemapping           │
+    └───────────────────┘               └───────────────────────┘
+         Darwin-only                     pure · builds on Linux</pre>
+</section>
+
+<section id="roadmap" class="wrap">
+  <p class="kicker">roadmap</p>
+  <h2>Four stages, each ending somewhere usable</h2>
+  <p class="lede">Full detail in
+  <a href="https://github.com/Lacuna-Research/caravan/blob/main/PLAN.md">PLAN.md</a>;
+  the prompt queues in
+  <a href="https://github.com/Lacuna-Research/caravan/blob/main/STAGE2-PROMPTS.md">STAGE2-PROMPTS.md</a>
+  are authoritative for scope and status.</p>
+
+  <div class="stages">
+    <div class="stage done-stage">
+      <header>
+        <h3>Stage 1 — connect, join, chat</h3>
+        <span class="status done">11/11 prompts · complete</span>
+      </header>
+      <p>TLS, registration and reconnect with backoff · full IRCv3 message parsing against
+      the community corpus · channel and user state with a rank-ordered nick list · the
+      core commands · a status window showing raw traffic · plain-text config you can edit
+      by hand. You can idle in a channel on Libera and hold a conversation.</p>
+      <div class="meter"><i style="width:100%"></i></div>
+    </div>
+
+    <div class="stage">
+      <header>
+        <h3>Stage 2 — a mIRC daily driver</h3>
+        <span class="status wip">4/17 prompts · in progress</span>
+      </header>
+      <p>Formatting codes and the 99-colour palette ✓ · a multi-line input that authors
+      codes and completes what you type ✓ · capability negotiation and SASL ✓ ·
+      multi-network and the bouncer ✓ · next: queries and CTCP, activity states and a ⌘K
+      switcher, the full command set, mode tracking, options, logging with
+      <code>chathistory</code> de-duplication, highlights and notifications, flood
+      protection. Done when you would use this instead of your current client.</p>
+      <div class="meter"><i style="width:23.5%"></i></div>
+    </div>
+
+    <div class="stage">
+      <header>
+        <h3>Stage 3 — mIRC parity</h3>
+        <span class="status later">planned</span>
+      </header>
+      <p>DCC with resume and passive mode · scripting in JavaScript with declarative
+      aliases and popups for the one-liner cases · themes over the format-table seam ·
+      identd, proxies, Tor · user levels · soju extras · full-text history search.</p>
+    </div>
+
+    <div class="stage">
+      <header>
+        <h3>Stage 4 — polish and release</h3>
+        <span class="status later">planned</span>
+      </header>
+      <p>Accessibility and localization · performance work on the scrollback pipeline ·
+      Developer ID signing and notarization · distribution as a Homebrew cask from our
+      own tap · a <code>mirc.ini</code> settings importer for anyone migrating.</p>
+    </div>
+  </div>
+</section>
+
+<section id="buildlog" class="wrap">
+  <p class="kicker">from the build log</p>
+  <h2>Every decision written down</h2>
+  <p class="lede"><a href="https://github.com/Lacuna-Research/caravan/blob/main/BUILD-LOG.md">BUILD-LOG.md</a>
+  is append-only: it records what was decided <em>and what was rejected and why</em> —
+  including the mistakes, which stay in the log alongside their corrections rather than
+  being quietly edited away. A condensed timeline:</p>
+
+  <div class="timeline">
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
+      <h3>Your passwords live in the Keychain</h3>
+      <p>Every credential goes in the macOS Keychain, never a config file — a file is
+      readable by any process on the machine and lands unencrypted in backups. Passwords
+      are also scrubbed from the debug trace the instant they arrive, so even a
+      &ldquo;log everything&rdquo; diagnostic mode can never show one in plaintext.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
+      <h3>Scripting will be JavaScript, sandboxed by default</h3>
+      <p>Instead of reimplementing mIRC&rsquo;s quirky scripting language, Caravan will
+      embed JavaScript via a framework that ships with macOS. Verified before choosing: a
+      bare context has no network, no filesystem, no ambient authority at all — scripts get
+      only the capabilities the client deliberately hands them, closing the door mIRC
+      scripts once used to spread malware.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-04</span><span class="kind-milestone">milestone</span></div>
+      <h3>The parser passes the community test corpus</h3>
+      <p>The message parser passes every case in the community-maintained parser-tests
+      corpus — the shared suite IRC software uses to prove it handles the protocol&rsquo;s
+      edge cases. Caravan reads the wire the way well-behaved servers and clients expect,
+      including the malformed corners.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-04</span><span class="kind-decision">decision</span></div>
+      <h3>Install with Homebrew, uninstall cleanly</h3>
+      <p>Caravan will ship as a Homebrew cask rather than through the App Store, whose
+      sandbox makes DCC file transfers painful to impossible. Settings live in tidy
+      XDG-style directories rather than scattered through <code>~/Library</code>, so a
+      full uninstall — app, settings, caches — is genuinely complete.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-05</span><span class="kind-milestone">milestone</span></div>
+      <h3>First real connection to Libera.Chat</h3>
+      <p>Caravan registered live on Libera.Chat over TLS for the first time. The work also
+      uncovered why some clients hang forever on a bad address — macOS never reports
+      certain connection failures — so Caravan enforces its own connect deadline: a dead
+      server means a clear error in seconds, not an eternal spinner.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>50,000 lines of scrollback in 25&nbsp;MB</h3>
+      <p>A benchmark appended 50,000 chat lines and scrolled through every screenful to
+      choose the text engine. The winner renders a huge backlog in 25&nbsp;MB — where the
+      alternative needed ten times more — and its slowest frame took a hundredth of a
+      millisecond, so a busy channel scrolls without a stutter.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>A paste never sends</h3>
+      <p>Pasting multi-line text lands in the input box for you to review — it is never
+      sent automatically, even with a trailing newline. mIRC itself fires each pasted line
+      straight onto the wire, which is exactly how a clipboard accident broadcasts a
+      password to a channel; Caravan makes you press Enter on something you can see.
+      Shift+Enter composes multi-line messages, and Up-arrow recalls your whole entry.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>ASCII art renders perfectly, by measurement</h3>
+      <p>A font-coverage script found SF&nbsp;Mono missing eleven of the forty-four classic
+      CP437 art characters, which macOS silently substitutes at up to 1.8&times; cell
+      width — shredding channel ASCII art. Caravan ships Menlo, which covers all of them,
+      with ligatures off so <code>-&gt;</code> stays exactly the characters someone typed.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-05</span><span class="kind-decision">decision</span></div>
+      <h3>A config file you can actually edit</h3>
+      <p>Settings live in one plain-text file, and the app rewrites only the specific line
+      it is changing — your comments, your formatting, and even options from a newer
+      version all survive. The file stays as short as what you have actually changed, and
+      deleting a line is how you reset a setting to default.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-05</span><span class="kind-milestone">milestone</span></div>
+      <h3>Stage 1 complete: a working IRC client</h3>
+      <p>Eleven units of work produced a real client: connect over TLS, join channels,
+      chat, a full command line with mIRC-style passthrough, timestamps, an unread marker,
+      and a raw-traffic debug view that redacts credentials even on screen. All of it with
+      zero external dependencies — nothing in the app but Apple&rsquo;s frameworks and
+      Caravan&rsquo;s own code.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-06</span><span class="kind-milestone">milestone</span></div>
+      <h3>mIRC colours, readable in light and dark</h3>
+      <p>Bold, italic, underline, and the full mIRC colour range now render — including a
+      subtlety with proof behind it: no single nickname palette can be readable against
+      both light and dark backgrounds, so a nick keeps its hue across theme switches while
+      the shade adapts. Text a sender explicitly coloured black-on-white stays
+      black-on-white, because that is what they asked for.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-06</span><span class="kind-decision">decision</span></div>
+      <h3>Tab completion, and formatting you can see</h3>
+      <p>Tab completes nicks, channels, and commands — with the right punctuation for each,
+      so a channel name never gets addressed like a person. Formatting chords (Ctrl+B for
+      bold, Ctrl+K for a sixteen-swatch colour strip) style your text live as you type, and
+      unlike mIRC the control codes stay visible as dim markers: the input box never hides
+      what it is about to send.</p>
+    </div>
+    <div class="entry decision">
+      <div class="meta"><span>2026-08-06</span><span class="kind-decision">decision</span></div>
+      <h3>SASL login, and &ldquo;no&rdquo; means no</h3>
+      <p>Caravan now authenticates with SASL — including the modern SCRAM mechanism,
+      verified against the RFC&rsquo;s published test vectors — with passwords pre-filled
+      from the Keychain. The posture is deliberate: a wrong password ends the connection
+      rather than silently continuing logged-out, an unknown server certificate gets a
+      fingerprint prompt in the trust-on-first-use style of SSH, and declining that
+      certificate ends the matter — a first build that nagged again on reconnect was
+      caught live and fixed the same day.</p>
+    </div>
+    <div class="entry milestone">
+      <div class="meta"><span>2026-08-06</span><span class="kind-milestone">milestone</span></div>
+      <h3>Two networks at once, and one bouncer pretending to be several</h3>
+      <p>The sidebar holds several networks now, each with its own nick, capabilities and
+      channels — verified against Libera and OFTC at the same time. Bouncer support went in
+      alongside it rather than after, because they are the same problem: soju&rsquo;s
+      <code>bouncer-networks</code> turns out to need one connection per upstream network,
+      exactly as a direct setup does, so the tree is a flat list of networks either way and
+      the interface never has to know which mode is in play. The brief said otherwise; the
+      specification was read, and the brief was wrong.</p>
+    </div>
+  </div>
+</section>
+
+<section id="discipline" class="wrap">
+  <p class="kicker">how this gets built</p>
+  <h2>The rules are machine-checked</h2>
+  <p class="lede">One prompt per branch, one PR, squash-merged once CI is green.
+  <code>main</code> is protected: four required checks, no force-pushes, admins not
+  exempt. The interesting part is that the project&rsquo;s own conventions are enforced by
+  a script that runs as a pre-commit hook and in CI, and fails on:</p>
+
+  <ul class="rules">
+    <li><b>An instruction file over 100 lines.</b> The cap forces pruning instead of accretion — and it is not to be raised.</li>
+    <li><b>Any edit to an existing build-log line.</b> The log is append-only; corrections are new entries, so mistakes stay visible next to their fixes.</li>
+    <li><b>A code change with no build-log entry.</b> Deviations, surprises and measurements get recorded when they happen, not reconstructed later.</li>
+    <li><b>A progress badge that disagrees with the status line.</b> A stale badge is worse than none — it is confidently wrong.</li>
+    <li><b>A carry-forward note that outlived its prompt.</b> A note that survives the work it was addressed to is a note that was never consumed.</li>
+    <li><b>An undeclared dependency.</b> Adding one requires a written decision — and an edit to the very check that would otherwise fail.</li>
+    <li><b>Darwin APIs in the protocol layer.</b> CI builds <code>IRCProtocol</code> on Linux, so purity is a build result, not a code-review opinion.</li>
+  </ul>
+</section>
+
+<section id="building" class="wrap">
+  <p class="kicker">building</p>
+  <h2>Clone it, make it</h2>
+  <p class="lede">Requires Xcode 26+ on macOS 15+.</p>
+
+  <pre class="shell"><span class="p">$ </span>git clone https://github.com/Lacuna-Research/caravan.git
+<span class="p">$ </span>cd caravan
+<span class="p">$ </span>make hooks   <span class="c"># install the pre-commit hook — once, after cloning</span>
+<span class="p">$ </span>make all     <span class="c"># build, test, lint, docs check, app</span></pre>
+
+  <h2 style="margin-top:3rem">Where your data lives</h2>
+  <p class="lede">Nothing is ever written inside the source tree — not even under a
+  gitignored path. Config paths are public API.</p>
+
+  <table class="datatable">
+    <tr><th>What</th><th>Where</th></tr>
+    <tr><td>Settings</td><td><code>$XDG_CONFIG_HOME/caravan/caravan.conf</code> — plain text, hand-editable</td></tr>
+    <tr><td>Logs, scrollback</td><td><code>$XDG_DATA_HOME/caravan/</code></td></tr>
+    <tr><td>Caches</td><td><code>$XDG_CACHE_HOME/caravan/</code></td></tr>
+    <tr><td>Passwords, client certs</td><td><b>macOS Keychain — never a file</b></td></tr>
+  </table>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <div class="name">caravan</div>
+      <p>After <em>Planet Caravan</em> — Black Sabbath, 1970. The app is not themed after
+      the band and will not be; the name simply fit. There may be an easter egg or two.</p>
+      <p><a href="https://github.com/Lacuna-Research/caravan/blob/main/LICENSE">BSD 3-Clause</a>
+      · © 2026 Lacuna Research</p>
+    </div>
+    <nav>
+      <a href="https://github.com/Lacuna-Research/caravan">github.com/Lacuna-Research/caravan</a>
+      <a href="https://github.com/Lacuna-Research/caravan/blob/main/PLAN.md">PLAN.md — the roadmap</a>
+      <a href="https://github.com/Lacuna-Research/caravan/blob/main/BUILD-LOG.md">BUILD-LOG.md — every decision</a>
+      <a href="https://github.com/Lacuna-Research/caravan/blob/main/GUI-DESIGN-NOTES.md">GUI-DESIGN-NOTES.md</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
