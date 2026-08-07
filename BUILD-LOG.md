@@ -3064,3 +3064,60 @@ serialisation added hours earlier is still needed and still correct; it closed a
 between an `open()` suspension and an incoming removal. It simply was not the cause of this
 failure, and the temptation to believe a recent fix must be the culprit cost two rounds of
 theorising before the `print`.
+## Decision — command-line control, and why it sits next to scripting
+
+**Commit:** see PR  **Date:** 2026-08-06
+
+A `caravan` CLI driving the running app was proposed, discussed and put in `PLAN.md` as
+stage 3 item 34a. No code; this records the choices while the reasoning is fresh, because
+several of them are the kind that cannot be revisited once anyone has scripted against
+them.
+
+**It goes beside scripting because it is the same surface.** Item 34 already promises "a
+capability-scoped `irc` object: send, join, part, query client state", which is the set a
+CLI needs. Building them separately produces two vocabularies and two sets of bugs, so the
+deliverable is one control API with three front ends — `CommandParser`, the JS object, and
+the socket. Whichever of the two is built first pays for the extraction.
+
+**Transport: a Unix-domain socket, over three alternatives.**
+
+- *XPC* is the macOS-native answer and was rejected: it needs code-signing and app-group
+  setup, it is awkward to reach from a shell script, and its whole advantage is sandbox
+  traversal — which does not apply, because the app is deliberately unsandboxed for DCC and
+  identd.
+- *Apple Events with an `.sdef`* would give Shortcuts support free, but the format is
+  painful, the model is poor for streaming, and it is a third front end rather than a
+  transport. Reachable later *through* the socket if wanted.
+- *HTTP on localhost* was rejected as a listening TCP port, which is real attack surface
+  needing an auth scheme, to solve a problem the filesystem already solves with `0600`.
+
+**The socket lives in `$XDG_CACHE_HOME`, not a new `$XDG_STATE_HOME`.** `XDG_RUNTIME_DIR`
+is the correct XDG answer and macOS does not set it. Introducing a fourth directory would
+mean editing `CLAUDE.md`'s "Where things live", and that file is at 99 lines against a hard
+cap of 100 that is explicitly not to be raised. A socket is recreated on launch, so it is
+honestly cache-shaped, and the `zap` stanza in item 46 already removes that directory.
+
+**Addressing is `network/target`, parsed at the first `/`.** `#swift@libera` was the
+alternative and reads more like IRC, but `/` sorts and reads like a path, and it matches
+`<user>/<network>`, which the codebase already uses for the bouncer fallback. The rule that
+matters more than the punctuation: **the network may be omitted only when exactly one is
+open, and is never guessed.** `#music` on two networks are different rooms is what the
+whole tree is built on, and a CLI that guesses sends a stranger your message. The proposal
+that started this discussion had `message send #channel` and `whois network user` — the
+network implicit in one and first-positional in the other, which is the sort of thing that
+sets hard.
+
+**`caravan raw` ships from the start.** It is one passthrough to a `CommandAction` that has
+existed since stage 1, it matches "the protocol is not hidden", and an escape hatch takes
+the pressure off rushing half-considered verbs in to unblock somebody — which is itself a
+compatibility argument.
+
+**Two rules written down now because they are load-bearing later:** JSON is the contract
+and the human format is explicitly unstable, or the first person to `awk` it freezes it
+forever; and the socket never reads secrets back, because stage 2 prompt 3 put every
+credential in the Keychain and a control socket that hands them out would quietly undo it.
+
+**Left open, in `PLAN.md`:** what a network's stable user-facing name is — settled in stage
+2's Dashboard prompt, since that is where the server list is born and renaming an
+identifier afterwards has no good migration — and whether the socket is always on or
+opt-in.
