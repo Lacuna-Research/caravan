@@ -103,11 +103,6 @@ decision entry.
   badge would without rule 5. It already has: the page shipped saying 3/17 against a `main`
   at 4/17, inside a day. Either the badge check grows a sibling that greps
   `www/index.html`, or the numbers come off the page.
-- **The published site is synced by hand.** *(not blocking, but it will bite)* Pages serves
-  the `gh-pages` branch, whose root is a copy of `main`'s `www/`. Nothing keeps the two
-  in step — a deploy workflow was considered and rejected — so a change to `www/` on
-  `main` is invisible to visitors until someone copies it across. The check that would
-  catch it is a cheap one: compare the two trees and fail when they differ.
 - **Where does a live GUI acceptance run happen when the machine is locked?**
   *(not blocking, but it will recur)* Prompt 3 could confirm nothing on screen:
   `screencapture` returns black and `System Events` reports zero windows for a running app

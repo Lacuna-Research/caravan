@@ -181,6 +181,48 @@ if [ -f STAGE2-PROMPTS.md ]; then
 	fi
 fi
 
+# 10. The published website must be what the repository says it is.
+#
+# `www/` here is the source; the `gh-pages` branch's root is what GitHub Pages actually
+# serves. Nothing syncs them — a deploy workflow was considered and deliberately rejected
+# — so without this the failure mode is silent and slow: someone edits the site, merges,
+# and visitors keep seeing the old one until somebody happens to notice.
+#
+# Comparing tree object IDs rather than file contents: git has already hashed both sides,
+# so equality is one comparison and covers additions, deletions and edits at once.
+if [ -d www ]; then
+	if git rev-parse --verify --quiet origin/gh-pages >/dev/null 2>&1; then
+		# Which `www/` to judge depends on the mode. With a base ref this is CI, where
+		# HEAD is the thing being merged. Without one this is the pre-commit hook, where
+		# HEAD does not yet contain what is about to be committed — so the *index* is the
+		# honest answer, and comparing HEAD there would pass a commit that breaks CI a
+		# minute later.
+		if [ $# -ge 1 ]; then
+			source_tree=$(git rev-parse --verify --quiet "HEAD:www" || true)
+		else
+			source_tree=$(git ls-tree "$(git write-tree)" www | awk '{ print $3 }')
+		fi
+		published_tree=$(git rev-parse --verify --quiet "origin/gh-pages^{tree}" || true)
+		if [ -z "$source_tree" ] || [ -z "$published_tree" ]; then
+			err "could not read www/ or origin/gh-pages to compare them"
+		elif [ "$source_tree" = "$published_tree" ]; then
+			ok "www/ matches the published gh-pages branch"
+		else
+			err "www/ and the gh-pages branch differ; the live site is not what main says."
+			printf '        copy www/* to the root of gh-pages. Differences:\n' >&2
+			diff \
+				<(git ls-tree "$source_tree" | awk '{ print $4, $3 }' | sort) \
+				<(git ls-tree "$published_tree" | awk '{ print $4, $3 }' | sort) \
+				>&2 || true
+		fi
+	else
+		# Not a failure: a shallow clone or a fresh one legitimately has no gh-pages ref,
+		# and CI fetches it (docs.yml checks out with fetch-depth: 0). Saying so is the
+		# point — a check that skips silently is a check nobody knows stopped running.
+		printf '  skip  gh-pages not fetched; cannot compare the published site\n'
+	fi
+fi
+
 if [ "$fail" -ne 0 ]; then
 	printf '\nDocumentation discipline failed.\n' >&2
 	exit 1
