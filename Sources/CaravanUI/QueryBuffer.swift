@@ -25,6 +25,9 @@ public final class QueryBuffer: Identifiable {
     /// What the header band shows (GUI-DESIGN-NOTES.md §14).
     public private(set) var conversation = Conversation()
 
+    /// How badly this buffer wants your attention (§3). Reset when you look at it.
+    public var activity: BufferActivity = .none
+
     public nonisolated var id: IRCNick { nick }
 
     init(nick: IRCNick) {

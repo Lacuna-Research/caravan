@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 5/17 complete. Next: prompt 6.
+**Status:** 6/17 complete. Next: prompt 7.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -265,34 +265,18 @@ Do not: detaching windows, reordering, or the toolbar — prompt 7. The switchba
 deferred (§2): revisit once the treebar is in real use.
 ```
 
-**Carry-forward** *(consumed when this prompt runs)*
+**Status:** complete. Every note above was consumed and is deleted; what each turned into is
+in `BUILD-LOG.md`. The one note that was misfiled — a query's missing `chathistory` backfill,
+which is prompt 12's — has been moved there rather than deleted.
 
-- From prompt 4: **two networks is now real, and the tree is `AppModel.connections`.**
-  Expansion lives on `ConnectionViewModel.isExpanded`, one per network, which is what a
-  collapsed group rolling up its children's activity needs.
-  `AppModel.activeConnection` derives the network from the selection. What does not exist
-  yet is the thing MRU order and the ⌘K switcher both want: one flat list of *buffers across
-  every network* — `connections.flatMap` over their channels plus each status buffer —
-  which is also the list next-unread and next-highlight walk.
-- From prompt 5: **there are now three buffer shapes, and the flat list wants all three.**
-  `ConnectionViewModel.channels: [ChannelBuffer]`, `.queries: [QueryBuffer]` and the status
-  `log`; `AppModel.SidebarItem` has `.status`, `.channel`, `.query` and `.settingsAndDebug`.
-  `ChannelBuffer` and `QueryBuffer` share `log` and `input` and nothing else — **this is the
-  third occurrence, so the shared protocol is now earned** rather than premature. The flat
-  list, activity state and ⌘1–9 binding identity all want it; note that a binding attaching
-  to "network + buffer name" has to distinguish `#bob` from `bob`, which `SidebarItem`
-  already does and a bare name would not.
-- From prompt 5: **§18's default notification triggers are highlights *and private
-  messages*.** A PM now has a buffer to belong to, so "which buffer just got a private
-  message" is answerable — `ConnectionViewModel.destinations(for:)` is where a `.message`
-  first meets its query. Activity state is this prompt's; notifications are prompt 13's, and
-  both read the same answer.
-- From prompt 5: **a query has no `chathistory` backfill.**
-  `IRCSession.requestHistoryIfOurJoin` fires on our own `JOIN` only, so a conversation
-  reattached through a bouncer opens empty where a channel opens mid-conversation. Opening
-  a query is a client-side act with no wire event to hang a `CHATHISTORY LATEST` off; the
-  natural hook is `ConnectionViewModel.openQuery(with:)`. Deferred to prompt 12, which owns
-  chathistory's interaction with the local log.
+**Two shortcuts differ from the brief**, both because the live run made them: next-highlight
+is ⇧⌥⌘A rather than ⌥⌘H, which is macOS's Hide Others and silently won; and the highlight
+state is pink rather than the accent colour, which is grey on a Graphite accent and made the
+most important of four states invisible.
+
+**Not verified: the `Bind to ▸ 1…9` submenu itself** — SwiftUI's `.contextMenu` exposes no
+accessibility action on a tree row, so it could not be driven. Binding is verified through the
+model and the config round-trip, and the digit it produces is verified in the tree.
 
 ---
 
@@ -307,6 +291,22 @@ drag-to-reorder within a network, persisted, on top of join order. `NSToolbar` r
 a hand-rolled bar (§8).
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 6: **`ConnectionViewModel.buffers` is the one place tree order is written** —
+  status, then channels in join order, then queries. Three readers depend on it agreeing with
+  itself: `SidebarTree` draws it, `AppModel.allBuffers` flattens it for navigation, and the
+  ⌘K palette lists it. Manual drag-to-reorder has to change *that* property, not the tree
+  view, or the keyboard and the mouse will disagree about where `#swift` is.
+- From prompt 6: **a detached window needs an owner for the selection.** `AppModel.selection`
+  is a single optional today, and clearing a buffer's activity, marking its unread rule and
+  pushing its MRU entry all hang off its `didSet`. Two windows showing two buffers means
+  "the selected buffer" becomes "the selected buffer *per window*", and those three effects
+  have to follow focus rather than the one global value.
+- From prompt 6: **`CtrlTabMonitor` is installed per view, from `onAppear`.** With a second
+  window there would be two monitors racing to handle the same ⌃⇥. Move it to the app, or
+  scope it to the key window.
 
 ---
 
@@ -418,6 +418,18 @@ groups, per-server nick, password, autojoin channels, perform-on-connect command
 connect-on-startup, favourites. **Retires `ConnectSheet`**, which is shipped code to
 delete rather than a paper plan. Statistics stay deferred to stage 4.
 
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 6: **⌘1–9 bindings are already persisted, under a key this prompt supersedes.**
+  `caravan.conf` holds `binding.3 = irc.libera.chat:6697/#swift` — `host:port`, plus
+  `[bouncer-network-id]` where there is one, built by `ConnectionViewModel.bindingNetworkKey`
+  and parsed by `BufferBinding.init(rawValue:)`. That was the only durable identifier
+  available: `displayName` comes from `ISUPPORT NETWORK=` and the server can change it,
+  `id` is a fresh `UUID` per launch. **This prompt answers `PLAN.md`'s "what is a network's
+  stable, user-facing name?", so it is also the prompt that migrates these keys** — and
+  `caravan.conf`'s keys are public API, so the migration has to read the old form rather than
+  silently dropping bindings people made.
+
 *To be written out before it starts.*
 
 **Carry-forward** *(consumed when this prompt runs)*
@@ -464,6 +476,11 @@ local log already covers, so the buffer needs de-duplication by message id or
   `SessionConfiguration.chatHistoryLimit`. De-duplication wants `BEFORE`/`AFTER` against the
   newest line already in the log instead, which is the same function with a different
   selector — the request site is already in one place.
+- From prompt 5: **a query has no `chathistory` backfill at all.**
+  `IRCSession.requestHistoryIfOurJoin` fires on our own `JOIN` only, so a conversation
+  reattached through a bouncer opens empty where a channel opens mid-conversation. Opening
+  a query is a client-side act with no wire event to hang a `CHATHISTORY LATEST` off; the
+  natural hook is `ConnectionViewModel.openQuery(with:)`.
 
 ---
 
@@ -481,6 +498,22 @@ Together because they are the same matching machinery pointed in opposite direct
 decides what is worth interrupting you for, the other what is not worth showing at all.
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 6: **the one highlight rule that exists is `BufferActivity.mentions(_:in:)`** —
+  own nick, matched as a word rather than a substring, so `bobbins` does not mention `bob`.
+  The keyword and regex lists replace that function rather than sitting beside it, and
+  `BufferActivity.caused(by:ownNick:isConversation:)` is the pure table they plug into. It
+  takes the nick as a parameter precisely so it never had to reach for app state.
+- From prompt 6: **a private message is currently hard-coded to `.highlight`**, on §18's
+  grounds that highlights and private messages are the two default triggers. That is a
+  reasonable default and a poor permanent rule — it is the first thing that should become a
+  setting here, and `isConversation` is the flag it already keys off.
+- From prompt 6: **an ignore has to suppress the activity state, not just the line.** A
+  buffer that goes pink for a message you never see is worse than no ignore at all. Both
+  happen in `ConnectionViewModel.append(_:)`, a few lines apart — the line goes to
+  `destinations(for:)` and the state to `raise(_:to:)`.
 
 ---
 

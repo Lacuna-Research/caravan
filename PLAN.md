@@ -66,6 +66,12 @@ decision entry.
   stage 2's Dashboard prompt is where a stable name belongs, and it has to be settled
   *there* — renaming an identifier after people have scripted against it is a breaking
   change with no good migration.
+  **This now has a second dependant, and a live one.** Stage 2 prompt 6 needed a durable
+  network identifier immediately, for ⌘1–9 bindings that §11 requires to survive restarts,
+  and used `host:port` (plus `[bouncer-network-id]`) for want of anything better —
+  `ConnectionViewModel.bindingNetworkKey`. So `caravan.conf` already ships `binding.N` keys
+  in a form the answer will change, and the Dashboard prompt has to *migrate* them rather
+  than merely adopt a name: those keys are public API and people will have made bindings.
 - **Is the control socket always on, or opt-in?** *(not blocking)* Always-on is one more
   thing listening, even at `0600`; opt-in is one more thing to discover was off after a
   script has silently done nothing for a week. If it becomes a setting it belongs on the
@@ -192,6 +198,16 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       config, and never reorders the tree. Activating a binding whose target is not
       open opens it, auto-joining only if the network is already connected. ⌘0
       stays reserved for Settings & Debug.
+
+    *The five above are done (stage 2 prompt 6). `ChatBuffer` is now a protocol over
+    `ChannelBuffer`, `QueryBuffer` and a new `StatusBuffer`; `AppModel.allBuffers` is the
+    flat list all four navigation features walk. Two departures from the text above, both
+    forced by the live run and argued in `BUILD-LOG.md`: **next-highlight is ⇧⌥⌘A**, since
+    ⌥⌘H is macOS's Hide Others and silently won, and the **highlight colour is pink rather
+    than the accent**, which resolves to grey on a Graphite accent and made the most
+    important of the four states invisible. Bindings persist under a `host:port` network
+    key, which item 22a's stable name supersedes — see "Still open".*
+
     - Detachable windows: one eject affordance shared by buffers and canvases
       (§1, §10) — this is where the Settings & Debug canvas gains its
       standalone-window mode. Once ejected, ⌘0 and ⌘, focus that window instead of
