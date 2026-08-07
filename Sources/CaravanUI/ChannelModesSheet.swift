@@ -14,6 +14,10 @@ import SwiftUI
 /// would show a `+m` that the server refused.
 struct ChannelModesSheet: View {
     let model: AppModel
+
+    /// The channel's own network, not the tree's selection. See ``BufferActions``.
+    let connection: ConnectionViewModel
+
     let buffer: ChannelBuffer
 
     @Environment(\.dismiss) private var dismiss
@@ -64,17 +68,9 @@ struct ChannelModesSheet: View {
         }
     }
 
-    /// Whether we hold a prefix that is likely to let us set modes.
-    ///
-    /// A guess, and deliberately a permissive one: `PREFIX` says which prefixes exist but
-    /// not which of them may set which mode, and half-op and owner both can on the
-    /// networks that have them. So this disables nothing — it only warns.
-    private var canSetModes: Bool {
-        guard let nick = model.activeConnection?.currentNick else { return false }
-        let key = IRCNick(nick, mapping: buffer.name.mapping)
-        guard let member = buffer.channel.members[key] else { return false }
-        return buffer.channel.prefix(for: member) != nil
-    }
+    /// Whether we hold a prefix that is likely to let us set modes. On the buffer since
+    /// prompt 9, where the two context menus need the same answer.
+    private var canSetModes: Bool { buffer.canSetModes(as: connection.currentNick) }
 
     // MARK: - Modes
 
@@ -174,8 +170,7 @@ struct ChannelModesSheet: View {
     }
 
     private var letters: ListModeSupport {
-        model.activeConnection.map { ListModeSupport(capabilities: $0.lastKnownCapabilities) }
-            ?? ListModeSupport()
+        ListModeSupport(capabilities: connection.lastKnownCapabilities)
     }
 
     @ViewBuilder
@@ -235,7 +230,7 @@ struct ChannelModesSheet: View {
             return
         }
         Task {
-            await model.activeConnection?
+            await connection
                 .ban(
                     channel: buffer.name.raw,
                     subject: subject,
@@ -254,7 +249,6 @@ struct ChannelModesSheet: View {
     }
 
     private func send(_ arguments: [String]) {
-        guard let connection = model.activeConnection else { return }
         Task {
             await connection.send(
                 IRCMessage(verb: "MODE", parameters: [buffer.name.raw] + arguments),

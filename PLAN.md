@@ -100,6 +100,16 @@ decision entry.
   need the user to *do* something, `.authenticationFailed` and `.trustRefused`, are the ones
   it reads wrongest for. Changing it means deciding whether *all* disconnects go red or only
   the terminal ones, which is a themes question and probably prompt 10's.
+- **The channel modes sheet still presents on the main window from a detached one.** *(not
+  blocking)* Stage 2 prompt 9 gave the URL catcher a `KeyWindow`-aware presentation —
+  `AppModel.urlCatcherPresentation`, with `RootView` and `DetachedBufferView` each showing
+  only their own — precisely because a sheet raised from a detached buffer must not appear
+  behind the main window. `isShowingChannelModes` is still a bare `Bool` and reads
+  `model.selectedChannel`, so "Channel Modes…" invoked with a detached channel in front of
+  you acts on whichever channel the *tree* has selected and presents where the tree is. The
+  fix is to make it carry the same presentation value; the question is whether every future
+  sheet should, in which case the pair wants a shared type rather than a second copy. Prompt
+  10 adds sheets and is the natural place to decide.
 - **The Connect sheet scrolls in its tallest case.** *(not blocking)* At the fixed 460×620,
   choosing SASL EXTERNAL pushes the "the certificate has to be in your login keychain
   already" paragraph below the fold — so the guidance is there but only if you scroll, which
@@ -290,6 +300,13 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 17. **Context menus.** Nick-list and channel right-click menus: whois, query, op/deop,
     voice, kick, ban, kickban, ignore, DCC chat/send, slap. Hard-coded now, script-driven
     in stage 3.
+    *Done (stage 2 prompt 9), except two items with nothing behind them yet. Every item is
+    a command string run through the ordinary command path, which is what makes the stage 3
+    version a change to the table rather than a rewrite. **Ignore** waits for the matching
+    machinery in item 22 and **DCC chat/send** for item 31; both have a note naming the
+    group they slot into. The same menu answers a nick in the nick list, a nick in the
+    buffer and a URL, because the scrollback's hit test is an attribute lookup in the text
+    storage rather than a second parse.*
 18. **Options.** mIRC-shaped tabbed prefs — Connect, IRC, Display, Colors, Sounds,
     Logging, Mouse, Other — built out on the Settings & Debug canvas from prompt 11,
     not a separate window (GUI-DESIGN-NOTES.md §10). Two properties of the stage 1 form
@@ -334,6 +351,11 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 24. **Channel list window.** `/list` with min/max user filters, name and topic search,
     sortable columns, join-on-double-click.
 25. **URL catcher.** Clickable links in the buffer, a URL history window, copy/open all.
+    *Done (stage 2 prompt 9). Collected off the `.link` runs the renderer already leaves on
+    each line rather than by a second detector pass, so the history and the underline can
+    never disagree. Inbound only — what you sent is in your own command history. The window
+    is a sheet that opens on whichever window asked for it, scoped to this buffer / this
+    network / everywhere, with Open All asking first above five.*
 26. **Away system.** `/away`, auto-away on idle, optional away nick, away log capturing
     messages received while away.
 27. **Flood protection.** Outbound send-rate throttling to avoid `Excess Flood`, inbound
@@ -380,7 +402,11 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 
 31. **DCC.** CHAT, SEND, GET with resume, passive/reverse DCC for NAT, transfer manager
     window with progress and throughput, configurable port range, per-user trust
-    prompts, drag-and-drop file onto a nick to send.
+    prompts, drag-and-drop file onto a nick to send. **Also owns the DCC Chat and DCC
+    Send items in the nick menu**, which item 17 lists and stage 2 prompt 9 left out
+    rather than ship dead entries: they go in a group of their own in
+    `BufferMenu.nickItems` in `CaravanUI`, and like every other item they are command
+    strings, so they work as soon as `/dcc` is in `CommandParser`.
 32. **Identd.** mIRC's built-in ident server on port 113 — requires a privileged port;
     either a small privileged helper or a documented `pfctl` redirect.
 33. **Proxies.** SOCKS5 / HTTP CONNECT, Tor.

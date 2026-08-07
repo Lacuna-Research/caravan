@@ -35,6 +35,10 @@ public struct DetachedBufferView: View {
                 if state == .key { model.keyWindow = .detached(item) }
             }
             .onAppear(perform: adopt)
+            // The catcher opens as a sheet on the window it was asked for from. A single
+            // `isShowing` flag would put it on the main window, quite possibly behind this
+            // one, when the link that prompted it was in this buffer.
+            .urlCatcher(model: model, in: .detached(item))
             // **Closing the window is reattaching.** A buffer that lived in neither place
             // would be a buffer you could no longer reach — so the red button is not a
             // second, destructive meaning of "close", it is the inverse of detaching.
@@ -78,24 +82,38 @@ public struct DetachedBufferView: View {
 
     @ViewBuilder
     private var content: some View {
+        // **This window's connection, resolved from its own row.** Not `activeConnection`,
+        // which is the tree's selection: a detached channel on one network with the main
+        // window pointed at another used to send its input to the wrong server entirely.
+        let connection = item.connectionID.flatMap(model.connection(id:))
         switch item {
         case .settingsAndDebug:
             SettingsDebugCanvas(model: model)
-        case .status(let id):
-            if let connection = model.connection(id: id) {
-                StatusBufferView(model: model, connection: connection)
+        case .status:
+            if let connection {
+                StatusBufferView(model: model, connection: connection, window: .detached(item))
             } else {
                 closedPlaceholder
             }
         case .channel:
-            if let buffer = model.buffer(for: item) as? ChannelBuffer {
-                ChannelBufferView(model: model, buffer: buffer)
+            if let connection, let buffer = model.buffer(for: item) as? ChannelBuffer {
+                ChannelBufferView(
+                    model: model,
+                    connection: connection,
+                    buffer: buffer,
+                    window: .detached(item)
+                )
             } else {
                 closedPlaceholder
             }
         case .query:
-            if let buffer = model.buffer(for: item) as? QueryBuffer {
-                QueryBufferView(model: model, buffer: buffer)
+            if let connection, let buffer = model.buffer(for: item) as? QueryBuffer {
+                QueryBufferView(
+                    model: model,
+                    connection: connection,
+                    buffer: buffer,
+                    window: .detached(item)
+                )
             } else {
                 closedPlaceholder
             }

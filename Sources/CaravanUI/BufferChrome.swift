@@ -8,8 +8,19 @@ import SwiftUI
 struct ScrollbackView: View {
     let log: MessageLogController
 
+    /// What right-clicking in it can do, or `nil` where there is nothing buffer-shaped to
+    /// do — the debug trace, which keeps AppKit's own Copy and Services menu.
+    ///
+    /// The controller owns the text view, so the menu goes to it rather than to the
+    /// representable, which SwiftUI rebuilds freely.
+    var actions: BufferActions?
+
     var body: some View {
         MessageLogView(controller: log)
+            // Set on appearance rather than on every update: everything the closure
+            // captures is a reference whose identity is fixed for the life of the buffer,
+            // and `.id` below already gives each buffer its own appearance.
+            .onAppear { log.contextMenu = actions.map { actions in { actions.menu(for: $0) } } }
             // Identity per controller, or SwiftUI reuses the representable across a
             // buffer switch — same view type, same position in the hierarchy — and calls
             // `updateNSView` instead of `makeNSView`. The second live run of the channel

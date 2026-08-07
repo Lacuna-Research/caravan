@@ -82,10 +82,11 @@ public struct RootView: View {
             QuickSwitcher(model: model)
         }
         .sheet(isPresented: $model.isShowingChannelModes) {
-            if let buffer = model.selectedChannel {
-                ChannelModesSheet(model: model, buffer: buffer)
+            if let buffer = model.selectedChannel, let connection = model.activeConnection {
+                ChannelModesSheet(model: model, connection: connection, buffer: buffer)
             }
         }
+        .urlCatcher(model: model, in: .main)
         // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
         .modifier(CtrlTabModifier(model: model))
         .onChange(of: activeState, initial: true) { _, state in
@@ -118,9 +119,9 @@ public struct RootView: View {
             SettingsDebugCanvas(model: model)
         } else if let connection = model.activeConnection {
             if let buffer = model.selectedChannel {
-                ChannelBufferView(model: model, buffer: buffer)
+                ChannelBufferView(model: model, connection: connection, buffer: buffer)
             } else if let buffer = model.selectedQuery {
-                QueryBufferView(model: model, buffer: buffer)
+                QueryBufferView(model: model, connection: connection, buffer: buffer)
             } else {
                 StatusBufferView(model: model, connection: connection)
             }
@@ -215,6 +216,9 @@ struct StatusBufferView: View {
     let model: AppModel
     let connection: ConnectionViewModel
 
+    /// Which window this view is in, so a sheet opened from it lands on the right one.
+    var window: KeyWindow = .main
+
     @Environment(\.chatFont) private var chatFont
     @State private var isMOTDExpanded = false
 
@@ -222,10 +226,22 @@ struct StatusBufferView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            ScrollbackView(log: connection.log)
+            ScrollbackView(log: connection.log, actions: actions)
             Divider()
             inputField
         }
+    }
+
+    /// No channel and no target: a status window is where the *network* talks, so the only
+    /// thing its scrollback offers is what to do with a link in the MOTD.
+    private var actions: BufferActions {
+        BufferActions(
+            model: model,
+            connection: connection,
+            channel: nil,
+            target: nil,
+            window: window
+        )
     }
 
     /// The status window's header band, showing the MOTD.
@@ -284,11 +300,11 @@ struct StatusBufferView: View {
             placeholder: "/command",
             // No nicks: a status window has no membership, and offering the nicks of some
             // other channel here would complete to people who cannot see the line.
-            sources: { model.completionSources(in: nil) },
+            sources: { model.completionSources(in: nil, on: connection) },
             palette: model.settings.palette,
             completionStyle: model.settings.completionSuffix,
             submit: { text in
-                await model.submit(text, from: nil)
+                await model.submit(text, from: nil, on: connection)
             }
         )
     }

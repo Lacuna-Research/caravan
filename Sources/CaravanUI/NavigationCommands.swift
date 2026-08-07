@@ -83,6 +83,17 @@ public struct NavigationCommands: Commands {
             // for often enough to spend a live verification pass on.
             Button("Channel Modes…") { model.isShowingChannelModes = true }
                 .disabled(model.selectedChannel == nil)
+
+            // No shortcut, for the same reason. The scrollback's own right-click menu is
+            // the affordance this is a fallback for — discovered there, and findable here
+            // by anyone who never right-clicks.
+            Button("URL Catcher…") {
+                model.urlCatcherPresentation = AppModel.URLCatcherPresentation(
+                    window: .main,
+                    network: model.activeConnection?.displayName,
+                    buffer: model.selection.map(model.title(of:))
+                )
+            }
             Divider()
         }
 
