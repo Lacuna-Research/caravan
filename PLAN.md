@@ -98,11 +98,16 @@ decision entry.
   Dashboard's server list, so this may not be worth fixing in place; if it is, the sheet
   wants about 60pt more height.
 - **The website's progress numbers are hand-maintained.** *(not blocking)*
-  `docs/index.html` states stage 2 progress — "3/17 prompts" and a meter width — that
-  `Scripts/check-docs.sh` does not check, so it will drift exactly the way the README
-  badge would without rule 5. Either the badge check grows a sibling that greps
-  `docs/index.html`, or the numbers come off the page; decide when the next prompt lands
-  and the number first goes stale.
+  `htdocs/index.html` states stage 2 progress — a "N/17 prompts" count and a meter width —
+  that `Scripts/check-docs.sh` does not check, so it drifts exactly the way the README
+  badge would without rule 5. It already has: the page shipped saying 3/17 against a `main`
+  at 4/17, inside a day. Either the badge check grows a sibling that greps
+  `htdocs/index.html`, or the numbers come off the page.
+- **The published site is synced by hand.** *(not blocking, but it will bite)* Pages serves
+  the `gh-pages` branch, whose root is a copy of `main`'s `htdocs/`. Nothing keeps the two
+  in step — a deploy workflow was considered and rejected — so a change to `htdocs/` on
+  `main` is invisible to visitors until someone copies it across. The check that would
+  catch it is a cheap one: compare the two trees and fail when they differ.
 - **Where does a live GUI acceptance run happen when the machine is locked?**
   *(not blocking, but it will recur)* Prompt 3 could confirm nothing on screen:
   `screencapture` returns black and `System Events` reports zero windows for a running app

@@ -3178,3 +3178,41 @@ drifts; the site now has three such claims — the count, the meter width, and t
 sentence — and none is checked. The cheapest fix is to extend rule 5 to `docs/index.html`
 rather than to remember. Left in `PLAN.md`'s Still open list where the website entry put it,
 now with the evidence that it drifted within a day.
+
+## Decision — `htdocs/` on main, `gh-pages` for the published site
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Reverses the website entry's "`docs/` on `main`, not a `gh-pages` branch" from earlier the
+same day. The reasoning there was sound and is unchanged; what changed is the requirement,
+which is now that the directory be called `htdocs`. That is not a distinction GitHub Pages
+lets you keep for free.
+
+**The constraint that forces this: Pages' deploy-from-a-branch mode serves `/` or `/docs`
+and nothing else.** There is no setting for an arbitrary folder. So `htdocs/` on `main` is
+unservable, and reaching it needs one of exactly three things:
+
+- rename it back to `docs/` — rejected, the name was the requirement;
+- an Actions-based deployment, which *can* publish any path — written, then **rejected
+  outright**: it is a workflow, and a deploy workflow is a fifth CI job on a day when CI was
+  unavailable for five hours;
+- a `gh-pages` branch whose *root* is the site — chosen.
+
+Note the third also cannot hold `htdocs/`: a branch source serves that branch's root, so
+`gh-pages` carries `index.html`, `style.css` and `CNAME` at top level. `htdocs/` is the name
+on `main`, where the source lives; the published branch is a copy of its contents.
+
+**What this costs, stated plainly rather than discovered later: the two are synced by hand.**
+The earlier entry called an orphan branch "a second thing to keep in sync", and it is exactly
+that — the objection was right, it has simply been outvoted by the naming requirement. A
+change to `htdocs/` on `main` does not reach visitors until someone copies it across. Raised
+in `PLAN.md`'s Still open list, where the cheap mechanical answer is also recorded: compare
+the two trees in `check-docs.sh` and fail when they differ. That check does not exist yet.
+
+**`CNAME` lives in `htdocs/` as well as on `gh-pages`**, so that the copy carries the custom
+domain rather than depending on someone remembering it. Losing it un-points
+`caravan.lacunaresearch.com` on the next sync, silently.
+
+**DNS is not ours.** The subdomain resolves to Cloudflare addresses today, so publishing
+needs a `CNAME` record for `caravan` pointing at `Lacuna-Research.github.io`, made at
+Cloudflare by someone with access to it.
