@@ -54,11 +54,11 @@ starting it, never long in advance.
 ## Enforced mechanically
 
 `make check` (pre-commit + CI) enforces: the cap on this file, `BUILD-LOG.md` append-only,
-a build-log entry per `Sources/` change, both status lines, `README.md`'s badge/table and
-ASCII art agreeing with their sources, carry-forward notes not outliving their prompt,
-`www/` matching the served `gh-pages` branch, and zero SwiftPM dependencies. Two
-git hooks and a Stop hook guard the rest: no commits to `main`, no pushing a
-`worktree-*` branch before renaming it, no worktree left behind after its PR merged.
+a build-log entry per `Sources/` change, both status lines, the README's badge/table and
+the website's counts and meters agreeing with them, the ASCII art matching its generator,
+carry-forward notes not outliving their prompt, `www/` matching the served `gh-pages`
+branch, and zero SwiftPM dependencies. Two git hooks and a Stop hook guard the rest: no
+commits to `main`, no unrenamed `worktree-*` push, no worktree outliving its merged PR.
 When a convention here proves important, make it mechanical rather than writing it more
 emphatically.
 

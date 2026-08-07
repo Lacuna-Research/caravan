@@ -3868,3 +3868,82 @@ a test for it, and it exists because the first version had the bug.
 **`autoenablesItems` has to be off.** Otherwise AppKit asks the responder chain whether each
 selector is valid and greys out every item whose target is not a responder — which, with a
 closure handler, is all of them.
+
+## The website's progress numbers, made mechanical
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Answers the "the website's progress numbers are hand-maintained" question, which is now
+deleted from `PLAN.md`'s **Still open** list.
+
+### The answer: check them, do not remove them
+
+The open question offered two ways out — grow the badge check a sibling that greps
+`www/index.html`, or take the numbers off the page. **Checked**, because the numbers earn
+their place: the site is the only thing a stranger reads, "9/17 prompts" and a meter is the
+fastest honest answer to "is this real yet", and a project that deletes its progress
+indicator to avoid maintaining it has solved the wrong problem. What was wrong was never
+that the page had numbers; it was that three places wrote the same number down and only two
+were checked.
+
+So `site_progress` sits in `Scripts/check-docs.sh` beside the README badge and table rules
+it mirrors, called from both status-line blocks. `README.md` and `www/index.html` are now
+checked against `STAGE1-PROMPTS.md` and `STAGE2-PROMPTS.md` by the same rule, at the same
+moment, and neither can move without the other.
+
+**It reads the page's numbers rather than grepping for the expected string.** A grep can
+only say "not found"; this says `website stage 2 says '4/17' prompts, status line says
+9/17`, which is the difference between a check that fails and a check that tells you what
+to type. Both fields are scoped to their own `<h3>Stage N` section, because there are three
+stage cards and an unscoped match reads stage 1's meter for stage 2.
+
+**The meter width is derived, not eyeballed:** one decimal place, which is the convention
+the page already followed — 4/17 really is 23.5% — with a trailing `.0` trimmed so a
+finished stage reads `width:100%` rather than `width:100.0%`, matching what stage 1 already
+had. That the formula reproduces the existing hand-written 23.5% and 100% exactly is the
+evidence it is the right formula rather than a new one imposed on the page.
+
+**The prose beside the numbers is deliberately not checked.** "Formatting codes and the
+99-colour palette ✓ · … · next: options, the server list, …" is editorial — it says what
+the stage *is*, not how far along it is, and a machine cannot write it. It is stale less
+easily than a number and it is now adjacent to a number that cannot be stale at all, which
+is the cheapest available warning that it needs rereading.
+
+### The publish step is a script now
+
+`Scripts/publish-site.sh`. Rule 10 has failed with the advice "copy `www/*` to the root of
+gh-pages" since it was written — a manual step described in prose, and therefore a step
+done slightly differently each time it is done at all. The error message now names the
+script.
+
+It works in plumbing rather than checking anything out: `git commit-tree` on the tree object
+`$ref:www` already names, pushed to `refs/heads/gh-pages`. Two properties follow. **The tree
+pushed is the same object rule 10 compares**, so a successful publish cannot leave the two
+disagreeing — there is no copy step to get wrong. And nothing touches the working tree, so
+it is safe to run mid-branch, which matters because of the ordering below. `DRY_RUN=1` says
+what it would do; the push is not forced, so a rejection means somebody else published and
+this would have erased it.
+
+### The ordering is backwards from what you would guess, and has to be
+
+Rule 10 compares the *branch's* `www/` against the published `gh-pages`. So a PR that
+changes the site is red until `gh-pages` is updated — the site is published **before** the
+PR merges, not after. That reads wrong for a second and is right: it means the live site is
+never behind what a merged `main` claims, only ever briefly ahead of it, and "ahead" for a
+progress number means "correct sooner". Publishing after the merge would need a deploy
+workflow, which the rule 10 comment records as considered and rejected.
+
+Worth knowing the failure mode this creates: while the site is published and the PR is not
+yet merged, `main` itself disagrees with `gh-pages`, so any *other* open PR goes red on
+rule 10 through no fault of its own. Acceptable at this project's one-PR-at-a-time pace,
+and cheap to notice; if it ever bites, the answer is to compare against the base ref's
+`www/` rather than the branch's.
+
+### What the page actually said
+
+**4/17, meter at 23.5%, against a `main` at 9/17.** Five prompts of drift — worse than the
+one-prompt drift that first raised the question, which is what an unchecked number does
+given time. The prose had rotted with it: "next: queries and CTCP, activity states and a ⌘K
+switcher, the full command set, mode tracking" listed four things that were all done.
+Corrected here to 9/17 and 52.9%, with the sentence rewritten to name what shipped through
+prompt 9 and what is genuinely next.
