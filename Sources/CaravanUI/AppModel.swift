@@ -303,6 +303,9 @@ public final class AppModel {
 
     public var isShowingConnectSheet = false
 
+    /// Whether ⌘K's palette is up.
+    public var isShowingQuickSwitcher = false
+
     /// One trace buffer for the process. Redacted on insert, exported by "Copy
     /// Diagnostics" — which is what makes the export safe to paste into a public issue.
     @ObservationIgnored public let trace: TraceBuffer
@@ -316,6 +319,9 @@ public final class AppModel {
 
     /// TLS fingerprints the user has already accepted.
     @ObservationIgnored public let knownHosts: KnownHosts
+
+    /// Which buffer each of ⌘1–9 reaches. Empty until the user binds something (§11).
+    public let bindings: BufferBindings
 
     /// Where passwords are kept. The Keychain in the app, something ephemeral in a test.
     @ObservationIgnored public let credentials: any CredentialStore
@@ -352,10 +358,25 @@ public final class AppModel {
     /// The tree row the user has selected.
     ///
     /// Changing it draws the unread rule in the buffer being *left*, which is what makes
-    /// the rule mean "everything above this you have seen".
+    /// the rule mean "everything above this you have seen"; clears the activity state of
+    /// the buffer being *entered*, which is what makes that state mean "since you last
+    /// looked"; and records the visit for Ctrl+Tab's MRU order.
     public var selection: SidebarItem? {
-        didSet { markUnread(leaving: oldValue) }
+        didSet {
+            guard selection != oldValue else { return }
+            markUnread(leaving: oldValue)
+            if let selection {
+                buffer(for: selection)?.activity = .none
+                noteVisited(selection)
+            }
+        }
     }
+
+    /// Buffers in the order they were last looked at, most recent first. Ctrl+Tab's order.
+    var recentBuffers: [SidebarItem] = []
+
+    /// A Ctrl+Tab walk in progress, or `nil`. While one is, the MRU order is frozen.
+    @ObservationIgnored var mruCycle: MRUCycle?
 
     /// One selectable row in the tree.
     ///
@@ -401,6 +422,7 @@ public final class AppModel {
         self.trace = trace
         self.knownHosts = knownHosts ?? .shared
         self.credentials = credentials ?? Keychain.shared
+        self.bindings = BufferBindings(config: config)
         self.debug = DebugController(trace: trace, settings: settings)
     }
 
@@ -612,6 +634,13 @@ public final class AppModel {
             connection.bouncerNetworksDidChange = { [weak self] control in
                 Task { await self?.reconcileBouncerNetworks(of: control) }
             }
+        }
+        // The buffer you are looking at never accumulates an activity state. The selection
+        // is the app's, so the connection is told how to ask rather than given a copy that
+        // could go stale.
+        connection.isSelected = { [weak self] buffer in
+            guard let self, let selection else { return false }
+            return self.buffer(for: selection) === buffer
         }
         connections.append(connection)
         if selecting { selection = .status(connection.id) }

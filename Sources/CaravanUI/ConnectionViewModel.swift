@@ -15,8 +15,15 @@ import Observation
 public final class ConnectionViewModel: Identifiable {
     public let id = UUID()
 
-    /// The status window's scrollback. The network row in the tree opens it.
-    public let log = MessageLogController()
+    /// The status window, which is a buffer like any other. The network row opens it.
+    ///
+    /// An object rather than a loose scrollback since prompt 6: the flat list every
+    /// navigation feature walks wants a uniform element, and a status window that was the
+    /// one exception meant a special case in four places rather than one indirection here.
+    public let status: StatusBuffer
+
+    /// The status window's scrollback, for the many callers that only ever wanted that.
+    public var log: MessageLogController { status.log }
 
     public private(set) var state: SessionState = .disconnected(reason: .notStarted)
     public private(set) var currentNick: String
@@ -28,7 +35,10 @@ public final class ConnectionViewModel: Identifiable {
     /// hostname for a direct one. A user reading the tree wants "Libera.Chat", not
     /// "irc.libera.chat", and certainly not "soju.example.org" for both of two networks
     /// reached through the same bouncer.
-    public private(set) var displayName: String
+    public var displayName: String {
+        get { status.displayName }
+        set { status.displayName = newValue }
+    }
 
     /// Whether this network's channels are showing in the tree.
     ///
@@ -74,7 +84,7 @@ public final class ConnectionViewModel: Identifiable {
     public private(set) var queries: [QueryBuffer] = []
 
     /// The status window's input box and its history. Per buffer, like every other.
-    public let statusInput = InputState()
+    public var statusInput: InputState { status.input }
 
     /// The server's message of the day, for the status window's header band.
     ///
@@ -128,7 +138,7 @@ public final class ConnectionViewModel: Identifiable {
         self.host = configuration.host
         self.port = configuration.port
         self.givenName = name
-        self.displayName = name ?? configuration.host
+        self.status = StatusBuffer(displayName: name ?? configuration.host)
         self.settings = settings
         log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
         log.palette = settings.palette
@@ -158,7 +168,39 @@ public final class ConnectionViewModel: Identifiable {
         if case .connected = state { true } else { false }
     }
 
+    /// Every buffer this network owns, **in the order the tree shows them**: the status
+    /// window, then channels in join order, then conversations (§12).
+    ///
+    /// The one place that order is written. Next-unread walks it, the quick-switcher lists
+    /// it, and `SidebarTree` draws it — three readers that must not disagree about where
+    /// `#swift` sits relative to `bob`.
+    public var buffers: [(item: AppModel.SidebarItem, buffer: any ChatBuffer)] {
+        [(.status(id), status)]
+            + channels.map { (.channel(connection: id, channel: $0.name), $0 as any ChatBuffer) }
+            + queries.map { (.query(connection: id, nick: $0.nick), $0 as any ChatBuffer) }
+    }
+
     public func buffer(named name: IRCChannelName) -> ChannelBuffer? { buffersByName[name] }
+
+    /// The highest activity state among this network's buffers.
+    ///
+    /// What a **collapsed** group shows (§9): a collapse that hides activity from you
+    /// defeats the point of collapsing. The status window is included — it is one of the
+    /// hidden children when the group is shut.
+    public var rolledUpActivity: BufferActivity {
+        buffers.map(\.buffer.activity).max() ?? .none
+    }
+
+    /// Opens a channel's buffer without joining it, for a ⌘1–9 binding whose target is not
+    /// open (§11).
+    ///
+    /// The buffer appears in its greyed not-joined state, which is the same appearance a
+    /// parted channel and a disconnected network already wear (§16, §17) — so "reveal it
+    /// in a disconnected state" needed no new appearance, only a way to make the buffer.
+    @discardableResult
+    public func openChannelBuffer(named name: IRCChannelName) -> ChannelBuffer {
+        buffer(creating: name)
+    }
 
     public func query(named nick: IRCNick) -> QueryBuffer? { queriesByNick[nick] }
 
@@ -217,6 +259,14 @@ public final class ConnectionViewModel: Identifiable {
     ///
     /// Read straight off the actor rather than cached: this is async anyway, so there is
     /// no window in which the parser's idea of `CHANTYPES` can be stale.
+    /// What the server said it supports, read off the actor.
+    ///
+    /// Needed wherever a bare name has to be classified as a channel or a nick without a
+    /// `Target` already in hand — resolving a ⌘1–9 binding, for one.
+    public var serverCapabilities: ServerCapabilities {
+        get async { await session.capabilities }
+    }
+
     public func actions(for text: String, activeTarget: Target?) async -> [CommandAction] {
         CommandParser(capabilities: await session.capabilities)
             .actions(for: text, activeTarget: activeTarget)
@@ -483,10 +533,35 @@ public final class ConnectionViewModel: Identifiable {
         )
         guard let line = renderer.line(for: event, context: context) else { return }
         for destination in destinations(for: event) {
-            destination.append([line])
+            destination.log.append([line])
+            raise(
+                destination,
+                to: BufferActivity.caused(
+                    by: event,
+                    ownNick: currentNick,
+                    isConversation: destination.isConversation
+                )
+            )
         }
         noteConversation(event, at: context.now)
     }
+
+    /// Moves a buffer up to `state`, never down: a buffer holds the most urgent thing that
+    /// has happened since you last looked at it, so a join arriving after a highlight does
+    /// not quietly downgrade it.
+    ///
+    /// **The buffer you are looking at never accumulates one.** `AppModel` clears the
+    /// selected buffer's state as it arrives, which is what makes the state mean "since you
+    /// last looked" rather than "ever".
+    private func raise(_ buffer: any ChatBuffer, to state: BufferActivity) {
+        guard state > buffer.activity, !isSelected(buffer) else { return }
+        buffer.activity = state
+    }
+
+    /// Whether a buffer is the one on screen. Set by `AppModel`, because the selection is
+    /// the app's and a connection cannot see it.
+    @ObservationIgnored
+    public var isSelected: @MainActor (any ChatBuffer) -> Bool = { _ in false }
 
     /// Records a private message in its query's header band (§14).
     ///
@@ -601,13 +676,13 @@ public final class ConnectionViewModel: Identifiable {
     /// goes to every channel that had the user, which is how mIRC has always reported
     /// them. Anything not about a channel we have a window for lands in the status
     /// window, so nothing is silently dropped.
-    private func destinations(for event: IRCEvent) -> [MessageLogController] {
+    private func destinations(for event: IRCEvent) -> [any ChatBuffer] {
         switch event {
         case .joined(let channel, let who, _, _):
             // The only event that opens a window: the server tells us we joined, and mIRC
             // has opened the window on that line for thirty years.
             if who.nick.map({ isOwn(nick: $0) }) == true {
-                return [buffer(creating: channel).log]
+                return [buffer(creating: channel)]
             }
             return [existing(channel)].compactMap(\.self)
 
@@ -617,21 +692,21 @@ public final class ConnectionViewModel: Identifiable {
             .topicAuthor(let channel, _, _),
             .channelModes(let channel, _),
             .joinFailed(let channel, _, _):
-            return [existing(channel) ?? log]
+            return [existing(channel) ?? status]
 
         case .modeChanged(let target, _, _):
-            guard case .channel(let name) = target else { return [log] }
-            return [existing(name) ?? log]
+            guard case .channel(let name) = target else { return [status] }
+            return [existing(name) ?? status]
 
         case .message(let target, let sender, _, let kind, _, _):
-            if case .channel(let name) = target { return [existing(name) ?? log] }
-            guard let other = correspondent(target: target, sender: sender) else { return [log] }
+            if case .channel(let name) = target { return [existing(name) ?? status] }
+            guard let other = correspondent(target: target, sender: sender) else { return [status] }
             // **A notice never opens a window.** Services, the bouncer and half the
             // network send them, and a window per sender is how mIRC's status window came
             // to exist in the first place. One that is already open is still the right
             // place for it — NickServ answering in the NickServ query is what you want.
-            if kind == .notice { return [queriesByNick[other]?.log ?? log] }
-            return [query(creating: other).log]
+            if kind == .notice { return [queriesByNick[other] ?? status] }
+            return [query(creating: other)]
 
         case .ctcpRequest(let target, let sender, _, _),
             .ctcpReply(let target, let sender, _, _):
@@ -640,35 +715,35 @@ public final class ConnectionViewModel: Identifiable {
             // conjure fifty windows. It lands in the conversation if there is one, and in
             // the status window otherwise.
             if case .channel(let name) = target, let buffer = existing(name) { return [buffer] }
-            guard let other = correspondent(target: target, sender: sender) else { return [log] }
-            return [queriesByNick[other]?.log ?? log]
+            guard let other = correspondent(target: target, sender: sender) else { return [status] }
+            return [queriesByNick[other] ?? status]
 
         case .quit(let who, _):
-            return buffersContaining(nick: who.nick).map(\.log)
+            return buffersContaining(nick: who.nick)
 
         case .nickChanged(let who, _):
-            let shared = buffersContaining(nick: who.nick).map(\.log)
+            let shared: [any ChatBuffer] = buffersContaining(nick: who.nick)
             // Our own rename is news everywhere, including where we share no channel.
             let isOwnRename = who.nick.map { isOwn(nick: $0) } == true
-            return isOwnRename || shared.isEmpty ? [log] + shared : shared
+            return isOwnRename || shared.isEmpty ? [status] + shared : shared
 
         case .awayChanged(let who, _), .accountChanged(let who, _),
             .hostChanged(let who, _, _), .realNameChanged(let who, _):
             // These describe a person, not a channel, so they land wherever that person
             // is visible — the same rule a `QUIT` follows, and for the same reason.
-            return buffersContaining(nick: who.nick).map(\.log)
+            return buffersContaining(nick: who.nick)
 
         case .invited(_, _, let channel):
             // An invitation to a channel we already have a window for belongs there; one
             // to a channel we have never seen has nowhere else to go but the status
             // window, which is exactly where an offer to join something should appear.
-            return [existing(channel) ?? log]
+            return [existing(channel) ?? status]
 
         case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
             .namesReply, .endOfNames, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply,
             .batchStarted, .batchEnded, .bouncerNetworks:
-            return [log]
+            return [status]
         }
     }
 
@@ -717,8 +792,8 @@ public final class ConnectionViewModel: Identifiable {
         }
     }
 
-    private func existing(_ name: IRCChannelName) -> MessageLogController? {
-        buffersByName[name]?.log
+    private func existing(_ name: IRCChannelName) -> ChannelBuffer? {
+        buffersByName[name]
     }
 
     private func buffer(creating name: IRCChannelName) -> ChannelBuffer {

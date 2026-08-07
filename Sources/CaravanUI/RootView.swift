@@ -54,6 +54,11 @@ public struct RootView: View {
         .sheet(item: $model.pendingTrust) { request in
             TrustSheet(request: request)
         }
+        .sheet(isPresented: $model.isShowingQuickSwitcher) {
+            QuickSwitcher(model: model)
+        }
+        // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
+        .modifier(CtrlTabModifier(model: model))
     }
 
     @ViewBuilder

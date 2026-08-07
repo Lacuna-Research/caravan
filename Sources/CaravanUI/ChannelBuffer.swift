@@ -22,6 +22,9 @@ public final class ChannelBuffer: Identifiable {
     /// leave the history attached to the wrong window.
     public let input = InputState()
 
+    /// How badly this buffer wants your attention (§3). Reset when you look at it.
+    public var activity: BufferActivity = .none
+
     public private(set) var channel: Channel
 
     /// `nonisolated` because `Identifiable` is not: the identity is the immutable name,

@@ -39,6 +39,10 @@ struct CaravanApp: App {
                 Button("Settings & Debug") { model.showSettingsAndDebug() }
                     .keyboardShortcut("0", modifiers: .command)
             }
+            // Navigation at scale: the quick switcher, next-unread, next-highlight and the
+            // ⌘1–9 bindings. Its own menu because §9 treats them as one problem with
+            // several answers, and scattering them across View and Window would hide that.
+            NavigationCommands(model: model)
             CommandGroup(after: .pasteboard) {
                 // The redacted wire trace plus the app and OS version. Safe to paste into
                 // a public issue, because the trace was redacted on insert rather than on

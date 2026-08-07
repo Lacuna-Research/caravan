@@ -3386,3 +3386,113 @@ you rehearse the attack its own limits exist to stop.
 
 All three are now unit tests. None of them could have been: two are about what a line *says*,
 and the third about which line a two-line clamp keeps.
+
+## Stage 2, prompt 6 — Activity and navigation at scale
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+Thirty buffers, navigable without the mouse. GUI-DESIGN-NOTES.md §3, §9 and §11.
+
+### Decisions
+
+**`ChatBuffer` is a protocol now, and the status window is an object.** Prompt 5's
+carry-forward said the third occurrence would earn it, and this is the third: `ChannelBuffer`,
+`QueryBuffer` and — newly — `StatusBuffer`, which until now was a `MessageLogController` and
+an `InputState` hanging off `ConnectionViewModel` rather than a thing. Four features wanted a
+uniform element at once (the flat list, the activity state, MRU order, binding identity), and
+a status window that was the one exception meant a special case in four places instead of one
+indirection. `ConnectionViewModel.log` and `.statusInput` still exist and forward, so nothing
+holding a network's scrollback had to change. `destinations(for:)` returns buffers rather than
+log controllers, which is what lets an arriving line raise the *buffer's* activity.
+
+**A private message is a highlight, not merely a message.** §3 does not say so; §18 does, by
+grouping "highlights and private messages" as the two things worth notifying about. A query
+that could only reach `message` would wear the same colour as somebody chatting in `#swift`,
+and the whole reason a PM has its own window is that it is addressed to you. *Revisit if:*
+prompt 13's configurable triggers make this a setting, which is where it belongs long-term.
+
+**Activity rises and never falls until you look.** A buffer holds the *most urgent* thing
+since you last looked, so a join arriving after a highlight does not quietly downgrade it. The
+selected buffer never accumulates one at all, which is what makes the state mean "since you
+last looked" rather than "ever".
+
+**A mention is a word, not a substring.** `bobbins` and `bob2` do not mention `bob`. Without
+the boundary rule a short nick highlights on almost every line, which trains people to ignore
+the state entirely — and the state is the thing prompt 13's whole notification story rests on.
+
+**⌘1–9 bind to `host:port`, not to the display name.** §11 says a binding attaches to
+"network plus buffer name" and survives restarts. `displayName` comes from `ISUPPORT
+NETWORK=`, which the server owns and can change under you; `id` is a fresh `UUID` every
+launch. `host:port` — plus `[bouncer-network-id]` where there is one — is what the user typed
+and what `AppModel.connect(using:)` already treats as network identity. **This is knowingly
+provisional:** `PLAN.md`'s "Still open" has wanted a stable *user-facing* network name since
+stage 1, the server-list prompt answers it, and `binding.N` keys migrate then. Written down
+because `caravan.conf`'s keys are public API and this one will move.
+
+**The buffer name in a binding keeps its `#`.** `#bob` and `bob` are different buffers, and a
+bare name could not say which was meant — so the config value is `host:port/#swift`, and a
+status window is the network with no buffer part at all.
+
+**Ctrl+Tab freezes the MRU order while the modifier is held.** The Windows Alt-Tab model §9
+asks for. Committing each step would reshuffle the list under the walk, so the second tap
+would return you to where you started and walking further back would be impossible.
+
+### Learned
+
+**A local `NSEvent` monitor is not optional for Ctrl+Tab.** SwiftUI can bind a key *press*;
+the model §9 wants turns on the modifier being *released*, which is what separates "hold and
+keep tapping" from "tap twice", and there is no SwiftUI expression of that. Tab is also a
+focus-navigation key AppKit consumes before any responder sees it. `CtrlTabMonitor` is local
+and scoped to this app's own events — nothing observes other applications and no accessibility
+permission is involved.
+
+**`NSEvent.removeMonitor` cannot be called from `deinit`** under Swift 6: `deinit` is not
+isolated and the handles are non-`Sendable` `Any?`. The monitor is torn down from
+`onDisappear` instead, which is the lifetime that actually matters.
+
+### The live run: thirty channels across Libera and OFTC
+
+Fifteen `##caravan-nav-N` on Libera and fifteen `#caravan-nav-N` on OFTC, both groups
+collapsed to a two-row tree, a scripted Python peer supplying chatter in one channel, a
+nick-mention in another and a private message. Every navigation path exercised by keyboard
+only: ⌥⌘A walked the unread ones and auto-expanded a collapsed group to do it; ⇧⌥⌘A skipped
+fourteen merely-active channels straight to the one holding a mention; ⌘K found buffers by
+typing and Enter; ⌘7 and ⌘9 — seeded by hand into `caravan.conf` before launch, one per
+network — reached their buffers and showed their digits in the tree, which is nine *global*
+slots demonstrated across two networks; Ctrl+Tab toggled the last two, and holding Ctrl
+through two taps walked three deep and committed on release. The collapsed network row wore
+its hidden child's highlight, badge and all. The hand-written config kept its comment and its
+two binding lines unchanged.
+
+**Not verified: the `Bind to ▸ 1…9` submenu itself.** SwiftUI's `.contextMenu` exposes no
+`AXShowMenu` action on these rows — the row elements report an empty action list — so it
+cannot be driven from this harness. Binding is verified through the model and through the
+config round-trip, and the digit it produces is verified in the tree; the menu that invokes it
+was read rather than clicked. Said plainly rather than filed under "verified live".
+
+### Three defects the live run found
+
+1. **The highlight state was invisible on this machine.** It used `controlAccentColor`, on the
+   reasoning that the unread rule already uses the accent and therefore it already means
+   "the thing you are looking for". This machine's accent is **Graphite**, so the most
+   important of four colour-coded states resolved to grey and was indistinguishable from an
+   ordinary row. Now pink — not red, which is errors, and not orange, which the connection
+   indicator uses a few pixels away on the same row. **A state whose whole job is to be
+   distinguishable must not depend on a user setting that can be colourless.** The unread rule
+   can afford the accent because it is a line across the window, findable by shape.
+2. **⌥⌘H is macOS's Hide Others.** Next-highlight was bound to it, the App menu won, and the
+   key silently did nothing — nothing in the build reports a collision with a system shortcut.
+   Next-highlight is ⇧⌥⌘A now: the same key as next-unread with one more modifier, which reads
+   as "the same thing, but only the ones addressed to me".
+3. **Three ranking faults in the ⌘K palette**, all found by using it. With an empty query every
+   score tied and the list fell back to shortest-then-alphabetical, so it opened with
+   `##caravan-nav-10` above `##caravan-nav-2` — an unfiltered palette now keeps the tree's
+   order. Two equally good matches ignored activity, so typing `nav-11` with a channel of that
+   name on each network landed on the quiet one rather than the one holding a highlight —
+   ties break on activity now. And the obvious way to disambiguate, `libera nav-11`, matched
+   nothing at all, because the candidate has a slash where the space is; a space in the query
+   is now dropped rather than matched, so it means "and then, later".
+
+All three are unit tests. The first two could only have been found by looking — one of them
+only by looking *on a machine configured this way*, which is worth remembering the next time
+a colour is chosen from a semantic role rather than a value.
