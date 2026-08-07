@@ -15,6 +15,9 @@ import SwiftUI
 /// The tree is monospaced, unlike every other macOS sidebar. Both sigils are one cell
 /// wide, so `#` forms a clean column and names never shift.
 struct SidebarTree: View {
+    /// The sigil a query row wears, where a channel wears its own `#`.
+    static let querySigil = "•"
+
     @Bindable var model: AppModel
 
     @Environment(\.chatFont) private var chatFont
@@ -86,6 +89,23 @@ private struct NetworkGroup: View {
                         )
                     )
             }
+            // **Queries after channels, in the same list** (§12). Not a labelled section:
+            // one flat list keeps channel positions stable as transient PMs come and go,
+            // without spending a row of chrome on a header.
+            ForEach(connection.queries) { buffer in
+                QueryRow(buffer: buffer)
+                    .tag(
+                        AppModel.SidebarItem.query(
+                            connection: connection.id,
+                            nick: buffer.nick
+                        )
+                    )
+                    .contextMenu {
+                        Button("Close Conversation") {
+                            connection.closeQuery(buffer.nick)
+                        }
+                    }
+            }
         } label: {
             NetworkRow(connection: connection)
                 .tag(AppModel.SidebarItem.status(connection.id))
@@ -131,6 +151,23 @@ private struct NetworkRow: View {
         case .connecting, .registering, .reconnecting: .orange
         case .disconnected: .secondary
         }
+    }
+}
+
+/// A conversation row: a bullet, then the nick.
+///
+/// **A bullet rather than `@`** (§12). In IRC `@` already means channel operator, and this
+/// client renders prefix characters throughout — in nick lists and in `<@nick>` message
+/// lines. Teaching two meanings for one glyph in the same window is not worth the
+/// familiarity. No space after it: the sigil is one cell wide, like `#`, so the two form
+/// a column and names never shift.
+private struct QueryRow: View {
+    let buffer: QueryBuffer
+
+    var body: some View {
+        Text("\(SidebarTree.querySigil)\(buffer.nick.raw)")
+            .lineLimit(1)
+            .help("Conversation with \(buffer.nick.raw)")
     }
 }
 

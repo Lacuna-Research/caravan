@@ -1,4 +1,5 @@
 import Diagnostics
+import Foundation
 import IRCProtocol
 import IRCTransport
 
@@ -64,6 +65,10 @@ public actor IRCSession {
     private var lastActivity: ContinuousClock.Instant
     private var pingSentAt: ContinuousClock.Instant?
 
+    /// The rate limit on CTCP auto-replies. Survives a reconnect: a flooder does not get
+    /// a fresh bucket by knocking us off the network and waiting for the reconnect.
+    private var ctcpThrottle: CTCPThrottle
+
     /// Where `CAP` negotiation has got to on this attempt.
     ///
     /// Linear, and it matters that it is: registration is held open by the server until we
@@ -110,6 +115,7 @@ public actor IRCSession {
         self.credentials = credentials
         self.currentNick = configuration.nick
         self.lastActivity = ContinuousClock().now
+        self.ctcpThrottle = CTCPThrottle(now: ContinuousClock().now)
         self.roster = ChannelRoster(ownNick: configuration.nick)
     }
 
@@ -423,6 +429,9 @@ public actor IRCSession {
                 serverInfo?.nick = newNick
             }
             emit(event)
+            if case .ctcpRequest(_, let sender, let request, _) = event {
+                await answer(request, from: sender)
+            }
         }
 
         if message.command.isVerb("PING") {
@@ -482,6 +491,55 @@ public actor IRCSession {
             break
         }
     }
+
+    // MARK: - CTCP
+
+    /// Answers a CTCP request, if it is one we answer and the rate limit allows it.
+    ///
+    /// **Always a `NOTICE`, and always to the sender.** A request aimed at a channel is
+    /// still one person asking, so answering the channel would put our reply in front of
+    /// everyone there — the amplification the throttle exists to bound, done to ourselves.
+    /// The `NOTICE` is what stops the answer being read as a request in turn.
+    private func answer(_ request: CTCPMessage, from sender: IRCSource) async {
+        guard let nick = sender.nick else { return }
+        guard
+            let reply = CTCPReplies.reply(
+                to: request,
+                version: configuration.clientVersion,
+                userInfo: configuration.realName,
+                time: Self.ctcpTimeFormatter.string(from: Date())
+            )
+        else { return }
+
+        switch ctcpThrottle.admit(at: clock.now) {
+        case .allowed:
+            await connection?.send(
+                IRCMessage(verb: "NOTICE", parameters: [nick, reply.wireForm])
+            )
+        case .suppressed(let firstOfBurst):
+            // Said once per run of suppressions, not once per request: fifty requests
+            // producing fifty "not answering" lines is the flood arriving by a second
+            // route. The requests themselves are still each a line, which is what makes
+            // the flood visible.
+            guard firstOfBurst else { return }
+            Log.session.notice("CTCP replies rate limited")
+            emit(
+                .clientNotice(
+                    "too many CTCP requests at once; not answering for a moment "
+                        + "(\(request.keyword) from \(nick))"
+                )
+            )
+        }
+    }
+
+    /// CTCP `TIME`'s answer is a human-readable local time. Fixed to the C locale, since
+    /// the reply is read by whoever asked rather than by us.
+    private static let ctcpTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM d HH:mm:ss yyyy ZZZ"
+        return formatter
+    }()
 
     // MARK: - Capability negotiation
 

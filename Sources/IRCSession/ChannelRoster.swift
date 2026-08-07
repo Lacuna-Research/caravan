@@ -156,10 +156,11 @@ struct ChannelRoster {
         case .raw, .registered, .message, .numeric, .clientError, .clientNotice,
             .joinFailed, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply, .invited,
-            .batchStarted, .batchEnded, .bouncerNetworks:
+            .batchStarted, .batchEnded, .bouncerNetworks, .ctcpRequest, .ctcpReply:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
             // the channel it names may be one we have never seen. `.invited` likewise —
-            // an invitation is not a membership.
+            // an invitation is not a membership. A CTCP is addressed to the client rather
+            // than to a channel, even when it arrives via one.
             return []
         }
     }

@@ -174,12 +174,24 @@ struct CommandParserTests {
         #expect(try error("/notice bob").contains("/notice"))
     }
 
-    /// Stage 1 has no query buffers, so `/query` is `/msg`. Listed rather than dropped, or
-    /// the unknown-command passthrough would send the server a command called `QUERY`.
-    @Test("query behaves as msg and never reaches the server as QUERY")
-    func query() throws {
-        #expect(wire("/query bob hi") == ["PRIVMSG bob hi"])
-        let usage = try error("/query bob")
+    /// `/query` opens a window, which is the whole difference from `/msg`: the message is
+    /// optional, and `/query bob` puts nothing on the wire at all.
+    @Test("query opens a window, with or without something to say")
+    func query() {
+        #expect(actions("/query bob") == [.openQuery(nick: "bob", message: nil)])
+        #expect(actions("/query bob hi there") == [.openQuery(nick: "bob", message: "hi there")])
+        #expect(actions("/q bob") == [.openQuery(nick: "bob", message: nil)])
+    }
+
+    /// `/query #swift` is somebody reaching for `/join`. A conversation window named after
+    /// a channel would send `PRIVMSG #swift` from a window that looks private.
+    @Test("query refuses a channel and never reaches the server as QUERY")
+    func queryRejectsChannels() throws {
+        let refusal = try error("/query #swift")
+        #expect(refusal.contains("/join"))
+        #expect(!refusal.contains("QUERY"))
+
+        let usage = try error("/query")
         #expect(usage.contains("/query"))
         #expect(!usage.contains("QUERY"))
     }

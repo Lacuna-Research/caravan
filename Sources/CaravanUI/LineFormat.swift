@@ -41,6 +41,21 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case realNameChange
     /// An invitation, ours or — under `invite-notify` — somebody else's.
     case invite
+    /// A CTCP request somebody sent us — `VERSION`, `PING` and the rest.
+    ///
+    /// Its own kind rather than a notice, because it is the one line in the buffer that
+    /// somebody else's software wrote rather than somebody else: a user should be able to
+    /// theme "clients probing me" separately from "people talking to me".
+    case ctcpRequest
+    /// A CTCP reply to something we asked.
+    case ctcpReply
+    /// A CTCP reply *we* sent, seen coming back under `echo-message`.
+    ///
+    /// The live run found it rendering as ``ctcpReply`` — `CTCP reply from caravan-q5`,
+    /// our own nick, reading as though a stranger had answered us. The line is worth
+    /// keeping, because it is what makes the auto-reply and its rate limit visible at
+    /// all, but it has to say which direction it went.
+    case ownCtcpReply
     case numeric
     case clientError
     /// A `WARN` or `NOTE` under `standard-replies`. A `FAIL` is a ``clientError``: it
@@ -196,6 +211,22 @@ public struct LineFormatTable: Sendable {
             colour: .event
         ),
         .invite: LineFormat(template: "$timestamp*** $text", colour: .event),
+        // mIRC's `[bob VERSION]`, spelled out. The brackets alone carried the meaning
+        // when every mIRC user knew them; the word does the same job for everyone else.
+        .ctcpRequest: LineFormat(
+            template: "$timestamp*** CTCP $text from $nick",
+            colour: .event
+        ),
+        .ctcpReply: LineFormat(
+            template: "$timestamp*** CTCP reply from $nick: $text",
+            colour: .notice
+        ),
+        // `to`, not `from`, and the recipient in `$nick` — the same thing
+        // `ownPrivateMessage`'s arrow does for a message that left the window.
+        .ownCtcpReply: LineFormat(
+            template: "$timestamp*** CTCP reply to $nick: $text",
+            colour: .ownText
+        ),
         .serverNotice: LineFormat(template: "$timestamp*** $text", colour: .notice),
         .numeric: LineFormat(template: "$timestamp$text", colour: .dim),
         .clientError: LineFormat(template: "$timestamp*** $text", colour: .error),

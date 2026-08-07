@@ -3282,3 +3282,107 @@ extended: adding the clause naively took the file to exactly 100 of its 100-line
 is not headroom, it is a trap for whoever adds the next one. Pruned by tightening the same
 sentence ("for every" to "per", dropping "progress" and "the") — the cap is meant to force
 exactly that.
+
+## Stage 2, prompt 5 — Queries and CTCP
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+PM windows, and CTCP stops rendering as control characters.
+
+### Decisions
+
+**CTCP parsing went to `IRCProtocol`, not `IRCSession`.** `PLAN.md`'s module table has said
+`CTCP` belonged there since stage 0 and it had never been true — only `ACTION` was handled,
+in `EventTranslator.unwrapAction`. `CTCPMessage` is now a parser and a wire form in the pure
+module, which CI builds on Linux. Same reasoning as prompt 1's colour tables: a wrapper
+exercised only through a text view is one nobody exercises. `unwrapAction` survives as a
+three-line shim over it, because the local-echo path wants `/me` unwrapped without caring
+whether anything else was a CTCP. *Revisit if:* nothing. This is where the table said it goes.
+
+**One rate-limit bucket per connection, not per sender.** A per-sender bucket behaves better
+for the honest case — one flooder cannot silence replies to anyone else — and is defeated by
+spreading the flood across a thousand spoofed sources, which is the only case the limit
+exists for. Global is the direction that cannot be gamed. Burst 5, one token back every 5s:
+a person typing `/ctcp` a few times never notices, and twenty requests produce five answers.
+*Revisit if:* someone reports legitimate replies being dropped in a busy channel, which
+would argue for a larger burst rather than a per-sender bucket.
+
+**The throttle explains itself once per burst, not once per request.** Fifty suppressed
+requests producing fifty "not answering" lines is the flood arriving by a second route.
+`CTCPThrottle.Outcome.suppressed(firstOfBurst:)` carries the distinction, and the *requests*
+are each still a line — which is what makes the flood visible at all.
+
+**No `ERRMSG` for an unrecognised keyword.** The older specs suggest one. It is a free
+amplifier for whoever picks the keyword, and it tells them which client they are talking to.
+Silence instead. `CLIENTINFO` still advertises honestly, and a test walks its own list to
+check every keyword in it is one the responder actually answers.
+
+**A `NOTICE` never opens a query window; a `PRIVMSG` does.** Services, the bouncer and half
+the network send notices, and a window per sender is how mIRC's status window came to exist.
+A notice from someone you already have a window open with lands *in* it, which is NickServ
+answering in the NickServ window. *Revisit if:* someone wants a `BouncerServ` window without
+having spoken first — `/query BouncerServ` already does that.
+
+**`/msg <nick>` opens the conversation window. mIRC's does not.** The deviation is forced:
+under `echo-message` the server hands back a copy of what we sent, it arrives through the
+inbound path, and it opens the window. Matching that on a network without the capability is
+the only way the client behaves the same on both. Recorded because it *is* a departure from
+the client this one is modelled on. `/query` remains the way to open a window with nothing
+to say.
+
+**`QueryBuffer` is its own type, not `ChannelBuffer` with an empty roster.** A query has no
+membership, no topic and no modes; hollow versions of all three would invite code that reads
+them. The cost is a second array on `ConnectionViewModel` — which is also how "queries sort
+after channels" (§12) became the order two arrays are concatenated in rather than a
+comparator that has to be right everywhere it is written.
+
+### Learned
+
+**The mirrored casemapping was stale where it mattered most.** `ConnectionViewModel` learns
+the server's mapping from events that carry a folded name, so before any channel event it is
+still the `ISUPPORT` default. Queries are keyed by nick and can exist before any channel
+does: `/query bob` keyed the buffer under `rfc1459` while bob's reply arrived folded under
+`ascii`, and the same person got two windows. `openQuery(with:)` is `async` now and reads the
+mapping off the actor. Caught by a test that compared two `SidebarItem.query` values and
+found them unequal — `IRCNick`'s equality includes its mapping, which is exactly the bug
+worth surfacing rather than papering over, as its doc comment already claimed.
+
+**`Duration.seconds` already existed** on `BackoffPolicy`'s extension. A second copy compiled
+fine and would have been a redeclaration a module later.
+
+### The live run, against Libera over TLS
+
+Connected from a hand-written config the sheet pre-filled and did not clobber. A scripted
+Python peer — not a second Caravan, since macOS will not foreground two copies of one bundle
+— held a conversation, which opened a window of its own with the bullet sigil, sorted under
+its network, its header band showing the message count and both ends of the conversation.
+One `VERSION` was answered once. Twenty in a burst were answered **exactly five times**, with
+one line saying why and not fifteen. A second pass, paced inside Libera's own message
+throttle, got correct answers to `VERSION`, `PING` (argument echoed verbatim), `TIME`,
+`CLIENTINFO` and `USERINFO`; `SOUND` and `ACTION` drew none. ⌘W closed the conversation with
+nothing on the wire, and the toolbar said "Close Conversation" rather than "Close Channel".
+
+**Fifty at once was not sent, and could not be.** Libera throttles the *sender*: the first
+pass' twenty produced a stream of `*** Message to caravan-q5 throttled due to flooding`.
+Fifty-at-once is covered instead by `CTCPSessionTests.floodIsThrottled`, which does it over a
+real socket against a scripted server. Worth saying plainly: a public network will not let
+you rehearse the attack its own limits exist to stop.
+
+### Three defects the live run found, and no test would have
+
+1. **The header band hid the useful half.** It shrinks to two lines, and the summary read
+   count-then-`First` — so the opening line of the conversation was visible and the most
+   recent one was behind the chevron. `Latest` comes second now. §14 lists "first and last"
+   in that order; the band does not, and the reason is written where the code is.
+2. **Our own auto-reply read as somebody answering us.** Libera negotiates `echo-message`, so
+   the `NOTICE` we send comes back — and rendered as `*** CTCP reply from caravan-q5`, our own
+   nick, as though a stranger had answered a question we never asked. Now `.ownCtcpReply`:
+   `*** CTCP reply to caravan-peer6: ...`, the recipient in `$nick`, the same thing
+   `ownPrivateMessage`'s arrow does. Kept rather than suppressed — it is what made the rate
+   limit visible in the window at all.
+3. **`VERSION` reported "macOS Version 26.5.2 (Build 25F84)".**
+   `operatingSystemVersionString` includes the word and the build number. Assembled from the
+   numeric components instead: `Caravan 0.1.0 (macOS 26.5.2)`.
+
+All three are now unit tests. None of them could have been: two are about what a line *says*,
+and the third about which line a two-line clamp keeps.
