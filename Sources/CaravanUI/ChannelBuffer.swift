@@ -40,6 +40,35 @@ public final class ChannelBuffer: Identifiable {
         self.channel = channel
     }
 
+    /// The channel's ban, quiet, invite and except lists, by mode letter.
+    ///
+    /// Empty until asked for: a list is a `MODE #swift +b` round trip, and asking for four
+    /// of them on every join would be four requests per channel that nobody looked at.
+    public private(set) var listModes: [Character: [ListModeEntry]] = [:]
+
+    /// Lists whose reply is still arriving, so the dialog can say "loading" rather than
+    /// "empty" — the two look identical and mean opposite things.
+    public private(set) var pendingListModes: Set<Character> = []
+
+    /// Marks a list as requested, and clears whatever was there.
+    ///
+    /// Replaced rather than merged: the server sends the whole list every time, and a
+    /// merge would keep entries that had been removed since.
+    public func beginListMode(_ mode: Character) {
+        pendingListModes.insert(mode)
+        listModes[mode] = []
+    }
+
+    func recordListMode(_ mode: Character, entry: ListModeEntry) {
+        if !pendingListModes.contains(mode) { beginListMode(mode) }
+        listModes[mode, default: []].append(entry)
+    }
+
+    func finishListMode(_ mode: Character) {
+        pendingListModes.remove(mode)
+        if listModes[mode] == nil { listModes[mode] = [] }
+    }
+
     /// Whether we are in the channel. Drives the greyed "not in here right now" state,
     /// which a parted, kicked or disconnected buffer all share.
     public var isJoined: Bool { channel.isJoined }

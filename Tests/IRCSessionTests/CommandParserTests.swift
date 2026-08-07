@@ -292,12 +292,14 @@ struct CommandParserTests {
     /// yet wired up.
     @Test("an unknown command is uppercased and sent verbatim")
     func unknownCommand() {
-        #expect(wire("/whois bob") == ["WHOIS bob"])
-        #expect(wire("/WhoIs bob") == ["WHOIS bob"])
-        #expect(wire("/away") == ["AWAY"])
-        #expect(wire("/oper alice hunter2") == ["OPER alice hunter2"])
+        // Deliberately verbs the switch does not know. `/whois`, `/away` and `/oper` used
+        // to stand here and are handled commands now — which is exactly the drift this
+        // test would otherwise stop catching.
+        #expect(wire("/knock #secret") == ["KNOCK #secret"])
+        #expect(wire("/KnOcK #secret") == ["KNOCK #secret"])
+        #expect(wire("/silence") == ["SILENCE"])
         // The colon is the user's to add, exactly as it would be in `/raw`.
-        #expect(wire("/away :back later") == ["AWAY :back later"])
+        #expect(wire("/knock #secret :let me in") == ["KNOCK #secret :let me in"])
     }
 
     /// A bare slash has to answer rather than vanish, and the answer people need is what
@@ -415,6 +417,12 @@ struct CommandParserTests {
                     }
                     return false
                 }()
+            // **Two commands are indistinguishable from the passthrough, correctly.**
+            // A bare `/away` really does send bare `AWAY`, and so does `/list` — which is
+            // what an unhandled verb would produce too, so this heuristic cannot tell them
+            // apart and should not pretend to. Their arguments are covered by their own
+            // tests.
+            guard !["away", "list"].contains(name) else { continue }
             #expect(!isPassthrough, "/\(name) is offered but falls through to the server")
         }
     }

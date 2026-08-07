@@ -271,10 +271,22 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 14. **Full command set.** `/whois /whowas /who /mode /op /deop /voice /devoice /kick
     /ban /unban /kickban /topic /invite /notice /away /back /list /names /ignore /oper
     /server /disconnect /amsg /ame /say /ctcp /ping /clear /clearall`.
+
+    *Done (stage 2 prompt 8), with three exceptions that are scope rather than omissions.
+    **`/ignore` moved to item 22**, the ignore list: it is the same matching machinery, and
+    half of it would be worse than none. `/list` sends `LIST` and renders the numerics —
+    the browser is item 24. `/away` and `/back` send the line — the away system is item 26.
+    `/ban` names a person and the connection resolves `*!*@host` from the roster, argued in
+    `BUILD-LOG.md`.*
 15. **Tab completion.** mIRC-style cycling nick completion with configurable suffix
     (`: ` at line start, ` ` elsewhere), plus channel and command completion.
 16. **Modes.** Render mode changes readably, track channel modes, ban/quiet/invex list
     dialogs (`367`/`368`, `346`–`349`), channel modes sheet.
+
+    *Done (stage 2 prompt 8). One dialog with a picker rather than four, because the four
+    numerics are one shape four times. `CHANMODES` group A is now consulted when tracking
+    modes — a channel does not have a `+b`, it has a ban list, and not knowing that put one
+    arbitrary ban in the channel's mode line.*
 17. **Context menus.** Nick-list and channel right-click menus: whois, query, op/deop,
     voice, kick, ban, kickban, ignore, DCC chat/send, slap. Hard-coded now, script-driven
     in stage 3.
@@ -314,7 +326,8 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     dedicated notifications interface deferred from GUI-DESIGN-NOTES.md §18; the
     out-of-the-box triggers are highlights and private messages — not every message,
     not highlights alone.
-22. **Ignore list.** Wildcard `nick!user@host` masks with mIRC-style level flags
+22. **Ignore list.** *(also owns `/ignore`, moved here from item 14 by stage 2 prompt 8:
+    the command is a front for this matching machinery and was not worth half-building)* Wildcard `nick!user@host` masks with mIRC-style level flags
     (`-pcntikm`), temporary ignores with duration.
 23. **Notify list.** `MONITOR` where available, `ISON` polling as fallback; online/offline
     events, notify window, sounds.

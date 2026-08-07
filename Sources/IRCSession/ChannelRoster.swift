@@ -45,7 +45,9 @@ struct ChannelRoster {
     /// defaults, so this runs on every connection whether or not the server moved.
     mutating func updateCapabilities(_ newCapabilities: ServerCapabilities) {
         let mappingChanged = newCapabilities.caseMapping != capabilities.caseMapping
-        let prefixesChanged = newCapabilities.prefixes != capabilities.prefixes
+        let prefixesChanged =
+            newCapabilities.prefixes != capabilities.prefixes
+            || newCapabilities.channelModes.lists != capabilities.channelModes.lists
         capabilities = newCapabilities
         guard mappingChanged || prefixesChanged else { return }
 
@@ -59,7 +61,11 @@ struct ChannelRoster {
         remappedOrder.reserveCapacity(order.count)
         for name in order {
             guard let channel = channels[name] else { continue }
-            let updated = channel.remapped(mapping: mapping, prefixes: newCapabilities.prefixes)
+            let updated = channel.remapped(
+                mapping: mapping,
+                prefixes: newCapabilities.prefixes,
+                listModes: newCapabilities.channelModes.lists
+            )
             remapped[updated.name] = updated
             remappedOrder.append(updated.name)
         }
@@ -156,7 +162,8 @@ struct ChannelRoster {
         case .raw, .registered, .message, .numeric, .clientError, .clientNotice,
             .joinFailed, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply, .invited,
-            .batchStarted, .batchEnded, .bouncerNetworks, .ctcpRequest, .ctcpReply:
+            .batchStarted, .batchEnded, .bouncerNetworks, .ctcpRequest, .ctcpReply,
+            .listModeEntry, .listModeEnd:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
             // the channel it names may be one we have never seen. `.invited` likewise —
             // an invitation is not a membership. A CTCP is addressed to the client rather
@@ -204,6 +211,7 @@ struct ChannelRoster {
             channels[name] = Channel(
                 name: name,
                 prefixes: capabilities.prefixes,
+                listModes: capabilities.channelModes.lists,
                 mapping: capabilities.caseMapping
             )
             order.append(name)

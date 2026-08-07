@@ -29,6 +29,12 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case mode
     /// 324's reply, which names no one — a different sentence from a mode *change*.
     case channelMode
+    /// One entry of a ban / quiet / invite / except list, or the end of one.
+    ///
+    /// Its own kind rather than ``channelMode``, which the live run showed reading
+    /// `*** Channel modes for : +b *!*@…` — the wrong sentence, and with an empty channel
+    /// because that template wants a `$channel` a list entry never filled in.
+    case listMode
     case topic
     case nickChange
     /// `away-notify`: someone went away or came back.
@@ -195,6 +201,10 @@ public struct LineFormatTable: Sendable {
             template: "$timestamp*** Channel modes for $channel: $text",
             colour: .event
         ),
+        // The whole sentence is built by the renderer: "Ban list for #swift" and "End of
+        // ban list for #swift" are different enough shapes that a template holding both
+        // would be a template with a hole in it.
+        .listMode: LineFormat(template: "$timestamp*** $text", colour: .event),
         .topic: LineFormat(template: "$timestamp*** $text", colour: .event),
         .nickChange: LineFormat(
             template: "$timestamp*** $nick is now known as $text",

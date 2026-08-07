@@ -306,6 +306,9 @@ public final class AppModel {
     /// Whether ⌘K's palette is up.
     public var isShowingQuickSwitcher = false
 
+    /// Whether the channel modes sheet is up, for the selected channel.
+    public var isShowingChannelModes = false
+
     /// Rows ejected into windows of their own (§1, §10), in the order they were ejected.
     ///
     /// Session state, not settings: which windows are open is the sort of thing macOS
@@ -558,6 +561,18 @@ public final class AppModel {
                 await connection.disconnect()
             case .quit(let reason):
                 await connection.quit(reason: reason)
+            case .toAllChannels(let text, let isAction):
+                await sendToAllChannels(text, isAction: isAction)
+            case .ban(let channel, let subject, let isSet, let kickReason):
+                await connection.ban(
+                    channel: channel,
+                    subject: subject,
+                    isSet: isSet,
+                    kickReason: kickReason,
+                    from: target
+                )
+            case .clearScrollback(let everywhere):
+                clearScrollback(everywhere: everywhere, from: target)
             case .openQuery(let nick, let message):
                 // Selected, unlike a query opened by an arriving message: this one was
                 // asked for, and `/query bob` that did not take you to bob would be a
@@ -586,6 +601,43 @@ public final class AppModel {
                 connection.showNotice(answer, in: target)
             }
         }
+    }
+
+    /// `/amsg` and `/ame`: **every channel on every connected network**.
+    ///
+    /// Across networks, not just this one — mIRC's behaviour, and the reading that makes
+    /// the command worth having: "tell everyone I am going out" is not a per-network
+    /// thought. Only channels we are actually *in*: a parted buffer still in the tree
+    /// would produce a `PRIVMSG` the server answers with 404.
+    ///
+    /// Sent one channel at a time rather than as a comma list, so that flood protection
+    /// and the local echo see them as the separate messages they are.
+    private func sendToAllChannels(_ text: String, isAction: Bool) async {
+        let body =
+            isAction ? CTCPMessage(command: "ACTION", argument: text).wireForm : text
+        for connection in connections where connection.isConnected {
+            for buffer in connection.channels where buffer.isJoined {
+                await connection.send(
+                    IRCMessage(verb: "PRIVMSG", parameters: [buffer.name.raw, body]),
+                    from: .channel(buffer.name)
+                )
+            }
+        }
+    }
+
+    /// `/clear` and `/clearall`.
+    ///
+    /// Scrollback belongs to the view models, so this is the app's to do rather than
+    /// anything the session could be asked for.
+    private func clearScrollback(everywhere: Bool, from target: Target?) {
+        guard everywhere else {
+            (selection.flatMap(buffer(for:))?.log ?? activeConnection?.log)?.clear()
+            return
+        }
+        for connection in connections {
+            for entry in connection.buffers { entry.buffer.log.clear() }
+        }
+        debug.clearCanvas()
     }
 
     /// `/server` and `/connect <host>`: the stored identity, pointed somewhere new.
