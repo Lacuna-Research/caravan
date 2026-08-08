@@ -4236,3 +4236,93 @@ the scripted-server test asserts the ordering precisely, which is the better evi
 selects the row without firing `onTapGesture(count: 2)` reliably inside a `Section`; the
 Connect button and the context menu were used instead. Worth a human's hand before anyone
 relies on it.
+
+## Stage 2 — splitting prompt 13, and why 14 and 15 stayed whole
+
+**Commit:** see PR  **Date:** 2026-08-08
+
+Prompt 11 shipped with six defects found in one acceptance run, which is a scope signal as
+much as a diligence one. This is the follow-up: reading the remaining two-item prompts
+before starting them rather than after.
+
+### Prompt 13 splits; the pairing argument did not hold
+
+It carried two `PLAN.md` items — Highlights & notifications (21) and Ignore list (22) — on
+the grounds that they are "the same matching machinery pointed in opposite directions".
+Reading it against the code, that is not quite true. Highlights match *message text*
+against keywords and patterns. Ignores match *senders* against `nick!user@host` masks, and
+`IRCMask` already exists for that. The two matchers share neither their input nor their
+implementation.
+
+What they do share is one seam: `ConnectionViewModel.append(_:)`, where a line becomes a
+buffer line, an activity state and a URL-catcher entry. That is a few lines of overlap, not
+a prompt's worth of common ground — and it is exactly the kind of thin-sounding-thick
+justification that produced an oversized prompt 11.
+
+Each half is a prompt on its own terms. **13a** is masks, level flags, durations, a
+command, a menu item and three suppression points. **13b** is keyword and regex lists,
+macOS notifications, a Dock badge, a menu-bar item, per-event sounds and a Sounds tab —
+three delivery surfaces, each with its own permission and lifecycle story.
+
+**13a goes first, and the ordering is the substantive part of the split.** An ignored line
+must never reach the highlight rules. Whichever half lands second inherits the other's
+suppression points: highlights first means ignore acquires a fourth thing to suppress;
+ignore first means the highlight rules simply never see a suppressed line. One order costs
+nothing, the other costs a note that nobody reads until it is wrong.
+
+### 14 and 15 were examined and left whole
+
+Recorded because "we looked" is worth as much as "we split", and stops the question being
+asked again.
+
+**14 (Notify list · Away system)** is the same two-item shape as 13 and stays together. The
+halves are much smaller — `MONITOR` with an `ISON` fallback and a window; a command, an
+idle timer and a log — and the shared seam is real: both read the presence capabilities
+`NegotiatedCapabilities` already tracks, and both have to tell "absent" from "this server
+does not say", which is the trap prompt 3's note names.
+
+**15 (Channel list)** is one item and one surface. The thing that makes it sound large is
+that Libera answers `/list` with about 22,000 channels — but that is not a separable second
+prompt, because a list built without it in mind is not a list to make fast later, it is a
+list to write again.
+
+### Lettered, not renumbered — and the reason is the append-only log
+
+`13a`/`13b` rather than making the split into 13 and 14 and shifting everything after it.
+
+Renumbering would have been mechanically simpler, but **`BUILD-LOG.md` is append-only and
+holds five references to "prompt 13" through "prompt 17"** written by prompts 8, 9 and 10.
+Renumbering makes every one of them quietly wrong, in a file that cannot be corrected. A
+silently wrong document is the exact failure this project's discipline exists to prevent,
+and lettering keeps all five true: "the matching machinery is prompt 13's, with the ignore
+list" resolves to 13a without ambiguity.
+
+It is also the convention `PLAN.md` already uses for split items — 18a, 22a, 34a, 44a — and
+`check-docs.sh`'s item rule has matched `[0-9]+[a-z]*` since before this.
+
+### The check that had to change, and the bug it would have had
+
+**`check-docs.sh` compared a prompt *number* to a *count*.** The staleness rule reads
+`**Status:** N/18 complete` — a count of finished prompts — and flagged a carry-forward note
+whose prompt number was `<= N`. Those were the same thing only because prompts were numbered
+1…17 with nothing split.
+
+With 13a and 13b in the queue they diverge: awk's `$3 + 0` reads both as `13`, so finishing
+13a (count 13) would have flagged **13b's** notes as stale — a false failure on the very next
+prompt. Counting headings in order and comparing position instead compares like with like,
+works whether or not anything is split, and names the offender by its label rather than by a
+number that may now be shared.
+
+Verified by setting the status to 13 and watching it report `12 13a` and *not* 13b, which is
+the correct answer and the one the old rule could not have given.
+
+Two smaller edits followed: the README table's row regex gained `[a-z]*`, and the total went
+to 18.
+
+### Learned
+
+**`git checkout -- <file>` to undo a one-line experiment reverts the whole file.** Used to
+restore a status line after testing the staleness rule, it took the entire prompt-13 split
+with it — about eighty lines, rewritten. The undo wanted was to the *line*, and the tool
+operates on paths. Cheap here because the content was still in the session; it would not be
+cheap twice.
