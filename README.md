@@ -22,7 +22,7 @@
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
 [![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-2ea44f)](STAGE1-PROMPTS.md)
-[![stage 2: 9/17](https://img.shields.io/badge/stage%202-10%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
+[![stage 2: 9/17](https://img.shields.io/badge/stage%202-11%2F17%20prompts-blue)](STAGE2-PROMPTS.md)
 
 </div>
 
@@ -158,7 +158,7 @@ roadmap item below is attached to one of them.
 | 8 | Commands and modes | ✅ done |
 | 9 | Things you can do to what is in the buffer | ✅ done |
 | 10 | Options | ✅ done |
-| 11 | The Dashboard and the server list | ⬜ |
+| 11 | The Dashboard and the server list | ✅ done |
 | 12 | Logging | ⬜ |
 | 13 | What deserves attention, and what deserves none | ⬜ |
 | 14 | Presence | ⬜ |

@@ -89,6 +89,8 @@ public struct DetachedBufferView: View {
         switch item {
         case .settingsAndDebug:
             SettingsDebugCanvas(model: model)
+        case .dashboard:
+            DashboardCanvas(model: model)
         case .status:
             if let connection {
                 StatusBufferView(model: model, connection: connection, window: .detached(item))
@@ -137,7 +139,8 @@ extension AppModel {
     public func title(of item: SidebarItem) -> String {
         switch item {
         case .settingsAndDebug: "Settings & Debug"
-        case .status(let id): connection(id: id)?.displayName ?? "Caravan"
+        case .dashboard: "Dashboard"
+        case .status(let id): connection(id: id)?.treeName ?? "Caravan"
         case .channel(_, let name): name.raw
         case .query(_, let nick): nick.raw
         }
@@ -147,12 +150,12 @@ extension AppModel {
     /// since `#music` on two networks are different rooms (§12).
     public func subtitle(of item: SidebarItem) -> String {
         switch item {
-        case .settingsAndDebug:
+        case .settingsAndDebug, .dashboard:
             ""
         case .status(let id):
             connection(id: id)?.statusSummary ?? ""
         case .channel(let id, _), .query(let id, _):
-            connection(id: id)?.displayName ?? ""
+            connection(id: id)?.treeName ?? ""
         }
     }
 }

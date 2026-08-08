@@ -4096,3 +4096,143 @@ Seeded `caravan.conf` by hand with two comment styles, blank lines, an unknown k
 **Not verified live: being asked again after forgetting a certificate.** That needs a server
 whose certificate the system rejects; the file and the list were both confirmed, and
 `TrustTests` already covers the prompt itself against a real self-signed handshake.
+
+## Stage 2, prompt 11 — The Dashboard and the server list
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+The app's front door: a server list you keep, a Dashboard canvas to keep it on, and the
+stable network name everything durable has been waiting for.
+
+### The decision this prompt existed to make
+
+**A network's stable, user-facing name is a slug on its server-list entry.** `PLAN.md`'s
+longest-standing open question, blocking since stage 1, and now closed. Neither existing
+candidate served: `ConnectionViewModel.id` is a fresh `UUID` per launch, so nothing written
+down survives a restart, and `displayName` comes from `ISUPPORT NETWORK=`, which the
+*server* owns — a name your bindings hang off must not be something a remote operator can
+rewrite. So it belongs to the entry, and therefore to the user.
+
+**Lower-case `[a-z0-9_-]`, and the two exclusions are the interesting part.** No slash,
+because `libera/#swift` is the addressing form item 34a specifies and a name containing one
+could not be told from a name plus a buffer. **No dot**, which is less obvious: both key
+families put the name in the *middle* of a dotted key — `order.libera.channels` — so a name
+with a dot in it makes that key ambiguous to parse. Constraining the name is much cheaper
+than quoting the key. Lower case only, so two entries cannot differ by case alone and leave
+the user guessing which of `Libera` and `libera` their binding meant.
+
+Derived on creation from the host (`irc.libera.chat` → `libera`, dropping a leading
+`irc`/`chat`/`www` and then the public suffix) or from the bouncer network id, which is
+already the right word. Suffixed `-2` on collision rather than refused: adding a second
+Libera account should not make you invent a word for it before you can connect.
+
+### The list lives in its own file
+
+`$XDG_CONFIG_HOME/caravan/servers.conf`, with the same `ConfigFile` machinery — write
+through on change, rewrite only the lines you own, survive being hand edited — but not the
+same file as `caravan.conf`. Ten entries of thirteen fields would bury the handful of
+scalars a user actually opens the settings file to change. **The precedent is
+`known_hosts`**, which is separate for exactly this reason: a list of records has a
+different shape and a different lifecycle from a page of settings. Keys are
+`<name>.<field>`, which parses on the first dot, and is why the name may not contain one.
+
+Only what differs from a default is written, so a hand-written entry is one line —
+`libera.host = irc.libera.chat` — and everything else takes its default.
+
+### Migration, which is the part that could have lost data
+
+`binding.N` and `order.<network>.{channels,queries}` were both written against
+`host:port[bouncer]`. `NetworkKeyMigration` rewrites them on launch, matching each old key
+to the entry with that host, port and bouncer id — and **where nothing matches, it creates
+the entry**. Somebody who bound ⌘3 last week finds ⌘3 working this week and the network it
+names sitting in their list. Dropping a key because its format changed is not a migration.
+
+Idempotent by construction rather than by a flag: a `ServerEntry` name can hold neither a
+colon nor a bracket, so a migrated key no longer parses as the old form and the second
+launch has nothing to match.
+
+**`server.host` in `caravan.conf` becomes the first entry** when the list is empty. One
+rule covering two things: it migrates a real user, who has exactly one server they care
+about and it is the one the Connect sheet last used; and it keeps the acceptance-run
+harness working, which has seeded that key since prompt 3 and would otherwise have died
+with the sheet.
+
+### `ConnectSheet` is deleted
+
+Not deprecated — the file is gone, per §13's "the two should not both exist". `TrustSheet`
+lived in it and survived, in a file of its own: a certificate question genuinely is modal,
+because the TLS handshake is held open waiting for the answer. The two layout tests that
+hosted the sheet now host `ServerEditor`, which is the surface that inherited its job and
+the same kind of `Form` — so they still guard prompt 2's row-collapse defect.
+
+The width assertion did not survive the move, and the reason is worth recording: the sheet
+declared `.frame(width: 460)`, so its fitting width was a promise. The editor lives in a
+resizable split pane, where fitting width is a *preference* — 744pt, meaning "I would like
+to be wider", not "I overflow". Asserting on it would have tested the paragraph lengths.
+What replaced it asserts no leaf draws past the pane, which is the actual failure.
+
+### Five defects, all found by the live run
+
+The most any acceptance run in this project has caught, and four of them are one shape:
+**state that exists in more than one copy.**
+
+1. **Autojoin and perform never ran.** `waitUntilRegistered` treated `.disconnected` as an
+   ending, but `.notStarted` is the *initial* state — the wait began before dialling had
+   started, saw a `.disconnected`, and gave up a millisecond in. `DisconnectReason.isNotStarted`
+   now draws the distinction, and it is the sort of bug no unit test written by the same
+   person would have caught, because the same wrong assumption would be in both.
+2. **The tree showed the server's word, not the user's.** `Libera.Chat` rather than
+   `libera`. Two entries for the same network — which is precisely why the slug exists —
+   would have drawn two identical rows. `ConnectionViewModel.treeName` prefers the user's
+   name; `displayName` stays as the server's own word for the prose that wants it.
+3. **First run did not land on the Dashboard**, contradicting §13's "it is what you land
+   on with no connections open". It showed a "Not connected" placeholder with a button that
+   opened the Dashboard, which is a click spent on nothing.
+4. **Return in the editor connected instead of committing a rename.** The Connect button
+   carried `.keyboardShortcut(.defaultAction)`, and a form full of text fields must not
+   have a default button.
+5. **A rename left a duplicate entry.** This one is the good one. Renaming `libera` to `lc`
+   wrote `lc.*` correctly and left every `libera.*` key behind. The cause: when the entry is
+   renamed the list's selection still names the old one, the detail pane falls back to "no
+   server selected", and the editor is torn down — during which SwiftUI writes its fields'
+   last values back through their bindings, under the old name, **resurrecting the entry the
+   rename had just moved away from.** Two fixes, because either alone is a coincidence:
+   `ServerEditor.update` refuses to write an entry the list no longer holds, and the rename
+   carries the selection with it.
+
+And a sixth, found while confirming the fifth: **a rename reached the files but not the
+three in-memory copies.** `ConnectionViewModel.networkName`, `BufferBindings.slots` and
+`BufferOrder`'s dictionaries are all parsed at launch, so after a rename ⌘3 lost its badge
+and reported the network as not open while it sat in the tree. `AppModel.renameServer` is
+now the one entry point and updates all three; `ServerList.rename` alone is not enough, and
+its documentation says so.
+
+**One test nearly passed against the bug it was written for.** The first version seeded
+`binding.3` by writing the key to the config file — but `BufferBindings` parses that file
+once at launch, so the key was invisible to it and the assertion read `nil`. Binding through
+the live API is what makes the test exercise the in-memory copy at all.
+
+### The live run, against Libera
+
+Seeded a hand-written `servers.conf` with two entries and a `caravan.conf` carrying an
+old-format `binding.3 = irc.libera.chat:6697/##caravan-p11`.
+
+- **The migration ran on launch** and rewrote both the binding and the order key onto
+  `libera`, matching the hand-written entry rather than creating a duplicate. Comments
+  survived.
+- Both entries appeared under their group heading, read from a file the app had never
+  written.
+- Connecting autojoined `##caravan-p11`, and the tree row read **`libera`** — the user's
+  name, not `Libera.Chat`.
+- ⌘3 opened the channel: an old-format binding, migrated, still working.
+- Renaming to `lc` moved `binding.3` and the entry, left **no** `libera.*` key behind, and
+  the connection, the binding and the tree all followed.
+
+**Not distinguishable live: the perform line.** `/mode caravan-p11 +i` is invisible against
+Libera's own `+Ziw`. Autojoin runs after perform in the same function, so the path executed;
+the scripted-server test asserts the ordering precisely, which is the better evidence.
+
+**Not driven live: double-clicking a list row to connect.** The synthesised double-click
+selects the row without firing `onTapGesture(count: 2)` reliably inside a `Section`; the
+Connect button and the context menu were used instead. Worth a human's hand before anyone
+relies on it.

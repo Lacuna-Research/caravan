@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 10/17 complete. Next: prompt 11.
+**Status:** 11/17 complete. Next: prompt 12.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -545,46 +545,69 @@ groups, per-server nick, password, autojoin channels, perform-on-connect command
 connect-on-startup, favourites. **Retires `ConnectSheet`**, which is shipped code to
 delete rather than a paper plan. Statistics stay deferred to stage 4.
 
-**Carry-forward** *(consumed when this prompt runs)*
+```
+Build the app's front door: a server list you keep, on a Dashboard canvas, and the stable
+network name that everything else has been waiting for.
 
-- From prompt 6: **⌘1–9 bindings are already persisted, under a key this prompt supersedes.**
-  `caravan.conf` holds `binding.3 = irc.libera.chat:6697/#swift` — `host:port`, plus
-  `[bouncer-network-id]` where there is one, built by `ConnectionViewModel.bindingNetworkKey`
-  and parsed by `BufferBinding.init(rawValue:)`. That was the only durable identifier
-  available: `displayName` comes from `ISUPPORT NETWORK=` and the server can change it,
-  `id` is a fresh `UUID` per launch. **This prompt answers `PLAN.md`'s "what is a network's
-  stable, user-facing name?", so it is also the prompt that migrates these keys** — and
-  `caravan.conf`'s keys are public API, so the migration has to read the old form rather than
-  silently dropping bindings people made.
-- From prompt 7: **the same network key now carries a second family of settings** —
-  `order.<network>.channels` and `order.<network>.queries`, the manual tree order (§12). Both
-  are built by `ConnectionViewModel.networkKey`, so the migration is one function and two key
-  prefixes. Retiring `ConnectSheet` also has to keep `ConnectionSettings.lastUsed` working
-  or the seeded-config trick every acceptance run since prompt 3 has relied on stops working.
-- From prompt 10: **authentication is yours, and deliberately so.** Prompt 3's note sent it
-  to the Options Connect tab on the grounds that this prompt retires the sheet; prompt 10
-  sent it back, because a SASL method, an account and a password are *per server* and
-  Options is global. So the Connect tab holds identity only — nickname, alternate, ident,
-  real name, in `ConnectionSettings.Key` — and `AuthenticationChoice`, `Key.authentication`,
-  `.account`, `.certificateLabel` and the two `CredentialStore` passwords arrive here with
-  the server list. Until they do, `ConnectSheet` is still the only way to set them, which is
-  a reason not to delete it a moment before its replacement works.
-- From prompt 10: **`ChatSettings` is no longer the only thing writing `caravan.conf`**, and
-  the server list will be the third. `OptionsPane` in `SettingsDebugCanvas.swift` is the
-  worked example of the two rules — write straight through on change, and touch only the
-  lines you own — and `ConfigFileTests` has a hand-edited-file test worth copying rather
-  than re-deriving.
-- **Give every server-list entry a stable, user-editable short name**, and treat it as an
-  identifier rather than a label. `PLAN.md` item 34a addresses buffers as `libera/#swift`
-  from the command line, and stage 3's scripting will name networks the same way, so this
-  is the thing they both hang off. Neither existing candidate serves: `ConnectionViewModel
-  .id` is a fresh `UUID` per launch, and `displayName` comes from `ISUPPORT NETWORK=`,
-  which the server owns and may change under you. Settle it here — renaming an identifier
-  after people have scripted against it is a breaking change with no good migration. It
-  wants a uniqueness check and a slug-shaped constraint (no `/`, since that is the
-  separator).
+**The name is the load-bearing part, and it is settled here.** `PLAN.md`'s "what is a
+network's stable, user-facing name?" has been blocking since stage 1 and two families of
+`caravan.conf` keys are already written against a placeholder. Get the name right and the
+rest of this prompt is a list and a form.
 
-*To be written out before it starts.*
+- **Every entry has a `name`: a slug, unique, the user's to edit, and the identifier.**
+  Lower-case `[a-z0-9_-]` — **no dots and no slashes**. Slashes because `libera/#swift` is
+  the command-line and scripting form (item 34a); dots because both key families put the
+  name in the *middle* of a dotted key — `order.<name>.channels` — and a name with a dot
+  in it makes that key ambiguous to parse. Derived on creation from the host
+  (`irc.libera.chat` → `libera`) or from the bouncer network id, which is already the
+  right word, and suffixed `-2` on collision. Editable afterwards.
+- **Renaming an entry moves its settings with it.** `binding.N` and
+  `order.<name>.{channels,queries}` both key on this, so a rename that left them behind
+  would silently break the user's ⌘1–9 and their tree order. One function, two key
+  prefixes — the prompt 7 note already says so.
+- **Migrate, never drop.** Existing keys hold `host:port` and `host:port[bouncer]`
+  (`ConnectionViewModel.networkKey`, `BufferBinding.init(rawValue:)`). On launch, rewrite
+  any key in the old form to the entry that matches that host, port and bouncer id — and
+  where nothing matches, *create* the entry, so a binding somebody made keeps working and
+  the server they made it against appears in the list. `caravan.conf`'s keys are public
+  API; dropping one because its format changed is not a migration.
+- **The list lives in its own file, `$XDG_CONFIG_HOME/caravan/servers.conf`.** Same format
+  and the same `ConfigFile` machinery — write through on change, touch only the lines you
+  own — but not the same file: ten entries of eleven fields would bury six settings in a
+  file this project promises people will hand-edit. The precedent is `known_hosts`, which
+  is separate for the same reason: a list of records has a different shape and a different
+  lifecycle from a page of scalars. Keys are `<name>.host`, `<name>.port`, and so on.
+- **Per entry:** group, host, port, TLS, nick override, autojoin channels, perform-on-connect
+  commands, connect-on-startup, favourite — and the authentication prompt 10 sent here:
+  `AuthenticationChoice`, account, certificate label, with **both passwords in the
+  `CredentialStore` and never in the file**.
+- **The Dashboard is a canvas, a peer row above the networks** (§13), bracketing the tree
+  with Settings & Debug pinned below. It is the splash screen and the empty state — first
+  run lands here, no wizard. `AppModel.SidebarItem` already spans buffers and canvases, so
+  this is a case rather than a new concept, and it inherits detaching for free.
+- **`ConnectSheet` is deleted in this prompt**, not deprecated. Two things have to keep
+  working first: `ConnectionSettings.lastUsed` still reads `server.host` and `server.port`
+  from `caravan.conf`, which every acceptance run since prompt 3 seeds, so **first launch
+  with no `servers.conf` but a `server.host` creates an entry from it** — that migrates
+  real users and keeps the test harness working with one rule. And the Network menu's
+  Connect item points at the Dashboard.
+
+Acceptance: with a hand-written `servers.conf`, connect to two entries and confirm the
+tree names them by their slugs. Bind ⌘3 to a channel, quit, relaunch, and confirm it still
+works — then *rename* the entry and confirm it still works. Seed the old-format
+`binding.3 = irc.libera.chat:6697/#swift` into `caravan.conf`, launch, and watch it migrate
+to the slug with the binding intact and an entry appear in the list. Add a server through
+the Dashboard, set an autojoin channel and a perform line, connect, and watch both happen.
+Delete `ConnectSheet.swift` and confirm nothing references it.
+
+Do not:
+  - **Statistics, ping times, netsplit logs, activity graphs.** §13 calls them "way down
+    the road" by name and stage 4 owns them. The part that matters now is the list.
+  - A connection *manager* — retry policy, connect-all, ordering of startup connections
+    beyond "connect these on startup". Flood protection is prompt 16.
+  - Reserved shortcuts. §13: the Dashboard is reachable from the tree and needs no key.
+  - Per-server appearance overrides. §15.5's global-first convention still holds.
+```
 
 ---
 

@@ -39,7 +39,7 @@ extension AppModel {
                 BufferRef(
                     item: entry.item,
                     connectionID: connection.id,
-                    networkName: connection.displayName,
+                    networkName: connection.treeName,
                     name: entry.buffer.displayName,
                     activity: entry.buffer.activity,
                     isStatus: entry.buffer === connection.status
@@ -57,7 +57,7 @@ extension AppModel {
             return connection(id: id)?.buffer(named: name)
         case .query(let id, let nick):
             return connection(id: id)?.query(named: nick)
-        case .settingsAndDebug:
+        case .settingsAndDebug, .dashboard:
             // A canvas, not a buffer (§10). The distinction is the whole reason this
             // returns an optional.
             return nil
@@ -184,7 +184,7 @@ extension AppModel.SidebarItem {
     var connectionID: UUID? {
         switch self {
         case .status(let id), .channel(let id, _), .query(let id, _): id
-        case .settingsAndDebug: nil
+        case .settingsAndDebug, .dashboard: nil
         }
     }
 }

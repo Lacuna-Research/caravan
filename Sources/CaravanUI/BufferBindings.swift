@@ -61,6 +61,18 @@ public final class BufferBindings {
         config.set(binding.rawValue, forKey: Self.key(for: digit))
     }
 
+    /// Moves every binding on `old` to `new`, in memory.
+    ///
+    /// **The file is not the only copy.** `NetworkKeyMigration.rename` rewrites
+    /// `caravan.conf`, but these slots were parsed at launch and would go on naming a
+    /// network nothing answers to until the next one — so ⌘3 loses its badge and reports
+    /// the network as not open while it sits in the tree. Found in the acceptance run.
+    func renameNetwork(_ old: String, to new: String) {
+        for (digit, binding) in slots where binding.network == old {
+            slots[digit] = BufferBinding(network: new, buffer: binding.buffer)
+        }
+    }
+
     public func clear(_ digit: Int) {
         guard slots.removeValue(forKey: digit) != nil else { return }
         config.set(nil, forKey: Self.key(for: digit))
@@ -114,13 +126,17 @@ public struct BufferBinding: Hashable, Sendable {
 }
 
 extension ConnectionViewModel {
-    /// How the config names this network.
+    /// How the config names this network: the server-list entry's ``NetworkName``.
     ///
-    /// Two features key on it now — ⌘1–9 bindings and the manual tree order — which is why
-    /// it is no longer called `bindingNetworkKey`. Both inherit the same caveat: it is
-    /// `host:port` for want of a stable user-facing network name, and the server-list
-    /// prompt migrates both together.
+    /// Two features key on it — ⌘1–9 bindings and the manual tree order — and until stage 2
+    /// prompt 11 it was `host:port` for want of anything stable and user-facing.
+    /// `NetworkKeyMigration` rewrites both families on launch, so a file written under the
+    /// old scheme keeps working.
+    ///
+    /// Falls back to the old form for a connection with no entry behind it, which keeps
+    /// tests that build a `ConnectionViewModel` directly from having to invent one.
     public var networkKey: String {
+        guard networkName.isEmpty else { return networkName }
         let base = "\(host):\(port)"
         guard let bouncerNetworkID else { return base }
         return "\(base)[\(bouncerNetworkID)]"
@@ -141,7 +157,8 @@ extension AppModel {
         case .query(let id, let nick):
             guard let connection = connection(id: id) else { return nil }
             return BufferBinding(network: connection.networkKey, buffer: nick.raw)
-        case .settingsAndDebug:
+        case .settingsAndDebug, .dashboard:
+            // Neither canvas is a buffer, and §11 reserves no digit for either.
             return nil
         }
     }

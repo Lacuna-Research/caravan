@@ -24,6 +24,15 @@ struct SidebarTree: View {
 
     var body: some View {
         List(selection: $model.selection) {
+            // **A peer row above the networks** (§13), which with Settings & Debug pinned
+            // below brackets the buffer list. Not the tree's root: a root would put every
+            // network one disclosure triangle away from disappearing.
+            DashboardRow()
+                .tag(AppModel.SidebarItem.dashboard)
+                .contextMenu {
+                    DetachMenuItem(model: model, item: .dashboard)
+                }
+
             // One group per network, and a bouncer's upstream networks are siblings of the
             // direct ones rather than nested under it. Nesting would make the tree two
             // levels deep for a bouncer and one for a direct connection, which is exactly
@@ -67,6 +76,24 @@ struct SidebarTree: View {
             .background(model.isShowingCanvas ? Color.accentColor.opacity(0.2) : Color.clear)
         }
         .background(.bar)
+    }
+}
+
+/// The Dashboard's row: the server list and the empty state (§13).
+///
+/// No activity dot and no binding digit — those are concepts belonging to buffers, and a
+/// canvas is not one. Same text size as every other row, per §12's rule that a row which
+/// looks like a header but behaves as an item is a contradiction.
+private struct DashboardRow: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "rectangle.grid.2x2")
+                .frame(width: 7)
+            Text("Dashboard")
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .help("Your servers, and where to connect")
     }
 }
 
@@ -271,7 +298,7 @@ private struct NetworkRow: View {
                 .fill(indicatorColour)
                 .frame(width: 7, height: 7)
                 .accessibilityLabel(connection.statusSummary)
-            Text(connection.displayName)
+            Text(connection.treeName)
                 .lineLimit(1)
                 .foregroundStyle(Color(activity.colour))
                 .fontWeight(activity.isBold ? .bold : .regular)
