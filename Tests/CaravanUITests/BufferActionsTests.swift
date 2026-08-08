@@ -101,9 +101,16 @@ struct BufferMenuTests {
     func bufferItems() {
         #expect(
             titles(BufferMenu.items(for: .buffer, channel: channel))
-                == ["Channel Modes…", "URL Catcher…"]
+                == ["Channel Modes…", "URL Catcher…", "Show Log…"]
         )
-        #expect(titles(BufferMenu.items(for: .buffer, channel: nil)) == ["URL Catcher…"])
+        #expect(
+            titles(BufferMenu.items(for: .buffer, channel: nil))
+                == ["URL Catcher…", "Show Log…"]
+        )
+        // Enabled unconditionally, and in both: a window with logging turned off still has
+        // whatever was written before it was turned off, and an empty viewer that says so
+        // is a better answer than a greyed item that will not say why.
+        #expect(item("Show Log…", in: BufferMenu.items(for: .buffer))?.action == .showLog)
     }
 
     /// A group boundary is a separator, and an empty table must produce no menu at all —

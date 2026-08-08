@@ -22,6 +22,10 @@ public final class ChannelBuffer: Identifiable {
     /// leave the history attached to the wrong window.
     public let input = InputState()
 
+    /// Keys for the lines already here, so a bouncer replaying the same period does not
+    /// show them twice. See ``ReplayIndex``.
+    public let replay = ReplayIndex()
+
     /// How badly this buffer wants your attention (§3). Reset when you look at it.
     public var activity: BufferActivity = .none
 

@@ -49,7 +49,29 @@ public final class ChatSettings {
         /// Actual size. Zoom is a multiplier over the chosen font size rather than a
         /// second size, so ⌥⌘0 has something to return to.
         public static let zoom = 1.0
+
+        /// **On, for the two kinds of buffer that hold a conversation.** mIRC shipped with
+        /// logging off and a tab to turn it on, which means the log you want is the one you
+        /// did not have. The cost is honest and stated on the Logging tab: plain text under
+        /// your own data directory, which nothing uploads and a Reveal button will show you.
+        public static let logsChannels = true
+        public static let logsQueries = true
+
+        /// **Off.** The status window is numerics, the MOTD and capability lines — a
+        /// transcript of the client talking to itself, written afresh on every connect. It
+        /// is available for somebody debugging a network, and it is not what "log my
+        /// conversations" means.
+        public static let logsStatus = false
+
+        /// Lines put back when a window opens. The same number as
+        /// `SessionConfiguration.chatHistoryLimit`'s default, deliberately: the two sources
+        /// cover the same span, which is what makes the overlap worth de-duplicating.
+        public static let logReloadLines = 50
     }
+
+    /// The range the form offers, and the range a hand-edited file is held to. Zero is
+    /// meaningful — it is how you keep logs without having them replayed at you.
+    public static let logReloadRange = 0...1000
 
     /// Line height, as a multiplier over the font's natural one (§15.5, §15.6).
     ///
@@ -114,6 +136,10 @@ public final class ChatSettings {
         public static let completionSuffix = "chat.completion-suffix"
         public static let density = "chat.density"
         public static let zoom = "chat.zoom"
+        public static let logsChannels = "log.channels"
+        public static let logsQueries = "log.queries"
+        public static let logsStatus = "log.status"
+        public static let logReloadLines = "log.reload-lines"
 
         /// One key per overridden colour index — `chat.colour.4 = FF0000`. A *set* rather
         /// than a scalar, and the only setting of that shape so far: indices the user has
@@ -285,6 +311,45 @@ public final class ChatSettings {
         }
     }
 
+    /// What gets written down. One toggle per kind of buffer, which is the granularity
+    /// mIRC's Logging tab has and the granularity the question actually has: "log my
+    /// channels but not my private messages" is a real preference, and "log #swift but not
+    /// #offtopic" is a per-server setting nobody has asked for.
+    public var logsChannels: Bool {
+        didSet { config.set(logsChannels, forKey: Key.logsChannels) }
+    }
+
+    public var logsQueries: Bool {
+        didSet { config.set(logsQueries, forKey: Key.logsQueries) }
+    }
+
+    public var logsStatus: Bool {
+        didSet { config.set(logsStatus, forKey: Key.logsStatus) }
+    }
+
+    /// How much of a buffer's log is put back when its window opens.
+    ///
+    /// Clamped on the way in, because this number also arrives from a text editor.
+    public var logReloadLines: Int {
+        didSet {
+            let clamped = Self.logReloadRange.clamping(logReloadLines)
+            guard clamped == logReloadLines else {
+                logReloadLines = clamped
+                return
+            }
+            config.set(logReloadLines, forKey: Key.logReloadLines)
+        }
+    }
+
+    /// Whether a buffer of this shape is written down.
+    public func logs(_ buffer: any ChatBuffer) -> Bool {
+        switch buffer {
+        case is ChannelBuffer: logsChannels
+        case is QueryBuffer: logsQueries
+        default: logsStatus
+        }
+    }
+
     @ObservationIgnored private let config: ConfigFile
 
     public init(config: ConfigFile = .shared) {
@@ -317,6 +382,12 @@ public final class ChatSettings {
         self.density =
             config.string(Key.density).flatMap(Density.init(rawValue:)) ?? Default.density
         self.zoom = Self.zoomRange.clamping(config.double(Key.zoom) ?? Default.zoom)
+        self.logsChannels = config.bool(Key.logsChannels) ?? Default.logsChannels
+        self.logsQueries = config.bool(Key.logsQueries) ?? Default.logsQueries
+        self.logsStatus = config.bool(Key.logsStatus) ?? Default.logsStatus
+        self.logReloadLines = Self.logReloadRange.clamping(
+            config.int(Key.logReloadLines) ?? Default.logReloadLines
+        )
         // An index outside 0–15, or a value that is not six hex digits, is skipped rather
         // than refused: this file is hand-edited, and a typo should cost you the one
         // colour, not the launch.

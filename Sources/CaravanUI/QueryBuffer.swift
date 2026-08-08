@@ -22,6 +22,10 @@ public final class QueryBuffer: Identifiable {
     /// This window's input box and command history, per buffer like every other.
     public let input = InputState()
 
+    /// Keys for the lines already here, so a bouncer replaying the same period does not
+    /// show them twice. See ``ReplayIndex``.
+    public let replay = ReplayIndex()
+
     /// What the header band shows (GUI-DESIGN-NOTES.md §14).
     public private(set) var conversation = Conversation()
 

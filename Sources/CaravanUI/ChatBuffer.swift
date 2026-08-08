@@ -34,6 +34,13 @@ public protocol ChatBuffer: AnyObject {
     /// Whether this is a private conversation, which decides whether an arriving message
     /// is a highlight or merely a message.
     var isConversation: Bool { get }
+
+    /// What this buffer already holds, as de-duplication keys.
+    ///
+    /// Per buffer rather than per connection because that is the scope the question has:
+    /// the same words at the same second in `#swift` and in `#offtopic` are two lines, and
+    /// a shared index would eat the second one.
+    var replay: ReplayIndex { get }
 }
 
 /// The per-network status window, as a buffer like any other.
@@ -50,6 +57,7 @@ public protocol ChatBuffer: AnyObject {
 public final class StatusBuffer: ChatBuffer {
     public let log = MessageLogController()
     public let input = InputState()
+    public let replay = ReplayIndex()
     public var activity: BufferActivity = .none
 
     /// The network's name, which is what the tree row shows. Held rather than derived

@@ -35,14 +35,7 @@ public final class ConfigFile {
     /// be edited and version-controlled by the people who use them, and hiding them
     /// inside a Library folder macOS actively discourages browsing is the opposite of
     /// that. `BUILD-LOG.md` carries the reasoning.
-    public static var directory: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let base = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"]
-        let root =
-            base.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-            ?? home.appending(path: ".config")
-        return root.appending(path: "caravan")
-    }
+    public static var directory: URL { AppDirectories.config }
 
     public init(url: URL = ConfigFile.directory.appending(path: "caravan.conf")) {
         self.url = url

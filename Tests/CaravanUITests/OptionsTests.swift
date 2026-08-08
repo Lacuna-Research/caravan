@@ -310,13 +310,13 @@ struct OptionsTests {
 
     // MARK: - The tabs themselves
 
-    /// Sounds and Logging are deliberately absent until prompts 13 and 12 bring settings
-    /// for them. This is the assertion that notices if an empty one is ever added.
+    /// Sounds is deliberately absent until prompt 13b brings settings for it. This is the
+    /// assertion that notices if an empty one is ever added.
     @Test("every tab has a pane behind it")
     func everyTabIsBuilt() {
         #expect(
             OptionsPane.Tab.allCases.map(\.rawValue)
-                == ["Connect", "IRC", "Display", "Colours", "Other"]
+                == ["Connect", "IRC", "Display", "Colours", "Logging", "Other"]
         )
     }
 }

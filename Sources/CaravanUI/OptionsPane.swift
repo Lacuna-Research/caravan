@@ -15,10 +15,10 @@ import SwiftUI
 ///   rewrote the file wholesale would be a regression, and `ConfigFileTests` has a test
 ///   that would notice.
 ///
-/// **A tab exists when it has something in it.** mIRC has eight; Sounds is prompt 13's and
-/// Logging is prompt 12's, and shipping them empty would teach the user the client is
-/// unfinished rather than that the feature is coming. Adding one is a case below plus a
-/// pane — the enum is `CaseIterable` and drives the picker.
+/// **A tab exists when it has something in it.** mIRC has eight; Sounds is prompt 13b's,
+/// and shipping it empty would teach the user the client is unfinished rather than that the
+/// feature is coming. Adding one is a case below plus a pane — the enum is `CaseIterable`
+/// and drives the picker.
 struct OptionsPane: View {
     let model: AppModel
 
@@ -39,6 +39,7 @@ struct OptionsPane: View {
         case irc = "IRC"
         case display = "Display"
         case colours = "Colours"
+        case logging = "Logging"
         case other = "Other"
 
         var id: String { rawValue }
@@ -60,6 +61,7 @@ struct OptionsPane: View {
             case .irc: IRCOptions(settings: settings)
             case .display: DisplayOptions(model: model, settings: settings)
             case .colours: ColourOptions(model: model, settings: settings)
+            case .logging: LoggingOptions(model: model, settings: settings)
             case .other: OtherOptions(model: model)
             }
         }
@@ -429,6 +431,83 @@ private struct ColourSwatch: View {
             UInt8(clamping: Int((srgb.blueComponent * 255).rounded()))
         )
         model.applySettings()
+    }
+}
+
+// MARK: - Logging
+
+/// What gets written down, how much comes back, and where it all lives.
+///
+/// **The privacy sentence is on the surface, not only in the source.** Logging is on out of
+/// the box for the two kinds of buffer that hold a conversation, which is a decision made
+/// on the user's behalf about writing what they say to disk — so the pane says plainly what
+/// is written, where, and that nothing sends it anywhere.
+private struct LoggingOptions: View {
+    let model: AppModel
+    @Bindable var settings: ChatSettings
+
+    var body: some View {
+        Form {
+            Section("What to log") {
+                Toggle("Channels", isOn: $settings.logsChannels)
+                Toggle("Private messages", isOn: $settings.logsQueries)
+                Toggle("The status window", isOn: $settings.logsStatus)
+                Text(
+                    "Plain text, one file per window, in the folder below. Nothing is sent "
+                        + "anywhere and nothing is written inside the app. Turning a "
+                        + "toggle off stops new lines; it does not delete what is there."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Reload") {
+                LabeledContent("Lines to put back") {
+                    TextField(
+                        "Lines to put back",
+                        value: $settings.logReloadLines,
+                        format: .number.grouping(.never)
+                    )
+                    .labelsHidden()
+                    .frame(width: 90)
+                }
+                Text(
+                    "How much of a window's log reappears, dimmed, when it opens — so a "
+                        + "channel is not blank after a restart. Zero turns it off. Where "
+                        + "the server sends its own history for the same period, the "
+                        + "overlap is recognised and shown once."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Files") {
+                LabeledContent("Log folder") {
+                    Button(model.chatLog.directory.path) {
+                        reveal(model.chatLog.directory)
+                    }
+                    .buttonStyle(.link)
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .help("Reveal in Finder")
+                }
+                Button("Browse Logs\u{2026}") {
+                    model.logViewerPresentation = AppModel.LogViewerPresentation(
+                        window: .main,
+                        network: nil,
+                        buffer: nil
+                    )
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// Creates the folder on the way if it is not there yet: a Reveal button that does
+    /// nothing because nothing has been logged reads as a broken button.
+    private func reveal(_ url: URL) {
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 

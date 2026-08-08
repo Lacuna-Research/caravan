@@ -28,6 +28,8 @@ public enum BufferAction: Hashable, Sendable {
     case copy(String)
     case showURLCatcher
     case showChannelModes
+    /// The log viewer, opened on the buffer the menu came from.
+    case showLog
 }
 
 /// One item of a context menu.
@@ -132,7 +134,10 @@ public enum BufferMenu {
         if channel != nil {
             groups.append([BufferMenuItem("Channel Modes\u{2026}", .showChannelModes)])
         }
-        groups.append([BufferMenuItem("URL Catcher\u{2026}", .showURLCatcher)])
+        groups.append([
+            BufferMenuItem("URL Catcher\u{2026}", .showURLCatcher),
+            BufferMenuItem("Show Log\u{2026}", .showLog),
+        ])
         return groups
     }
 }

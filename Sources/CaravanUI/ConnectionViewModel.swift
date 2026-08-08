@@ -1,5 +1,6 @@
 import Diagnostics
 import Foundation
+import IRCFormat
 import IRCProtocol
 import IRCSession
 import IRCTransport
@@ -106,6 +107,12 @@ public final class ConnectionViewModel: Identifiable {
     /// Where the URLs in arriving lines are collected. Injected by `AppModel`, like
     /// ``bufferOrder``, and `nil` in the tests that do not care.
     @ObservationIgnored public var urlCatcher: URLCatcher?
+
+    /// Where the conversation is written down, and read back from when a window opens.
+    ///
+    /// Injected like ``urlCatcher``, and `nil` in the tests that do not care — which is
+    /// what makes "logging is off" and "there is no log" the same code path rather than two.
+    @ObservationIgnored public var chatLog: ChatLog?
 
     private var renderer: LineRenderer { settings.renderer }
 
@@ -275,7 +282,15 @@ public final class ConnectionViewModel: Identifiable {
     @discardableResult
     public func openQuery(with nick: String) async -> QueryBuffer {
         caseMapping = await session.capabilities.caseMapping
-        return query(creating: IRCNick(nick, mapping: caseMapping))
+        let key = IRCNick(nick, mapping: caseMapping)
+        let isNew = queriesByNick[key] == nil
+        let buffer = query(creating: key)
+        // **Only for a window that did not exist a moment ago.** `/query bob` on a
+        // conversation already open is a way to bring it to the front, and asking the
+        // bouncer for its backlog again on every one of those would be a request per
+        // keystroke's worth of impatience.
+        if isNew { await session.requestHistory(for: nick) }
+        return buffer
     }
 
     /// Closes a conversation window.
@@ -474,17 +489,15 @@ public final class ConnectionViewModel: Identifiable {
         // live acceptance run found `/msg bob hi` rendering in `#swift` as `<@you> hi`,
         // indistinguishable from something said in the channel — a client lying about
         // where your words went.
+        let now = Date()
         if !isThisWindow(recipient, target) {
             var fields = LineFields()
             fields.text = text
             fields.nick = recipient
-            log(for: target)
-                .append([
-                    renderer.line(
-                        kind: isNotice ? .ownPrivateNotice : .ownPrivateMessage,
-                        fields: fields
-                    )
-                ])
+            let kind: LineKind = isNotice ? .ownPrivateNotice : .ownPrivateMessage
+            let origin = chatBuffer(for: target)
+            origin.log.append([renderer.line(kind: kind, fields: fields, now: now)])
+            record(kind: kind, fields: fields, in: origin, at: now)
         }
 
         // The window is opened whether or not the server will echo for us; only the
@@ -499,12 +512,47 @@ public final class ConnectionViewModel: Identifiable {
         fields.text = text
         fields.nick = ownDisplayName(in: destination)
         let kind: LineKind = isAction ? .ownAction : (isNotice ? .ownNotice : .ownMessage)
-        buffer.append([renderer.line(kind: kind, fields: fields)])
+        buffer.log.append([renderer.line(kind: kind, fields: fields, now: now)])
+        record(kind: kind, fields: fields, in: buffer, at: now)
+
+        // **Our clock stamped this line; the server will stamp its replay of it.** The two
+        // agree to within a fraction of a second and disagree about which second that is
+        // roughly half the time, so the neighbours are remembered as well. Two extra keys,
+        // and without them a reattach to a server that has `chathistory` but not
+        // `echo-message` shows you your own last few messages a second time.
+        for offset in [-1.0, 0.0, 1.0] {
+            buffer.replay.remember(
+                ReplayKey(
+                    date: now.addingTimeInterval(offset),
+                    nick: fields.nick,
+                    text: IRCFormatting.stripping(text)
+                )
+            )
+        }
 
         if case .nick(let nick) = destination {
             queriesByNick[nick]?
-                .record(sender: currentNick, text: text, isAction: isAction, at: Date())
+                .record(sender: currentNick, text: text, isAction: isAction, at: now)
         }
+    }
+
+    /// Writes one line of our own to the log, when that buffer is logged.
+    ///
+    /// The echo path's counterpart to the one in ``append(_:)``. It exists separately
+    /// because a locally echoed message has no event to render from — the server has not
+    /// told us about it and, without `echo-message`, never will.
+    private func record(
+        kind: LineKind,
+        fields: LineFields,
+        in buffer: any ChatBuffer,
+        at date: Date
+    ) {
+        guard let chatLog, settings.logs(buffer) else { return }
+        chatLog.write(
+            LineRenderer.plainLine(kind: kind, fields: fields, at: date),
+            network: networkKey,
+            buffer: buffer.displayName
+        )
     }
 
     /// The recipient's own window, opening a query for it where that is the right thing.
@@ -514,13 +562,13 @@ public final class ConnectionViewModel: Identifiable {
     /// server's copy of what we sent comes back through the inbound path, so a `/msg` that
     /// opened a window on one network and not on another would be the capability leaking
     /// into behaviour. `nil` means there is nowhere for it to go and nothing to draw.
-    private func echoDestination(_ target: Target, isNotice: Bool) -> MessageLogController? {
+    private func echoDestination(_ target: Target, isNotice: Bool) -> (any ChatBuffer)? {
         switch target {
         case .channel(let name):
-            return buffersByName[name]?.log
+            return buffersByName[name]
         case .nick(let nick):
-            if isNotice { return queriesByNick[nick]?.log }
-            return query(creating: nick).log
+            if isNotice { return queriesByNick[nick] }
+            return query(creating: nick)
         }
     }
 
@@ -574,10 +622,19 @@ public final class ConnectionViewModel: Identifiable {
     /// Public since prompt 9: `/clear` used to reach for whatever the *tree* had selected,
     /// which is the wrong buffer when the line was typed in a detached window.
     public func log(for target: Target?) -> MessageLogController {
+        chatBuffer(for: target).log
+    }
+
+    /// The buffer a target names, falling back to the status window.
+    ///
+    /// The same resolution ``log(for:)`` does, one level up — a caller that needs to know
+    /// *which buffer* rather than merely where to append needs the object: whether it is
+    /// logged, and what its de-duplication index holds.
+    public func chatBuffer(for target: Target?) -> any ChatBuffer {
         switch target {
-        case .channel(let name)?: buffersByName[name]?.log ?? log
-        case .nick(let nick)?: queriesByNick[nick]?.log ?? log
-        case nil: log
+        case .channel(let name)?: buffersByName[name] ?? status
+        case .nick(let nick)?: queriesByNick[nick] ?? status
+        case nil: status
         }
     }
 
@@ -655,7 +712,20 @@ public final class ConnectionViewModel: Identifiable {
             now: serverTime(of: event) ?? Date()
         )
         guard let line = renderer.line(for: event, context: context) else { return }
+
+        // Built once for the whole event rather than per destination: the key is a property
+        // of what was said, and the log line is expensive enough to be worth not repeating.
+        let key = Self.replayKey(for: event, at: context.now)
+        let logged = chatLog == nil ? nil : renderer.plainLine(for: event, context: context)
+
+        var shown = false
         for destination in destinations(for: event) {
+            // **The suppression is total, and that is the point.** A line the user has
+            // already read must not raise the activity state, must not put its links in the
+            // catcher and must not be written to the log a second time — a buffer that goes
+            // pink for a line already on screen is worse than no de-duplication at all.
+            if let key, destination.replay.consume(key) { continue }
+            shown = true
             destination.log.append([line])
             // Read back off the line rather than scanned for again: the renderer's
             // `NSDataDetector` pass already decided what a URL is, and a second opinion
@@ -674,8 +744,36 @@ public final class ConnectionViewModel: Identifiable {
                     isConversation: destination.isConversation
                 )
             )
+            if let key { destination.replay.remember(key) }
+            if let logged, settings.logs(destination) {
+                chatLog?.write(logged, network: networkKey, buffer: destination.displayName)
+            }
         }
+        guard shown else { return }
         noteConversation(event, at: context.now)
+    }
+
+    /// What makes an arriving message the same message as one already held, or `nil` for an
+    /// event that a `chathistory` replay cannot produce.
+    ///
+    /// **Messages, actions and notices, and nothing else.** `chathistory` is message
+    /// history: a bouncer does not replay joins, parts or topic changes, so a logged join
+    /// has nothing to collide with and keying one would be machinery built for traffic that
+    /// never arrives. This is the measurement the prompt 4 note asked for, and the answer it
+    /// gives is that neither an event envelope nor `tags` on the replayed cases is needed.
+    static func replayKey(for event: IRCEvent, at date: Date) -> ReplayKey? {
+        guard case .message(_, let sender, let text, _, _, let tags) = event,
+            let nick = sender.nick
+        else { return nil }
+        return ReplayKey(
+            msgid: tags.value(for: "msgid"),
+            date: date,
+            nick: nick,
+            // The key is compared against a line read back out of the log, where the codes
+            // were stripped on the way in — so it has to be stripped here too, or a bold
+            // word would make the same sentence two different lines.
+            text: IRCFormatting.stripping(text)
+        )
     }
 
     /// Collects a channel's ban / quiet / invite / except list as it arrives.
@@ -960,6 +1058,7 @@ public final class ConnectionViewModel: Identifiable {
         )
         buffer.log.palette = settings.palette
         buffersByName[name] = buffer
+        reloadLog(into: buffer)
         channels.insert(
             buffer,
             at: bufferOrder?.insertionIndex(
@@ -982,6 +1081,7 @@ public final class ConnectionViewModel: Identifiable {
         buffer.log.palette = settings.palette
         buffer.log.lineCap = settings.scrollbackLines
         queriesByNick[nick] = buffer
+        reloadLog(into: buffer)
         queries.insert(
             buffer,
             at: bufferOrder?.insertionIndex(
@@ -992,6 +1092,34 @@ public final class ConnectionViewModel: Identifiable {
             ) ?? queries.count
         )
         return buffer
+    }
+
+    /// Puts the tail of a buffer's log back on screen as its window opens.
+    ///
+    /// **On creation, not on join.** The item calls this "reload last N lines on join", and
+    /// a reconnect is the case it names — but a buffer survives a reconnect, so replaying on
+    /// every `JOIN` would prepend the log to a window that already had the conversation in
+    /// it. Creation is the moment there is genuinely nothing there, which is the first join
+    /// after a launch. Everything the tail holds is remembered as a key first, which is what
+    /// the `CHATHISTORY` covering the same period is reconciled against.
+    ///
+    /// Status windows are never reloaded. A replayed MOTD is not history, it is last week's
+    /// connect, and the live one is about to arrive underneath it.
+    private func reloadLog(into buffer: any ChatBuffer) {
+        guard let chatLog, settings.logs(buffer), !(buffer is StatusBuffer) else { return }
+        let count = settings.logReloadLines
+        guard count > 0 else { return }
+        let lines = chatLog.tail(count, network: networkKey, buffer: buffer.displayName)
+        guard !lines.isEmpty else { return }
+
+        var rendered: [AttributedString] = []
+        rendered.reserveCapacity(lines.count)
+        for text in lines {
+            let logged = LoggedLine(text)
+            if let key = logged.key { buffer.replay.remember(key) }
+            rendered.append(renderer.line(logged.text, kind: .logReplay))
+        }
+        buffer.log.append(rendered)
     }
 
     private func removeBuffer(_ name: IRCChannelName) {

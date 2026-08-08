@@ -30,6 +30,13 @@ func temporaryModel() -> AppModel {
     )
 }
 
+/// A chat log of this test's own. The suite writes real files, so it writes them somewhere
+/// nobody is keeping anything.
+@MainActor
+func temporaryChatLog() -> ChatLog {
+    ChatLog(directory: temporaryDirectory().appending(path: "logs"))
+}
+
 private func temporaryDirectory() -> URL {
     FileManager.default.temporaryDirectory
         .appending(path: "caravan-tests-\(UUID().uuidString)")

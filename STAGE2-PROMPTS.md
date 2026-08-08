@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 11/18 complete. Next: prompt 12.
+**Status:** 12/18 complete. Next: prompt 13a.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -621,37 +621,105 @@ reconciling with `chathistory`: against a bouncer the server backfills the same 
 local log already covers, so the buffer needs de-duplication by message id or
 `server-time` rather than blind concatenation. Prompt 4 is what makes that testable.
 
-*To be written out before it starts.*
+```
+Write the conversation down, put it back on screen when a window opens, and make sure the
+bouncer's copy of the same hour does not arrive as a second copy.
 
-**Carry-forward** *(consumed when this prompt runs)*
+**The whole prompt turns on one decision: what a log line is keyed by.** Get that right and
+reload, de-duplication and the viewer are all consequences of it; get it wrong and every
+reattach shows the last twenty minutes twice.
 
-- From prompt 3: **the `msgid` you will de-duplicate on is already in hand.**
-  `IRCEvent.message` carries the whole `IRCTags` section, so `tags.value(for: "msgid")` needs
-  nothing new from the session — and `ConnectionViewModel.parseServerTime` already turns the
-  `time` tag into a `Date` for the fallback comparison.
-- From prompt 4: **tags are still carried by `IRCEvent.message` and nothing else**, and this
-  is the prompt where that stops being enough. Prompt 4 left it deliberately: soju's
-  `chathistory` replays messages, so the general case would have been built for events soju
-  does not send. A local log holds joins, parts and topic changes too, and reconciling those
-  against a replay needs their `time` and `msgid` as much as a message's. Either add `tags`
-  to the replayed cases or give every event a common envelope — the envelope is the larger
-  change and by now probably the right one.
-- From prompt 10: **the Logging tab is yours to add.** Options built five of mIRC's eight
-  tabs and deliberately skipped this one rather than shipping it empty. Adding it is one
-  case in `OptionsPane.Tab` in `SettingsDebugCanvas.swift` plus a `@ViewBuilder` pane; the
-  enum is `CaseIterable` and drives the picker, so there is nothing else to wire. Whatever
-  it holds — log directory, what to log, reload-last-N — writes through `ChatSettings` on
-  change like every other control, with no Apply button.
-- From prompt 4: `CHATHISTORY LATEST <target> * <limit>` fires on our own `JOIN`, in
-  `IRCSession.requestHistoryIfOurJoin`, with the count in
-  `SessionConfiguration.chatHistoryLimit`. De-duplication wants `BEFORE`/`AFTER` against the
-  newest line already in the log instead, which is the same function with a different
-  selector — the request site is already in one place.
-- From prompt 5: **a query has no `chathistory` backfill at all.**
-  `IRCSession.requestHistoryIfOurJoin` fires on our own `JOIN` only, so a conversation
-  reattached through a bouncer opens empty where a channel opens mid-conversation. Opening
-  a query is a client-side act with no wire event to hang a `CHATHISTORY LATEST` off; the
-  natural hook is `ConnectionViewModel.openQuery(with:)`.
+- **A log line carries its own full timestamp — `[yyyy-MM-dd HH:mm:ss]`.** This is the one
+  deliberate departure from mIRC, whose lines carry `[HH:mm:ss]` and leave the date to a
+  `Session Start:` banner. A date recoverable only by scanning backwards for a banner cannot
+  be compared against a replayed line's `server-time`, and that comparison is the point of
+  the item. Everything else is mIRC's: plain text, the stock `LineFormatTable.mIRC`
+  sentences, control codes stripped.
+- **The log is rendered canonically, never from the user's settings.** `chat.timestamp-format`
+  is a *display* setting; a log whose shape changes when somebody previews a timestamp format
+  is a log nothing can parse. `LineRenderer.describe` already turns an event into a kind and
+  its fields — give it a plain-text sibling that expands the same template with the canonical
+  stamp and no attributes, no palette and **no `NSDataDetector` pass**. Rendering every line
+  twice on the ingest path is the one performance trap here.
+- **`$XDG_DATA_HOME/caravan/logs/<network>/<buffer>.log`**, appended, one file per buffer.
+  `<network>` is the prompt 11 slug, which is already `[a-z0-9_-]`; `<buffer>` is a channel
+  name or a nick and is *not* safe — percent-escape the path separators rather than trusting
+  it. Not the config directory: a log is data, and `known_hosts` set that precedent.
+- **De-duplication is a per-buffer index of keys, consulted by every arriving message.** The
+  key is the `msgid` where there is one, and `(timestamp to the second, nick, text)` where
+  there is not — the second form is what a *log* line can offer, since a plain-text log has
+  nowhere to put a message id and inventing a sidecar to hold one would make the file no
+  longer plain text. Because the fallback key carries the full date, a false positive needs
+  the same person to say the same words in the same second, which is the definition of the
+  duplicate we are removing. Seed the index from the replayed tail *and* from every line
+  appended live, and consume a key on a hit so that something genuinely said twice appears
+  twice.
+- **A suppressed line is suppressed everywhere.** It must not raise the activity state and
+  must not reach the URL catcher — the same three seams prompt 13a inherits, all in
+  `ConnectionViewModel.append(_:)`.
+- **Replayed lines are dimmed.** They are the past, they came from a file rather than from
+  the network, and the boundary where dimming stops is what tells a user where the live
+  conversation begins. No banner line; the dimming is the signal.
+- **A query gets its backfill here too**, per the prompt 5 note: `openQuery(with:)` asks for
+  `CHATHISTORY LATEST` when it has just created the buffer, which needs one public method on
+  `IRCSession` beside `requestHistoryIfOurJoin`.
+- **The Logging tab is a case in `OptionsPane.Tab` and a pane**: what to log, how many lines
+  to reload, the directory with a reveal button, and the way into the viewer. Write-through
+  on change like every other control.
+- **The viewer reads the same files, not a second store.** Networks and buffers from a
+  directory scan, the tail of the selected log, a filter field, Reveal in Finder. Opened
+  from the Logging tab and from a buffer's context menu.
+
+Acceptance: against a real bouncer, join a channel, say something, quit the app, relaunch and
+confirm the window opens with the log's tail dimmed above the live line — and that the
+bouncer's `CHATHISTORY` replay of the same period adds nothing you can already see. Do it
+again with logging off and confirm the replay is the only source. Say the same word twice in
+one second and confirm both survive. Log a channel whose name would be a path if you took it
+literally. Turn the reload count to zero and confirm windows open empty.
+
+Do not:
+  - **A common envelope over `IRCEvent`, or `tags` on the replayed cases.** The prompt 4 note
+    offers both; measure the need before paying for either. See the note's disposition below.
+  - **`CHATHISTORY BEFORE`/`AFTER` against the newest logged line.** Also prompt 4's note, and
+    also to be decided on the evidence rather than inherited.
+  - **SQLite, full-text search, or a scrollback database.** `PLAN.md`'s architecture table
+    lists both plain-text logs and SQLite; this item is the plain-text half, and search over
+    logs is a filter field over a file, not an index.
+  - **Log rotation, compression, retention policies.** No user has asked and no file is large
+    yet. `PLAN.md` is where that goes if it ever does.
+  - **Logging raw wire traffic.** That is `/debug` and `TraceFileWriter`, it is redacted on a
+    different seam, and merging the two would put a `PASS` in a chat log.
+  - **Highlights, sounds, notifications.** Prompt 13b, even though a log line and a highlight
+    read the same `append(_:)` seam.
+```
+
+**Status:** complete. All five notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`.
+
+**Two of the five were answered "no", and that is the substantive result.** Prompt 4 left
+this prompt a choice between adding `tags` to the replayed event cases and giving every
+`IRCEvent` a common envelope, and separately asked for `CHATHISTORY BEFORE`/`AFTER` against
+the newest logged line. Neither is built, and neither is deferred — both were measured and
+declined, with the reasoning in `BUILD-LOG.md`. In short: `chathistory` is *message*
+history, so a logged join has nothing to collide with and the envelope would have been
+built for traffic that never arrives; and `LATEST <limit>` is bounded where `AFTER <a month
+ago>` is not, so the bounded overlap plus a de-duplication index beats the unbounded
+request that was supposed to avoid it.
+
+**The one departure from mIRC's log format is the stamp**: `[yyyy-MM-dd HH:mm:ss]` per line
+rather than `[HH:mm:ss]` plus a `Session Start:` banner, because a date recoverable only by
+scanning backwards for a banner cannot be compared against a replayed line's `server-time`.
+
+**The live run found a defect in prompt 11's code, not in this one**: `connectStartupServers()`
+had no caller anywhere, so `connect-on-startup` shipped doing nothing. Fixed here with a
+`.task` on `RootView` and pinned by `ServerConnectingTests.startupServersConnect`.
+
+**Not verified live: de-duplication against a real bouncer** — there is still no soju to
+point at, which is the acceptance `PLAN.md`'s "Where does a soju come from?" has blocked
+since stage 1; it was driven against a scripted server instead. Nor our own outbound line
+reaching the log, because synthetic keystrokes would not land in the chat input; that path
+has an end-to-end test through the real `send()`. The live run covered writing, the reload,
+the Logging tab and the viewer.
 
 ---
 
@@ -687,6 +755,20 @@ other costs a note nobody reads until it is wrong.
   `ConnectionViewModel.append(_:)` calls `urlCatcher?.record(...)` in the same loop that
   appends the line and raises the activity. An ignored message must not put its links in
   the URL catcher either.
+- From prompt 12: **there are now four things to suppress, not three — the fourth is the
+  chat log**, and it is the one where getting it wrong is permanent. The same loop in
+  `ConnectionViewModel.append(_:)` ends with `chatLog?.write(...)`, so an ignored line
+  would be written to disk while never appearing on screen: invisible, and still there
+  next week. Whether an ignore *should* suppress the log is a genuine question — mIRC
+  logs what it ignores — but it must be answered rather than inherited by omission.
+  The shape to copy is right above it: prompt 12 put its own suppression as a single
+  `continue` before all four, precisely so a fifth consumer cannot be added and missed.
+- From prompt 12: **the reload path deliberately does not go through `append(_:)`**, so
+  none of those four seams sees it. `ConnectionViewModel.reloadLog(into:)` appends straight
+  to `MessageLogController`. That is what you want — fifty reloaded lines must not fire
+  fifty ignores — but it means an ignore added to `append(_:)` will not retroactively hide
+  what is already in the log file, which is the correct behaviour and worth saying out loud
+  in the Options text rather than surprising somebody.
 - From prompt 9: **the Ignore menu item is this prompt's to add**, and its slot is already
   shaped. `BufferMenu.nickItems(_:channel:canSetModes:)` in `Sources/CaravanUI/BufferMenu.swift`
   builds the groups; Ignore belongs in the third group beside Kick and Ban, as
@@ -738,6 +820,18 @@ ignored line never reaches these rules.
 - From prompt 13a: **use the list encoding 13a settled** for the keyword and pattern lists
   rather than inventing a second one. Two settings of the same shape stored two ways is the
   kind of thing that makes a hand-edited config file untrustworthy.
+- From prompt 12: **a reloaded log line must never notify, and today it cannot** — say so in
+  a test before that stops being true. `ConnectionViewModel.reloadLog(into:)` puts up to
+  fifty lines from yesterday's log the instant a window opens, and it appends them straight
+  to `MessageLogController` rather than through `append(_:)`, which is where the highlight
+  rules will live. So fifty notifications on launch is a bug this prompt is already safe
+  from *by construction* — and it is exactly the kind of safety that a later refactor
+  removes silently. The Sounds tab note above is the pane where a "notify for" setting
+  lands; this is the case it must not fire on.
+- From prompt 12: **`ChatSettings.logs(_:)` is the precedent for a per-buffer-kind setting**,
+  switching on `ChannelBuffer` / `QueryBuffer` / the status window. Sounds and notification
+  triggers want the same three-way split, and copying its shape is cheaper than a second
+  answer to "which kinds of window does this apply to".
 
 ---
 
@@ -833,6 +927,22 @@ auto-ignore.
 find-in-buffer wants the scrollback to have stopped changing shape.
 
 *To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 12: **⌘F searches the buffer; the log holds what the buffer has dropped**, and
+  the two answers will differ the moment a channel passes `chat.scrollback-lines`. Somebody
+  who searched a window and found nothing has not been told the line might be on disk.
+  `LogViewerSheet` has a filter field over one file already, so the cheap version is a way
+  across — "not in this window; search the log?" — rather than a second search engine.
+  Whatever it does, decide it rather than shipping two searches that disagree about what
+  "everything" means. A real index over the log directory is not this prompt's and is
+  recorded on `PLAN.md` item 20.
+- From prompt 12: **`copy without formatting` has a worked example to copy.**
+  `LineRenderer.plainLine(kind:fields:at:)` already turns a line into plain text through the
+  same `LineFormatTable` the buffer draws with, which is exactly what "copy the sentence
+  without the styling" means. The difference is the stamp — the log's is canonical, and a
+  copy wants whatever the buffer is showing — so it is a parameter, not a second function.
 
 ---
 

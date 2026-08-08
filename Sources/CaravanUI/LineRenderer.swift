@@ -99,6 +99,38 @@ public struct LineRenderer: Sendable {
         )
     }
 
+    /// The same line as plain text, stamped canonically, for the chat log.
+    ///
+    /// **Not the displayed line with its attributes thrown away.** Three things differ, and
+    /// each of them is the point: the stamp is ``ChatLog/stamp(_:)`` rather than the user's
+    /// `chat.timestamp-format`, so the file's shape does not move when a display setting
+    /// does; no palette is consulted, since a plain-text file has no colours; and there is
+    /// **no `NSDataDetector` pass**, which is what keeps logging from doubling the cost of
+    /// the most expensive step on the ingest path.
+    ///
+    /// `nil` for an event that produces no line at all — the same events
+    /// ``line(for:context:)`` declines.
+    public func plainLine(for event: IRCEvent, context: RenderContext) -> String? {
+        guard let (kind, fields) = describe(event, context: context) else { return nil }
+        return Self.plainLine(kind: kind, fields: fields, at: context.now)
+    }
+
+    /// The same, from a kind and its fields — the path a locally echoed message takes, which
+    /// has no event to describe it.
+    public static func plainLine(
+        kind: LineKind,
+        fields: LineFields,
+        at date: Date
+    ) -> String {
+        var fields = fields
+        fields.timestamp = "[\(ChatLog.stamp(date))] "
+        // Stripped here as the renderer strips them for the buffer: a `^C` in a log file is
+        // a byte that makes `grep` output unreadable and tells the reader nothing.
+        fields.text = IRCFormatting.parse(fields.text).plain
+        fields.nick = IRCFormatting.stripping(fields.nick)
+        return LineFormatTable.mIRC[kind].expand(fields).text
+    }
+
     // MARK: - Event to fields
 
     /// The whole translation table, in one place: which kind a line is, and what fills

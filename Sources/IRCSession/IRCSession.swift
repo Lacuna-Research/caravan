@@ -789,15 +789,36 @@ public actor IRCSession {
     /// server for its history again, and a busy channel would otherwise produce one request
     /// per arrival.
     private func requestHistoryIfOurJoin(_ message: IRCMessage) async {
-        guard negotiated.isEnabled(.chatHistory), configuration.chatHistoryLimit > 0,
-            let channel = message.parameters.first,
+        guard let channel = message.parameters.first,
             let who = message.source?.nick,
             capabilities.caseMapping.equal(who, currentNick)
+        else { return }
+        await requestHistory(for: channel)
+    }
+
+    /// Asks for what was said to a target, whatever opened the window.
+    ///
+    /// **A conversation has no wire event to hang this off.** A channel has our own `JOIN`;
+    /// opening a query is a purely client-side act, so a bouncer-reattached conversation
+    /// opened blank where a channel opened mid-sentence. This is the hook for it, called by
+    /// `ConnectionViewModel.openQuery(with:)`.
+    ///
+    /// Still `LATEST` rather than `AFTER` the newest line the local log holds. `LATEST
+    /// <limit>` is bounded by the limit; `AFTER` a timestamp from a log last written to a
+    /// month ago asks the server for a month, and the client cannot know how much that is
+    /// before it arrives. The overlap `LATEST` produces is exactly what the buffer's
+    /// de-duplication index exists to absorb, and absorbing a bounded overlap is cheaper
+    /// than an unbounded request.
+    ///
+    /// Silently does nothing where the server has no `chathistory`, which is most of them.
+    public func requestHistory(for target: String) async {
+        guard negotiated.isEnabled(.chatHistory), configuration.chatHistoryLimit > 0,
+            !target.isEmpty
         else { return }
         await connection?.send(
             IRCMessage(
                 verb: "CHATHISTORY",
-                parameters: ["LATEST", channel, "*", String(configuration.chatHistoryLimit)]
+                parameters: ["LATEST", target, "*", String(configuration.chatHistoryLimit)]
             )
         )
     }

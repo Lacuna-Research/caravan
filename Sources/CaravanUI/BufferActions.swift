@@ -94,6 +94,15 @@ extension AppModel {
             )
         case .showChannelModes:
             isShowingChannelModes = true
+        case .showLog:
+            // **`networkKey`, not `displayName`.** The catcher above files a line under the
+            // network's *pretty* name; a log file is named by the stable server-list slug,
+            // because it has to be the same name after a bouncer renames the network.
+            logViewerPresentation = LogViewerPresentation(
+                window: window,
+                network: connection?.networkKey,
+                buffer: bufferName(of: target, on: connection)
+            )
         }
     }
 
