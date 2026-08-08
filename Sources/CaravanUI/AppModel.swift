@@ -334,6 +334,10 @@ public final class AppModel {
     /// network appends to the same file, which is the point.
     public let chatLog = ChatLog()
 
+    /// Who you have stopped listening to. One list for the whole app: an ignore is global,
+    /// not per network. See ``IgnoreList``.
+    public let ignores: IgnoreList
+
     /// The log viewer, and which window it is a sheet on. Same reasoning as
     /// ``urlCatcherPresentation``: a plain flag would put the sheet on the main window even
     /// when a detached buffer asked for it.
@@ -571,6 +575,7 @@ public final class AppModel {
         NetworkKeyMigration.run(settings: config, servers: servers)
         self.bindings = BufferBindings(config: config)
         self.bufferOrder = BufferOrder(config: config)
+        self.ignores = IgnoreList(config: config)
         self.debug = DebugController(trace: trace, settings: settings)
         // **The Dashboard is what you land on** (§13). It is the splash screen and the
         // empty state, which is the whole reason the app has no onboarding flow: the thing
@@ -759,6 +764,16 @@ public final class AppModel {
                     password: password,
                     reportingInto: target
                 )
+            case .ignore(let subject, let levels, let duration, let isRemoval):
+                connection.showNotice(
+                    applyIgnore(
+                        subject: subject,
+                        levels: levels,
+                        duration: duration,
+                        isRemoval: isRemoval
+                    ),
+                    in: target
+                )
             case .debug(let command):
                 // The canvas is where `/debug window` sends output, so the command opens
                 // it: being told the trace is now going somewhere you cannot see would be
@@ -767,6 +782,54 @@ public final class AppModel {
                 if case .toCanvas = command { showSettingsAndDebug() }
                 connection.showNotice(answer, in: target)
             }
+        }
+    }
+
+    /// `/ignore`, in all four of its moods, answering in the window it was typed in.
+    ///
+    /// **The answer is a sentence, not a confirmation.** `/ignore -pn bob` replying "ok"
+    /// tells you nothing about what you just did; replying "Ignoring bob!*@* — private
+    /// messages and notices" is how you find out that `-n` was the flag you meant.
+    func applyIgnore(
+        subject: String?,
+        levels: IgnoreLevel,
+        duration: Int?,
+        isRemoval: Bool
+    ) -> String {
+        guard let subject else { return ignoreListing() }
+        let mask = IgnoreList.mask(for: subject)
+
+        if isRemoval {
+            return ignores.remove(mask: mask)
+                ? "No longer ignoring \(mask)"
+                : "\(mask) was not being ignored"
+        }
+
+        let expires = duration.map { Date().addingTimeInterval(TimeInterval($0)) }
+        ignores.add(IgnoreEntry(mask: mask, levels: levels, expires: expires))
+        let forHowLong = duration.map { " for \(Self.spelled(seconds: $0))" } ?? ""
+        return "Ignoring \(mask)\(forHowLong) — \(levels.summary)"
+    }
+
+    /// What a bare `/ignore` prints.
+    private func ignoreListing() -> String {
+        ignores.sweep()
+        guard !ignores.entries.isEmpty else { return "Nobody is being ignored" }
+        let lines = ignores.entries.map { entry -> String in
+            let lapses = entry.expires.map {
+                " (until \($0.formatted(date: .omitted, time: .shortened)))"
+            }
+            return "  \(entry.mask) — \(entry.levels.summary)\(lapses ?? "")"
+        }
+        return (["Ignoring:"] + lines).joined(separator: "\n")
+    }
+
+    /// "10 minutes" rather than "600 seconds", which is what the person typing `-u600` meant.
+    static func spelled(seconds: Int) -> String {
+        switch seconds {
+        case ..<60: "\(seconds) second\(seconds == 1 ? "" : "s")"
+        case ..<3600: "\(seconds / 60) minute\(seconds / 60 == 1 ? "" : "s")"
+        default: "\(seconds / 3600) hour\(seconds / 3600 == 1 ? "" : "s")"
         }
     }
 
@@ -888,6 +951,7 @@ public final class AppModel {
         connection.bufferOrder = bufferOrder
         connection.urlCatcher = urlCatcher
         connection.chatLog = chatLog
+        connection.ignores = ignores
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in

@@ -64,6 +64,17 @@ public enum CommandAction: Sendable, Equatable {
     /// a caller that got it backwards would send `QUIT` into a closed socket.
     case quit(reason: String?)
 
+    /// `/ignore`: stop listening to somebody, start again, or say who is on the list.
+    ///
+    /// Nothing goes on the wire — an ignore is entirely the client's, which is why it is an
+    /// action rather than a `send`. The parser resolves the flags because they are a pure
+    /// letter table; it does *not* resolve a bare nick into a mask, since
+    /// `IgnoreList.mask(for:)` is where that convention lives and the parser has no business
+    /// holding a second copy of it.
+    ///
+    /// `subject` is `nil` for a bare `/ignore`, which lists them.
+    case ignore(subject: String?, levels: IgnoreLevel, duration: Int?, isRemoval: Bool)
+
     /// `/debug`: point the wire trace somewhere, or stop.
     ///
     /// The answer the user reads back is the *controller's*, not the parser's — it names

@@ -79,13 +79,30 @@ decision entry.
   thing listening, even at `0600`; opt-in is one more thing to discover was off after a
   script has silently done nothing for a week. If it becomes a setting it belongs on the
   Options canvas from stage 2's prompt 10. Decide when building item 34a.
-- **Where does a soju come from?** *(not blocking, but it blocks an acceptance)* The testing
-  strategy below has wanted a local soju since stage 1, and stage 2 prompt 4 is the first
-  thing that genuinely cannot be accepted without one: bouncer mode is proven against a
+- **Where does a soju come from?** *(not blocking, but it now blocks three acceptances)* The
+  testing strategy below has wanted a local soju since stage 1, and stage 2 prompt 4 is the
+  first thing that genuinely cannot be accepted without one: bouncer mode is proven against a
   scripted server that speaks `soju.im/bouncer-networks` and against the spec, but nothing
   has confirmed it against soju itself. Installing and configuring one — it needs a
   database, an account and upstream credentials — is the user's call rather than something
   to do to their machine unasked.
+
+  **The debt accumulates rather than sitting still, so here is the whole of it in one place.**
+  Every item below is written, tested against a scripted server, and unconfirmed against a
+  real bouncer:
+
+  - *Prompt 4* — `soju.im/bouncer-networks`: the network list becoming tree rows, binding a
+    connection to an upstream network, and `BOUNCER NETWORK` renaming a row underneath us.
+  - *Prompt 12* — `chathistory` de-duplication. The scripted server proves the index does what
+    it is told; what it cannot prove is that soju's replay carries the `msgid` and
+    `server-time` the key assumes, at the precision assumed, for the messages it chooses to
+    replay. This is the one where a wrong assumption about a real server shows up as
+    duplicated scrollback rather than as a failing test.
+  - *Prompt 12* — `CHATHISTORY LATEST` on opening a query, which exists precisely because a
+    bouncer-reattached conversation opened blank.
+
+  When a soju does appear these are one session's worth of acceptance rather than three, and
+  they should be run together.
 - **Does any network send `904` transiently?** *(not blocking)* Stage 2 prompt 3 decided
   that a refused SASL credential ends the attempt with no reconnect, on the grounds that a
   wrong password does not become right on retry. That is wrong if some ircd or bouncer ever
@@ -360,6 +377,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 22. **Ignore list.** *(also owns `/ignore`, moved here from item 14 by stage 2 prompt 8:
     the command is a front for this matching machinery and was not worth half-building)* Wildcard `nick!user@host` masks with mIRC-style level flags
     (`-pcntikm`), temporary ignores with duration.
+
+    *Shipped in stage 2 prompt 13a. Three deliberate omissions, recorded rather than left
+    implicit:* **per-network ignores** — mIRC's optional trailing network argument, which is
+    parsed and dropped rather than refused; global first, as §15.5 has it for everything else,
+    and the `ignore.<n>` key format leaves room. **`/ignore on|off` and `-x` exceptions** —
+    both mIRC's, neither asked for, and an empty list is already "off". **DCC ignores** —
+    `-d` is a flag for item 31's subsystem. Also note that `m` is *our* definition of a letter
+    `PLAN.md` recorded without one; see `BUILD-LOG.md`.
 23. **Notify list.** `MONITOR` where available, `ISON` polling as fallback; online/offline
     events, notify window, sounds.
 24. **Channel list window.** `/list` with min/max user filters, name and topic search,

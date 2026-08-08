@@ -58,7 +58,7 @@ struct OptionsPane: View {
 
             switch tab {
             case .connect: ConnectOptions(model: model)
-            case .irc: IRCOptions(settings: settings)
+            case .irc: IRCOptions(model: model, settings: settings)
             case .display: DisplayOptions(model: model, settings: settings)
             case .colours: ColourOptions(model: model, settings: settings)
             case .logging: LoggingOptions(model: model, settings: settings)
@@ -147,10 +147,39 @@ private struct ConnectOptions: View {
 
 /// How the client behaves in a conversation, rather than how it looks.
 private struct IRCOptions: View {
+    let model: AppModel
     @Bindable var settings: ChatSettings
 
     var body: some View {
         Form {
+            Section("Ignored") {
+                if model.ignores.entries.isEmpty {
+                    Text("Nobody is being ignored.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.ignores.entries) { entry in
+                        LabeledContent(entry.mask) {
+                            HStack(spacing: 8) {
+                                Text(entry.levels.summary)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Button("Remove") { model.ignores.remove(mask: entry.mask) }
+                            }
+                        }
+                    }
+                }
+                Text(
+                    "Set with `/ignore <nick>`, or from a nickname's right-click menu. "
+                        + "An ignore hides what somebody says from this moment on — it does "
+                        + "not remove them from the nickname list, and it does not go back "
+                        + "and hide what is already on screen or already in a log file."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             Section("Typing") {
                 // `labelsHidden()` is load-bearing, not decoration: without it the field's
                 // own placeholder is drawn as a second label inside a 70pt box and wraps

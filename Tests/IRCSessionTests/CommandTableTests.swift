@@ -227,11 +227,81 @@ struct CommandTableTests {
         #expect(try error("/invite").contains("/invite"))
     }
 
-    /// `/ignore` belongs with the ignore *list*, which is a later prompt. Left out of the
-    /// table entirely rather than half-built — so it passes through to the server, which
-    /// answers with an error the user can see, rather than silently doing nothing.
-    @Test("ignore is deliberately not in the table yet")
-    func ignoreIsDeferred() {
-        #expect(!CommandParser.knownCommands.contains("ignore"))
+    /// `/ignore` puts nothing on the wire — it is entirely the client's — so it is asserted
+    /// on the action rather than through `wire`.
+    @Test("ignore parses mIRC's flags, together or apart")
+    func ignoreFlags() throws {
+        #expect(
+            ignore("/ignore bob")
+                == .ignore(subject: "bob", levels: .all, duration: nil, isRemoval: false)
+        )
+        #expect(
+            ignore("/ignore -pn bob")
+                == .ignore(
+                    subject: "bob",
+                    levels: [.privateMessages, .notices],
+                    duration: nil,
+                    isRemoval: false
+                )
+        )
+        // Written apart, which is what somebody who learned this in 1998 types.
+        #expect(ignore("/ignore -p -n bob") == ignore("/ignore -pn bob"))
+        // A mask is passed through as typed; turning a bare nick into one is the app's job.
+        #expect(
+            ignore("/ignore -c *!*@spam.example")
+                == .ignore(
+                    subject: "*!*@spam.example",
+                    levels: .channelMessages,
+                    duration: nil,
+                    isRemoval: false
+                )
+        )
+    }
+
+    @Test("ignore takes a duration, a removal, and a bare listing")
+    func ignoreModes() throws {
+        #expect(
+            ignore("/ignore -u600 bob")
+                == .ignore(subject: "bob", levels: .all, duration: 600, isRemoval: false)
+        )
+        // The duration rides inside a combined flag, as mIRC's does.
+        #expect(
+            ignore("/ignore -pu600 bob")
+                == .ignore(
+                    subject: "bob",
+                    levels: .privateMessages,
+                    duration: 600,
+                    isRemoval: false
+                )
+        )
+        #expect(
+            ignore("/ignore -r bob")
+                == .ignore(subject: "bob", levels: .all, duration: nil, isRemoval: true)
+        )
+        // Bare: list them.
+        #expect(
+            ignore("/ignore")
+                == .ignore(subject: nil, levels: .all, duration: nil, isRemoval: false)
+        )
+    }
+
+    /// A typo must not be acted on halfway. `/ignore -pz bob` doing the `p` and dropping the
+    /// `z` is how somebody comes to believe in a flag that does not exist.
+    @Test("an unknown level letter is refused rather than half-applied")
+    func ignoreRejectsUnknownFlags() throws {
+        #expect(try error("/ignore -pz bob").contains("-z"))
+        #expect(try error("/ignore -u bob").contains("/ignore"))
+        #expect(try error("/ignore -r").contains("/ignore"))
+    }
+
+    /// mIRC's optional trailing network argument. Ours are global, so it is dropped rather
+    /// than refused — muscle memory should still ignore bob.
+    @Test("a trailing network argument is ignored, not rejected")
+    func ignoreDropsNetworkArgument() {
+        #expect(ignore("/ignore bob libera") == ignore("/ignore bob"))
+    }
+
+    private func ignore(_ line: String) -> CommandAction? {
+        actions(line).first
     }
 }

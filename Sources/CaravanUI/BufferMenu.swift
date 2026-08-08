@@ -116,6 +116,12 @@ public enum BufferMenu {
         }
 
         groups.append([BufferMenuItem("Slap", .command(slap(nick)))])
+        // **Last, on its own, and always enabled.** Everything above asks the *server* for
+        // something and needs a prefix to do it; Ignore is a decision about your own window
+        // and needs nobody's permission. Its own group because it is also the only one that
+        // survives into a conversation, where there is no channel and no operator items at
+        // all — and a query is exactly where you want to stop hearing somebody.
+        groups.append([BufferMenuItem("Ignore", .command("/ignore \(nick)"))])
         return groups
     }
 

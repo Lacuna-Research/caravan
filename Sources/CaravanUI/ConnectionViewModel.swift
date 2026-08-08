@@ -114,6 +114,10 @@ public final class ConnectionViewModel: Identifiable {
     /// what makes "logging is off" and "there is no log" the same code path rather than two.
     @ObservationIgnored public var chatLog: ChatLog?
 
+    /// Who is not to be shown. Injected like ``urlCatcher``, and `nil` in the tests that do
+    /// not care — which makes "nothing is ignored" and "there is no list" one code path.
+    @ObservationIgnored public var ignores: IgnoreList?
+
     private var renderer: LineRenderer { settings.renderer }
 
     @ObservationIgnored private var buffersByName: [IRCChannelName: ChannelBuffer] = [:]
@@ -702,10 +706,26 @@ public final class ConnectionViewModel: Identifiable {
 
     private func append(_ event: IRCEvent) {
         // Every inbound line has somewhere to land, whether or not it was understood.
+        //
+        // **Before the ignore test, deliberately.** The raw view is a diagnostic, and
+        // somebody working out why they cannot see a person has to be able to see them.
+        // An ignore is a display filter, never a censor of `/debug`.
         if case .raw(let message) = event {
             appendRaw(message.wireForm, kind: .rawInbound)
             return
         }
+
+        // **One `return`, above all five consumers.** The line, the activity state, the URL
+        // catcher, the chat log and the query's header band — the alternative is five
+        // conditions and a sixth consumer that gets missed. Prompt 12's de-duplication sits
+        // just below for the same reason, and this has to be above it: a line you were never
+        // going to be shown should not consume a replay key either.
+        //
+        // Only the *rendering* is suppressed. `.channelChanged` is not an ignorable event,
+        // so an ignored person still joins, still holds their op and still leaves the nick
+        // list when they quit.
+        guard let event = withIgnoresApplied(event) else { return }
+
         let context = RenderContext(
             ownNick: currentNick,
             senderPrefix: senderPrefix(for: event),
@@ -751,6 +771,92 @@ public final class ConnectionViewModel: Identifiable {
         }
         guard shown else { return }
         noteConversation(event, at: context.now)
+    }
+
+    /// The event as the ignore list leaves it: unchanged, stripped of its formatting, or
+    /// `nil` for one that is not to be shown at all.
+    ///
+    /// **Two outcomes rather than one boolean**, because `k` is not a suppression. Six of
+    /// the seven levels hide a line; `controlCodes` keeps it and takes the colours off,
+    /// which is what you want for somebody whose every word is a different shade but who is
+    /// still worth reading.
+    private func withIgnoresApplied(_ event: IRCEvent) -> IRCEvent? {
+        guard let ignores, let sender = Self.ignorableSender(of: event) else { return event }
+        // **Never yourself.** A mask broad enough to catch your own `nick!user@host` — and
+        // `*!*@*` is — would silently eat your own echo, which is a client appearing to
+        // drop what you type.
+        if let nick = sender.nick, isOwn(nick: nick) { return event }
+
+        let level = ignores.levels(for: sender, mapping: caseMapping)
+        guard !level.isEmpty else { return event }
+        if let hiding = Self.ignoreLevel(hiding: event), level.contains(hiding) { return nil }
+        guard level.contains(.controlCodes) else { return event }
+        return Self.strippingCodes(event)
+    }
+
+    /// Whose event this is, for matching, or `nil` for one that has no person behind it.
+    ///
+    /// A `.server` source is deliberately excluded by ``IgnoreList/levels(for:mapping:)``
+    /// rather than here, so the rule lives with the matcher; this only decides which events
+    /// carry a sender at all.
+    static func ignorableSender(of event: IRCEvent) -> IRCSource? {
+        switch event {
+        case .message(_, let sender, _, _, _, _),
+            .ctcpRequest(_, let sender, _, _),
+            .ctcpReply(_, let sender, _, _),
+            .joined(_, let sender, _, _),
+            .parted(_, let sender, _),
+            .quit(let sender, _),
+            .nickChanged(let sender, _):
+            return sender
+        case .invited(let by, _, _):
+            return by
+        default:
+            return nil
+        }
+    }
+
+    /// The level that would hide this event, or `nil` for one no level hides.
+    ///
+    /// A kick is deliberately absent: being thrown out of a channel is news about *you*,
+    /// and a client that hid it because you had ignored the operator would leave you
+    /// wondering why the window went quiet. Topic changes are absent for the same reason —
+    /// the topic is the channel's, not the person's.
+    static func ignoreLevel(hiding event: IRCEvent) -> IgnoreLevel? {
+        switch event {
+        case .message(let target, _, _, let kind, _, _):
+            if kind == .notice { return .notices }
+            if case .channel = target { return .channelMessages }
+            return .privateMessages
+        case .ctcpRequest, .ctcpReply:
+            return .ctcps
+        case .invited:
+            return .invites
+        case .joined, .parted, .quit, .nickChanged:
+            return .movement
+        default:
+            return nil
+        }
+    }
+
+    /// The same event with the formatting taken out of what was said — the `k` level.
+    ///
+    /// Only the cases that carry text somebody typed. Rewriting the event rather than
+    /// telling the renderer about the ignore keeps the renderer a pure function of its
+    /// input, which is what makes a rendered line testable without an ignore list.
+    static func strippingCodes(_ event: IRCEvent) -> IRCEvent {
+        guard
+            case .message(let target, let sender, let text, let kind, let isAction, let tags) =
+                event
+        else { return event }
+        return .message(
+            target: target,
+            sender: sender,
+            text: IRCFormatting.stripping(text),
+            kind: kind,
+            isAction: isAction,
+            tags: tags
+        )
     }
 
     /// What makes an arriving message the same message as one already held, or `nil` for an
