@@ -316,8 +316,6 @@ public final class AppModel {
     /// sources all see a flat list of networks.
     public private(set) var connections: [ConnectionViewModel] = []
 
-    public var isShowingConnectSheet = false
-
     /// Whether ⌘K's palette is up.
     public var isShowingQuickSwitcher = false
 
@@ -393,6 +391,9 @@ public final class AppModel {
     /// Which buffer each of ⌘1–9 reaches. Empty until the user binds something (§11).
     public let bindings: BufferBindings
 
+    /// The servers the user keeps, in `servers.conf`. The app's front door (§13).
+    public let servers: ServerList
+
     /// Where passwords are kept. The Keychain in the app, something ephemeral in a test.
     @ObservationIgnored public let credentials: any CredentialStore
 
@@ -464,10 +465,27 @@ public final class AppModel {
         /// which keeps channel positions stable as transient PMs come and go.
         case query(connection: UUID, nick: IRCNick)
         case settingsAndDebug
+        /// The server list and the empty state (§13). A canvas like ``settingsAndDebug``,
+        /// and a *peer row above* the networks rather than the root of the tree — the two
+        /// canvases bracket the buffer list, which keeps the tree's root level meaningful.
+        case dashboard
     }
 
     /// Whether the canvas is what the detail area is showing.
     public var isShowingCanvas: Bool { selection == .settingsAndDebug }
+
+    /// Opens the Dashboard, or focuses its window when it has been ejected.
+    ///
+    /// The same shape as ``showSettingsAndDebug()`` and for the same reason (§10): once a
+    /// canvas is in a window of its own, taking over the chat area instead would put it in
+    /// two places at once.
+    public func showDashboard() {
+        if isDetached(.dashboard) {
+            windowToFocus = .dashboard
+            return
+        }
+        selection = .dashboard
+    }
 
     // MARK: - Zoom
 
@@ -511,18 +529,66 @@ public final class AppModel {
         config: ConfigFile = .shared,
         settings: ChatSettings? = nil,
         knownHosts: KnownHosts? = nil,
-        credentials: (any CredentialStore)? = nil
+        credentials: (any CredentialStore)? = nil,
+        servers: ServerList? = nil
     ) {
         let settings = settings ?? ChatSettings(config: config)
         let trace = TraceBuffer()
+        let servers = servers ?? .shared
         self.config = config
         self.settings = settings
         self.trace = trace
         self.knownHosts = knownHosts ?? .shared
         self.credentials = credentials ?? Keychain.shared
+        self.servers = servers
+        // **Before the bindings are read**, which is the whole ordering constraint: they
+        // parse the network out of `binding.N`, and reading them first would leave every
+        // binding pointing at a `host:port` no connection answers to any more.
+        Self.adoptLastUsedServer(config: config, servers: servers)
+        NetworkKeyMigration.run(settings: config, servers: servers)
         self.bindings = BufferBindings(config: config)
         self.bufferOrder = BufferOrder(config: config)
         self.debug = DebugController(trace: trace, settings: settings)
+        // **The Dashboard is what you land on** (§13). It is the splash screen and the
+        // empty state, which is the whole reason the app has no onboarding flow: the thing
+        // a new user needs is a server list with an Add button, and that is the same thing
+        // an existing user needs. Connecting moves the selection off it.
+        self.selection = .dashboard
+    }
+
+    /// Turns a pre-server-list `caravan.conf` into a first entry.
+    ///
+    /// Before this prompt the only server anywhere was `server.host`/`server.port` — what
+    /// the Connect sheet last used. Someone upgrading has one server they care about and it
+    /// is that one, so an empty list plus a remembered host becomes an entry rather than an
+    /// empty Dashboard and a shrug.
+    ///
+    /// It also keeps the test harness working: every acceptance run since prompt 3 has
+    /// seeded `caravan.conf` and expected the app to know where to connect, and that trick
+    /// would otherwise have died with the sheet. One rule covers both, which is why it is
+    /// this rule rather than a special case for either.
+    private static func adoptLastUsedServer(config: ConfigFile, servers: ServerList) {
+        guard servers.entries.isEmpty,
+            let host = config.string(ConnectionSettings.Key.host), !host.isEmpty
+        else { return }
+        let port = config.int(ConnectionSettings.Key.port).map { UInt16(clamping: $0) } ?? 6697
+        let bouncer = config.string(ConnectionSettings.Key.bouncerNetwork) ?? ""
+        let preferred =
+            bouncer.isEmpty
+            ? NetworkName.suggestion(forHost: host) : NetworkName.sanitised(bouncer)
+        servers.save(
+            ServerEntry(
+                name: NetworkName.unique(preferred, taken: servers.names),
+                host: host,
+                port: port,
+                useTLS: config.bool(ConnectionSettings.Key.useTLS) ?? true,
+                authentication: config.string(ConnectionSettings.Key.authentication)
+                    .flatMap(ConnectionSettings.AuthenticationChoice.init(rawValue:)) ?? .none,
+                account: config.string(ConnectionSettings.Key.account) ?? "",
+                certificateLabel: config.string(ConnectionSettings.Key.certificateLabel) ?? "",
+                bouncerNetwork: bouncer
+            )
+        )
     }
 
     /// The connection a row belongs to.
@@ -540,7 +606,7 @@ public final class AppModel {
         case .status(let id): connection(id: id)
         case .channel(let id, _): connection(id: id)
         case .query(let id, _): connection(id: id)
-        case .settingsAndDebug, nil: nil
+        case .settingsAndDebug, .dashboard, nil: nil
         }
     }
 
@@ -565,7 +631,7 @@ public final class AppModel {
         switch selection {
         case .channel(_, let name): .channel(name)
         case .query(_, let nick): .nick(nick)
-        case .status, .settingsAndDebug, nil: nil
+        case .status, .settingsAndDebug, .dashboard, nil: nil
         }
     }
 
@@ -578,7 +644,7 @@ public final class AppModel {
         switch selection {
         case .channel: "Close Channel"
         case .query: "Close Conversation"
-        case .status, .settingsAndDebug, nil: nil
+        case .status, .settingsAndDebug, .dashboard, nil: nil
         }
     }
 
@@ -598,7 +664,7 @@ public final class AppModel {
             guard let connection = connection(id: connectionID) else { return }
             connection.closeQuery(nick)
             selection = .status(connection.id)
-        case .status, .settingsAndDebug, nil:
+        case .status, .settingsAndDebug, .dashboard, nil:
             return
         }
     }
@@ -1028,7 +1094,9 @@ public final class AppModel {
         case .query(let id, let nick):
             connection(id: id)?.query(named: nick)?.log
                 .markUnreadPosition(with: renderer.unreadRule())
-        case .settingsAndDebug:
+        case .settingsAndDebug, .dashboard:
+            // A canvas has no scrollback to mark. §10 draws the buffer/canvas line and
+            // this is one of the places it pays for itself.
             break
         }
     }

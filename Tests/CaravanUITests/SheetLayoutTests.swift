@@ -34,42 +34,49 @@ struct SheetLayoutTests {
         return view.subviews.flatMap(leafFrames)
     }
 
-    // MARK: - The Connect sheet
+    // MARK: - The server editor
 
-    @Test("the whole Connect sheet hosts and lays out")
-    func connectSheetLaysOut() {
-        let sheet = ConnectSheet(
-            config: temporaryConfig(),
-            credentials: EphemeralCredentialStore()
-        ) { _ in }
-        let hosting = hosted(sheet, width: 460, height: 620)
-        #expect(hosting.fittingSize.width <= 460)
+    /// The Connect sheet these two tests were written for is gone (prompt 11). The surface
+    /// that inherited its job is the Dashboard's server editor — and so is the defect worth
+    /// guarding, because it is the same kind of `Form`: prompt 2 found a row whose label
+    /// wrapped one word per line beside a sliver of field, and nothing short of hosting the
+    /// thing catches that.
+    @Test("the whole server editor hosts and lays out")
+    func serverEditorLaysOut() {
+        let model = temporaryModel()
+        let entry = ServerEntry(name: "libera", host: "irc.libera.chat")
+        model.servers.save(entry)
+        let hosting = hosted(ServerEditor(model: model, entry: entry), width: 460, height: 700)
+
+        // **No width assertion, unlike the sheet this replaced.** That sheet declared
+        // `.frame(width: 460)`, so its fitting width was a promise; the editor lives in a
+        // resizable split pane and its fitting width is a *preference* — 744pt here, which
+        // means "I would like to be wider", not "I overflow". Asserting on it would test
+        // the paragraph lengths rather than the layout.
         #expect(!leafFrames(hosting).isEmpty)
+        // Every row drawn inside the width it was given is the thing that matters.
+        let overflowing = leafFrames(hosting).filter { $0.maxX > 470 }
+        #expect(overflowing.isEmpty, "\(overflowing.count) leaves drew past the pane")
     }
 
-    /// The section grows by one or two rows as the method changes, and every row has to
-    /// stay a row. A `Form` row taller than about 60pt is the shape of prompt 2's defect —
-    /// a label wrapping one word per line beside a sliver of field.
+    /// The Authentication section grows by one or two rows as the method changes, and every
+    /// row has to stay a row.
     @Test(
-        "the Authentication section stays row-shaped for every method",
+        "the editor stays row-shaped for every authentication method",
         arguments: ConnectionSettings.AuthenticationChoice.allCases
     )
     func authenticationSectionLaysOut(choice: ConnectionSettings.AuthenticationChoice) {
-        var settings = ConnectionSettings()
-        settings.authentication = choice
-        let binding = Binding(get: { settings }, set: { settings = $0 })
-        let hosting = hosted(
-            Form { AuthenticationSection(settings: binding) }.formStyle(.grouped),
-            width: 460,
-            height: 400
-        )
+        let model = temporaryModel()
+        var entry = ServerEntry(name: "libera", host: "irc.libera.chat")
+        entry.authentication = choice
+        model.servers.save(entry)
+        let hosting = hosted(ServerEditor(model: model, entry: entry), width: 460, height: 900)
         let height = hosting.fittingSize.height
-        #expect(height > 40, "the section collapsed to \(height)pt")
-        // Measured: a row is ~37pt, so `.none` is 104pt and `.saslExternal` — four rows
-        // plus the explanatory paragraph — is 215pt. The ceiling leaves room for two more
-        // rows' worth of metric drift between OS versions while still catching prompt 2's
-        // defect, which turned one row into five and would land near 355pt.
-        #expect(height < 300, "the section grew to \(height)pt for \(choice.label)")
+        #expect(height > 40, "the editor collapsed to \(height)pt")
+        // The whole editor rather than one section now, so the ceiling is higher than the
+        // 300pt the section alone was held to. It is still a ceiling, and prompt 2's defect
+        // turned one row into five — which no amount of metric drift resembles.
+        #expect(height < 1400, "the editor grew to \(height)pt for \(choice.label)")
 
         // The picker's labels have to be distinct and non-empty, or the menu shows blanks.
         #expect(!choice.label.isEmpty)

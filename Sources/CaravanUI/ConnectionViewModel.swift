@@ -137,6 +137,29 @@ public final class ConnectionViewModel: Identifiable {
     /// from the wire. The bouncer's own word for a network beats that network's `NETWORK=`.
     @ObservationIgnored private let givenName: String?
 
+    /// The server-list entry this connection came from — its ``NetworkName``.
+    ///
+    /// **The stable identifier**, and the one thing here the server cannot change: it is
+    /// the user's, it survives a restart, and `binding.N`, `order.<name>.*` and stage 3's
+    /// `libera/#swift` all key on it. Distinct from ``displayName``, which is what the
+    /// *server* calls itself and is only ever shown.
+    ///
+    /// Empty for a connection made without an entry, which after this prompt means only a
+    /// test that did not bother.
+    @ObservationIgnored public var networkName: String = ""
+
+    /// What the tree, the window title and the quick switcher call this network.
+    ///
+    /// **The user's name wins over the server's.** `displayName` is `ISUPPORT NETWORK=`,
+    /// which is prettier — "Libera.Chat" against "libera" — and which two entries for the
+    /// same network share exactly. Somebody keeping two Libera accounts would see two rows
+    /// both called Libera.Chat and no way to tell which was which, and the name they chose
+    /// is the one their bindings and scripts already use. `displayName` stays as the
+    /// server's own word, for the prose that wants it.
+    public var treeName: String {
+        networkName.isEmpty ? displayName : networkName
+    }
+
     public init(
         configuration: SessionConfiguration,
         trace: TraceBuffer,

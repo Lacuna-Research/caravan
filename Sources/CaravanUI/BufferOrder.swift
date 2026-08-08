@@ -37,6 +37,13 @@ public final class BufferOrder {
         case queries
     }
 
+    /// Moves a network's remembered order onto a new name, in memory. See
+    /// ``BufferBindings/renameNetwork(_:to:)`` — the file is not the only copy.
+    func renameNetwork(_ old: String, to new: String) {
+        if let channels = channelOrder.removeValue(forKey: old) { channelOrder[new] = channels }
+        if let queries = queryOrder.removeValue(forKey: old) { queryOrder[new] = queries }
+    }
+
     public init(config: ConfigFile) {
         self.config = config
     }

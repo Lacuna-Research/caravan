@@ -62,15 +62,10 @@ public struct RootView: View {
                 nickListToggle
             }
             ToolbarItem(id: "connect", placement: .secondaryAction) {
-                Button("Connect\u{2026}", systemImage: "plus") {
-                    model.isShowingConnectSheet = true
+                Button("Servers\u{2026}", systemImage: "plus") {
+                    model.showDashboard()
                 }
-                .help("Open another network")
-            }
-        }
-        .sheet(isPresented: $model.isShowingConnectSheet) {
-            ConnectSheet(config: model.config, credentials: model.credentials) { settings in
-                Task { await model.connect(using: settings) }
+                .help("Your servers, and where to connect")
             }
         }
         // The TLS handshake is genuinely paused behind this one, so it takes precedence
@@ -115,6 +110,8 @@ public struct RootView: View {
         // than drawing a second copy of it.
         if let selection = model.selection, model.isDetached(selection) {
             DetachedElsewhere(model: model, item: selection)
+        } else if model.selection == .dashboard {
+            DashboardCanvas(model: model)
         } else if model.isShowingCanvas {
             SettingsDebugCanvas(model: model)
         } else if let connection = model.activeConnection {
@@ -126,13 +123,9 @@ public struct RootView: View {
                 StatusBufferView(model: model, connection: connection)
             }
         } else {
-            ContentUnavailableView {
-                Label("Not connected", systemImage: "network.slash")
-            } description: {
-                Text("Connect to an IRC network to get started.")
-            } actions: {
-                Button("Connect…") { model.isShowingConnectSheet = true }
-            }
+            // Nothing selected and nothing connected: show the front door rather than a
+            // placeholder with a button that opens the front door (§13).
+            DashboardCanvas(model: model)
         }
     }
 

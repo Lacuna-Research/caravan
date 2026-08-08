@@ -36,6 +36,13 @@ public struct ServerInfo: Sendable, Equatable {
 public enum DisconnectReason: Sendable, Equatable {
     /// Never connected in the first place.
     case notStarted
+
+    /// Whether this is the initial state rather than an ending.
+    ///
+    /// The distinction matters to anything *waiting* for a connection: `.notStarted` and
+    /// `.timedOut` are both `.disconnected`, and treating them alike means giving up before
+    /// the dialling has begun.
+    public var isNotStarted: Bool { self == .notStarted }
     /// ``IRCSession/disconnect()`` was called.
     case userInitiated
     /// The server sent `ERROR`, with its reason.

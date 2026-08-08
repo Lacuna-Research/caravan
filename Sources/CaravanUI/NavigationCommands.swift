@@ -22,7 +22,10 @@ public struct NavigationCommands: Commands {
         // run already found once that losing Connect makes multi-network unreachable, and
         // a customization palette must not be a way to reproduce that.
         CommandMenu("Network") {
-            Button("Connect…") { model.isShowingConnectSheet = true }
+            // **The Dashboard, not a sheet.** §13 retired the Connect sheet: connecting
+            // is a persistent surface you keep servers on, not a modal you fill in again
+            // every time. The shortcut stays, because it was already learned.
+            Button("Servers…") { model.showDashboard() }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("Disconnect") { Task { await model.disconnect() } }
                 .disabled(model.activeConnection?.isConnected != true)

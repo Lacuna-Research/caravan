@@ -96,6 +96,7 @@ extension AppModel.SidebarItem: Codable {
         case channel = "c"
         case query = "q"
         case canvas = "x"
+        case dashboard = "d"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -109,6 +110,8 @@ extension AppModel.SidebarItem: Codable {
         switch kind {
         case .canvas:
             self = .settingsAndDebug
+        case .dashboard:
+            self = .dashboard
         case .status:
             guard parts.count == 2, let id = UUID(uuidString: String(parts[1])) else {
                 throw DecodingError.dataCorrupted(
@@ -144,6 +147,8 @@ extension AppModel.SidebarItem: Codable {
         switch self {
         case .settingsAndDebug:
             return Kind.canvas.rawValue
+        case .dashboard:
+            return Kind.dashboard.rawValue
         case .status(let id):
             return [Kind.status.rawValue, id.uuidString].joined(separator: separator)
         case .channel(let id, let channel):
