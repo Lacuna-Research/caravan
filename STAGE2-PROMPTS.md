@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 12/18 complete. Next: prompt 13a.
+**Status:** 13/18 complete. Next: prompt 13b.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -743,49 +743,98 @@ highlights ship first they add a fourth thing for ignore to suppress; if ignore 
 the highlight rules simply never see a suppressed line. One order costs nothing and the
 other costs a note nobody reads until it is wrong.
 
-*To be written out before it starts.*
+```
+Wildcard `nick!user@host` masks, mIRC's level flags, temporary ignores with a duration, and
+the `/ignore` that fronts them.
 
-**Carry-forward** *(consumed when this prompt runs)*
+**An ignore hides lines. It never changes state.** That is the invariant the whole prompt
+is built on: an ignored person still joins the channel, still appears in the nick list, still
+holds their op, and their quit still removes them. `IRCEvent.channelChanged(_:)` carries the
+roster and must never be suppressed — suppress the *rendering* of an event, never the event.
+A client whose nick list quietly disagrees with the server because of a display filter is a
+much worse bug than the one being fixed.
 
-- From prompt 6: **an ignore has to suppress the activity state, not just the line.** A
-  buffer that goes pink for a message you never see is worse than no ignore at all. Both
-  happen in `ConnectionViewModel.append(_:)`, a few lines apart — the line goes to
-  `destinations(for:)` and the state to `raise(_:to:)`.
-- From prompt 9: **the catcher's line-by-line seam is a third thing to suppress.**
-  `ConnectionViewModel.append(_:)` calls `urlCatcher?.record(...)` in the same loop that
-  appends the line and raises the activity. An ignored message must not put its links in
-  the URL catcher either.
-- From prompt 12: **there are now four things to suppress, not three — the fourth is the
-  chat log**, and it is the one where getting it wrong is permanent. The same loop in
-  `ConnectionViewModel.append(_:)` ends with `chatLog?.write(...)`, so an ignored line
-  would be written to disk while never appearing on screen: invisible, and still there
-  next week. Whether an ignore *should* suppress the log is a genuine question — mIRC
-  logs what it ignores — but it must be answered rather than inherited by omission.
-  The shape to copy is right above it: prompt 12 put its own suppression as a single
-  `continue` before all four, precisely so a fifth consumer cannot be added and missed.
-- From prompt 12: **the reload path deliberately does not go through `append(_:)`**, so
-  none of those four seams sees it. `ConnectionViewModel.reloadLog(into:)` appends straight
-  to `MessageLogController`. That is what you want — fifty reloaded lines must not fire
-  fifty ignores — but it means an ignore added to `append(_:)` will not retroactively hide
-  what is already in the log file, which is the correct behaviour and worth saying out loud
-  in the Options text rather than surprising somebody.
-- From prompt 9: **the Ignore menu item is this prompt's to add**, and its slot is already
-  shaped. `BufferMenu.nickItems(_:channel:canSetModes:)` in `Sources/CaravanUI/BufferMenu.swift`
-  builds the groups; Ignore belongs in the third group beside Kick and Ban, as
-  `BufferMenuItem("Ignore", .command("/ignore \(nick)"))` — enabled unconditionally, since
-  ignoring somebody needs no prefix. Prompt 9 left it out rather than shipping an item that
-  silently did nothing. Nothing else has to change: every item is a command string, so the
-  item works the moment `/ignore` is in `CommandParser`'s switch (and its `knownCommands`).
-  `Tests/CaravanUITests/BufferActionsTests.swift` asserts the exact command strings and the
-  exact enabled set, so both tests need the new item adding — which is the point of their
-  being exhaustive.
-- From prompt 10: **an ignore list is the first setting shaped as a *list* rather than a
-  scalar**, which `caravan.conf`'s one-value-per-key format does not hold directly. Decide
-  the encoding deliberately and write it down, because prompt 13b's keyword and pattern
-  lists have the same problem and must not invent a second answer. Two precedents:
-  `ChatSettings.encodeSuffix`'s `_`-for-space, for a value the format cannot carry
-  verbatim, and prompt 11's `chat.colour.N` and `<name>.<field>` — one key per element,
-  which a hand-edited file can add to or delete from a line at a time.
+- **One `return`, before everything.** `ConnectionViewModel.append(_:)` now feeds four
+  consumers — the line, the activity state, the URL catcher and the chat log — and prompt 12
+  left its own de-duplication as a single `continue` ahead of all four for exactly this
+  reason. Put the ignore test above that, as an early `return`, so it also covers
+  `noteConversation`. Four separate conditions is how the fifth consumer gets missed.
+- **Yes, an ignore suppresses the log too**, and this is the note from prompt 12 being
+  answered rather than inherited. mIRC logs what it ignores; we do not. A line you were never
+  shown, written to disk where you will never think to look for it, is the worst of both —
+  and the log is the one consumer whose mistake is permanent. Say so in the Options text.
+- **Levels are a pure `OptionSet` in `IRCProtocol`**, beside `IRCMask`, whose own doc comment
+  already says it is "for bans and ignores". A letter table is a table, the Linux job builds
+  that module, and `CommandParser` and `CaravanUI` both need to speak it. Expiry is not pure
+  — it needs a clock — so the entry, the list and the persistence stay in `CaravanUI`.
+- **`p c n t i k` are mIRC's and mean what mIRC means.** `m` is in `PLAN.md`'s list without a
+  recorded meaning; define it, say in the source that we defined it, and record what would
+  make us change it.
+- **`k` is the odd one: it does not hide the line, it strips the formatting from it.** So the
+  ignore test cannot be a single boolean — one level rewrites the event and the others drop
+  it. Keep that visible rather than folding it into the suppression.
+- **Never ignore yourself, and never ignore a server.** A mask broad enough to match your own
+  `nick!user@host` would silently eat your own echo, and `.server` sources have no nick, no
+  user and no host to match on — a `*!*@*` ignore must not take out the MOTD.
+- **A bare nick becomes `nick!*@*`**, not the `*!*@host` that `/ban` resolves from the roster.
+  A ban wants to survive a `/nick`; an ignore wants to not catch everyone behind one bouncer.
+  Opposite defaults for the same-looking input, and both are right.
+- **Storage: one key per entry, one line each.** `ignore.<n> = <levels> <mask> [<expiry>]`.
+  The `<name>.<field>` shape prompt 11 settled cannot be used here — it parses on the dot, and
+  every useful mask has dots in it. This is the answer prompt 13b's keyword and pattern lists
+  must reuse rather than inventing a second one.
+- **The wire trace is never filtered.** `/debug` and the raw-traffic toggle show what arrived.
+  An ignore is a display filter, not a censor of diagnostics, and somebody debugging why they
+  cannot see a person must be able to see them.
+- The menu item, the `/ignore` with no arguments that lists them, and a list with a Remove
+  button in Options' IRC tab — the same shape as Connect's trusted certificates.
+
+Acceptance: with a scripted second client, ignore it by nick and confirm the channel goes
+quiet, the tree row does not colour, the URL it posts is not in the catcher and nothing
+reaches the log — then confirm the nick list still shows it, and still loses it when it
+quits. Ignore with `-u`, watch it lapse. Confirm `/debug` still shows every suppressed line.
+Restart and confirm a permanent ignore came back and a lapsed one did not.
+
+Do not:
+  - **Highlights, keywords, notifications, sounds.** Prompt 13b, which inherits these
+    suppression points rather than adding its own.
+  - **Per-network ignores.** mIRC's optional `[network]` argument. Global first, as §15.5's
+    convention has it for everything else; the key format above leaves room.
+  - **`/ignore on|off`** as a global toggle, and `-x` exceptions. Both are mIRC's, neither has
+    been asked for, and an empty list is already "off".
+  - **DCC ignores.** `-d` is a flag for a subsystem that arrives in stage 3.
+  - **Retroactively hiding what is already on screen or already in the log file.** An ignore
+    applies from the moment you set it, exactly as the raw-traffic toggle does.
+```
+
+**Status:** complete. All six notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`.
+
+**The note from prompt 12 asked a real question and it is answered "yes": an ignore
+suppresses the chat log too.** mIRC logs what it ignores. We do not, on the grounds that a
+line you were never shown, written to disk where you will never think to look for it, is the
+worst of both — and the log is the one consumer whose mistake is permanent. Said on the
+Options surface rather than only here.
+
+**One invariant is worth more than the feature**: an ignore hides lines and never changes
+state. `.channelChanged` is not ignorable, so an ignored person still joins, still holds
+their prefix, and still leaves the nick list when they quit.
+
+**`m` is ours, not mIRC's.** `PLAN.md` records the flag set as `-pcntikm` without recording
+what `m` meant; `IgnoreLevel` defines it as joins, parts, quits and nick changes and says in
+its own doc comment that we defined it. `BUILD-LOG.md` carries what would justify changing it.
+
+**The live run cost two harness defects and found one real line.** `run-caravan.sh` hard-coded
+a DerivedData hash, so most of the run drove the *previous* prompt's binary — Xcode keys
+DerivedData on the project path and every worktree has its own. And a mangled line survived a
+failed scripted edit, semantically correct by accident and invisible to both the compiler and
+the linter. Both are in `BUILD-LOG.md`.
+
+**Not verified live: the URL catcher staying empty**, which needs the context menu, and the
+*typed* `/ignore` — synthetic keystrokes reach the ⌘K switcher and the Options picker but not
+the chat input, confirmed twice now. The ignore was seeded through `caravan.conf` instead,
+which tests the file format against the person it is for; the command has parser tests and
+`applyIgnore` tests through the real path.
 
 ---
 
@@ -817,9 +866,27 @@ ignored line never reaches these rules.
   tabs and skipped Sounds rather than ship it empty; adding one is a case in
   `OptionsPane.Tab` in `SettingsDebugCanvas.swift` plus a `@ViewBuilder` pane, since the
   enum is `CaseIterable` and drives the picker.
-- From prompt 13a: **use the list encoding 13a settled** for the keyword and pattern lists
-  rather than inventing a second one. Two settings of the same shape stored two ways is the
-  kind of thing that makes a hand-edited config file untrustworthy.
+- From prompt 13a: **the list encoding is settled and it is `ignore.<n> = <levels> <mask>`** —
+  one key per element, one line each, fields separated by spaces, the whole family rewritten
+  and renumbered on every change. `IgnoreList.parse(_:)` and `.format(_:)` in
+  `Sources/CaravanUI/IgnoreList.swift` are the twenty lines to copy. Two settings of the same
+  shape stored two ways is the thing that makes a hand-edited config file untrustworthy, so
+  the keyword and pattern lists take this and not a second answer. Note the one trap it
+  already avoids: prompt 11's `<name>.<field>` cannot be used for anything whose *name* may
+  contain a dot, which a mask always does and a keyword may.
+- From prompt 13a: **the suppression point is `ConnectionViewModel.withIgnoresApplied(_:)`,
+  and the highlight rules go strictly after it.** It returns the event, a rewritten event, or
+  `nil`, and `append(_:)` gives up on `nil` before any of the five consumers runs. Put the
+  highlight test below that call and an ignored line can never reach it — which is the whole
+  reason 13a went first, and it costs nothing as long as nothing moves above it.
+- From prompt 13a: **`IgnoreLevel` is the shape a highlight *level* should copy** — a pure
+  `OptionSet` in `IRCProtocol` with a letter table, a `letters` round trip and a `summary`
+  that spells itself in English. `Tests/IRCProtocolTests/IgnoreLevelTests.swift` is the
+  exhaustiveness pattern. It also runs on Linux, which is why the table lives there.
+- From prompt 13a: **there is now an Ignored section on the IRC tab**, list plus Remove,
+  built like Connect's trusted certificates. If highlights get a list UI, it belongs beside
+  that one rather than on the Sounds tab — the two read as the same kind of thing to a user,
+  and Sounds is about what a trigger *does* rather than what the triggers are.
 - From prompt 12: **a reloaded log line must never notify, and today it cannot** — say so in
   a test before that stops being true. `ConnectionViewModel.reloadLog(into:)` puts up to
   fifty lines from yesterday's log the instant a window opens, and it appends them straight

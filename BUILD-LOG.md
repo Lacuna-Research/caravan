@@ -4512,3 +4512,198 @@ actuate a SwiftUI `List` row. It reports the element it would have hit — which
 like success — and changes nothing. Keyboard works: Tab into the list and arrow down, or
 ⌘K and type. A future acceptance run should reach for the keyboard first rather than
 spending four screenshots discovering this again.
+
+---
+
+## Stage 2, prompt 13a — What deserves none
+
+The ignore list: wildcard masks, mIRC's level letters, temporary ignores, `/ignore`, a menu
+item and a list in Options. `IgnoreLevel` is new in `IRCProtocol`; `IgnoreList` and
+`IgnoreEntry` in `CaravanUI`; the suppression is one function in `ConnectionViewModel`.
+
+### The invariant, which matters more than the feature
+
+**An ignore hides lines. It never changes state.** An ignored person still joins, still
+appears in the nick list, still holds their prefix, and still disappears when they quit.
+`IRCEvent.channelChanged(_:)` carries the roster and is not in the ignorable set at all —
+what gets suppressed is the *rendering* of an event, never the event.
+
+This is worth stating as loudly as it is stated in the source because the tempting
+implementation is the wrong one. Dropping the event in the pump would be fewer lines and
+would produce a client whose member list silently disagrees with the server, which is a far
+worse bug than the noise being hidden. `stateIsNeverSuppressed` is the test that pins it:
+ignore bob, watch his join line vanish, and assert he is in `channel.members` anyway — and
+then that he leaves it when he quits, with that line hidden too.
+
+### One `return`, above five consumers
+
+`append(_:)` now feeds the line, the activity state, the URL catcher, the chat log and the
+query header band. Prompt 12 left its de-duplication as a single `continue` above four of
+them precisely so a fifth could not be added and missed; this goes above *that*, as an early
+`return`, and picks up the fifth. A line nobody was going to be shown should not consume a
+replay key either.
+
+`withIgnoresApplied(_:)` returns the event, a rewritten event, or `nil` — three outcomes
+rather than a boolean, because `k` is not a suppression.
+
+### The `k` problem, and why it is not a boolean
+
+Six of the seven levels hide a line. `k` keeps it and takes the formatting off, which is
+what you want for somebody whose every word is a different colour but who is still worth
+reading. So the test cannot answer yes-or-no.
+
+It is implemented by rewriting the event's text through `IRCFormatting.stripping` before
+rendering, rather than by telling the renderer about the ignore list. That keeps
+`LineRenderer` a pure function of its input, which is what makes a rendered line testable
+without an ignore list in scope — and it is the same reasoning that kept the log's plain
+renderer out of the display path in prompt 12.
+
+### `m` is ours, and this is the entry that says so
+
+**Chose:** `m` means joins, parts, quits and nick changes.
+
+`PLAN.md` and the prompt both record mIRC's flag set as `-pcntikm`. Five of those letters
+are mIRC's and unambiguous — `p c n t i` — and `k` is mIRC's control-codes flag. Nothing in
+this repository records what `m` meant, and reconstructing it from memory of a 1998 help
+file is exactly the kind of confident guess that ends up in a doc comment as fact.
+
+**Rejected:** leaving it out, which would have meant shipping six of a seven-letter set
+`PLAN.md` promises; and guessing at mIRC's meaning and asserting it.
+
+**Chose instead** to define it, use it for the ignore people actually ask for — the noise
+somebody makes without saying anything, from a client that cannot hold a connection — and
+say in `IgnoreLevel`'s own doc comment that Caravan defined it. **What would justify
+revisiting:** anybody producing mIRC's actual definition of the letter. If it conflicts,
+mIRC wins and this is a rename.
+
+### Smaller decisions
+
+**A bare nick becomes `nick!*@*`, not `*!*@host`.** The opposite of what
+`ConnectionViewModel.banMask(for:in:)` does with identical-looking input, and both are right:
+a ban wants to survive its target typing `/nick`, and an ignore wants not to catch the forty
+other people behind one bouncer's host.
+
+**Yes, an ignore suppresses the log.** Prompt 12's note asked the question rather than
+answering it. mIRC logs what it ignores; we do not. A line you were never shown, written to
+disk where you will never think to look for it, is the worst of both — and the log is the one
+consumer whose mistake is permanent. Said on the Options surface, not only here.
+
+**Never yourself, and never a server.** A `*!*@*` ignore is a thing people set, and without
+the first guard it silently eats your own echo — a client appearing to drop what you type.
+Without the second it takes out the MOTD. Both have a test.
+
+**A kick is not ignorable**, and neither is a topic change. Being thrown out of a channel is
+news about *you*; a client that hid it because you had ignored the operator would leave you
+wondering why the window went quiet.
+
+**The wire trace is never filtered.** The `.raw` branch of `append(_:)` returns before the
+ignore test. Somebody working out why they cannot see a person has to be able to see them,
+and an ignore is a display filter rather than a censor of diagnostics.
+
+**Levels combine across matching entries.** `bob!*@*` for his notices and `*!*@his.host` for
+his CTCPs means both, rather than whichever was typed first — the only reading where the
+answer does not depend on entry order.
+
+**A hit on `add` replaces rather than appends.** `/ignore -n bob` after `/ignore -p bob` is a
+correction, not two entries whose combined effect nobody can predict.
+
+### The storage format, which prompt 13b inherits
+
+`ignore.<n> = <levels> <mask> [<expiry as epoch seconds>]` in `caravan.conf`. One key per
+entry, one line each, the whole family rewritten and renumbered on every change.
+
+**Prompt 11's `<name>.<field>` shape could not be used**, and the reason generalises: it
+parses on the first dot, and every useful mask has dots in it. Prompt 11 banned dots in
+network names for exactly this reason, and a mask is not ours to ban them from. So this is
+the second of the two precedents prompt 10's note offered — `chat.colour.N`'s one-key-per-
+element — with a compact three-field value rather than a scalar.
+
+Levels are written as `*` for everything, which is what reads best in a file; `pcntikm` says
+nothing that `*` does not. Expiry is absolute rather than a remaining duration, so a `-u600`
+set five minutes before you quit has five minutes left when you come back. A lapsed entry is
+dropped at load and the file rewritten: a file full of expired ignores is a file that lies.
+
+### Measured
+
+Matching is a linear scan over the entries, folding under the connection's live casemapping,
+with `IRCMask.matches` doing the glob. It runs once per event that has a sender. An ignore
+list is single digits in practice and `IRCMask`'s matcher is already iterative-with-
+backtracking rather than recursive, which is the part that would have mattered.
+
+`sweep()` runs on every match rather than on a timer. A timer firing in a client nobody is
+looking at is a wakeup for nothing, and the only moment an expiry has to be correct is the
+moment somebody speaks.
+
+### Learned
+
+**Two placeholder tests were waiting for this prompt and both fired.** `ignoreIsDeferred`
+asserted `/ignore` was *not* in `knownCommands`, and `queryHasNoMembershipItems` pinned the
+exact menu for a conversation. Neither is a test of this feature; both are tests that the
+previous prompt's deliberate omission was still deliberate. They cost nothing to write and
+they are the reason nothing was silently forgotten between prompt 8 and here.
+
+**The menu item ended up somewhere the note did not predict.** Prompt 9's note said Ignore
+"belongs in the third group beside Kick and Ban". It does not: that group only exists in a
+channel, and a conversation is exactly where you most want to stop hearing somebody. It is
+its own group, last, always enabled — Kick and Ban ask the *server* for something and need a
+prefix; ignoring somebody needs nobody's permission.
+
+**The negative control caught a gap in the tests again.** Stubbing `withIgnoresApplied` to
+return its input unchanged produced nine failures across six tests, covering all four
+suppression seams. Worth the two minutes for the second prompt running.
+
+### The live run
+
+Against Libera, under its own `XDG_CONFIG_HOME`, with the ignore **written into
+`caravan.conf` by hand** rather than typed — which is worth more than the typed route,
+because it tests the file format against the person the format is for.
+
+All five properties held. The peer's join, seven messages and quit reached neither the
+channel window nor the log file; the nick list said "2 members" and listed `caravan-peer1`
+throughout, which is the state invariant; the raw trace showed every suppressed line with
+its `msgid` and `server-time` intact; the reloaded log tail above the live conversation
+still showed what the peer said *before* the ignore existed, which is "never retroactive"
+demonstrating itself; and the Options IRC tab listed `caravan-peer1!*@*` — "everything" —
+with a Remove button.
+
+**Not verified live:** the URL catcher staying empty, which needs the context menu, and the
+typed `/ignore` — see below. Both have tests through the real path.
+
+### Two harness defects, and the expensive one
+
+**`run-caravan.sh` hard-coded a DerivedData hash, so the acceptance ran the *previous*
+prompt's binary.** Xcode keys DerivedData on the project *path*, and every git worktree has
+a different one — so the script written during prompt 12 kept launching prompt 12's build.
+The symptom is the worst possible one: the feature under test appears not to work, in a way
+indistinguishable from a real defect. Twenty minutes went into hunting a bug in `IgnoreList`
+that was not there — a unit test reproducing the exact seeded config and the exact wire
+source passed first time, which is what finally pointed at the binary rather than the code.
+
+The script now resolves `BUILT_PRODUCTS_DIR` from `xcodebuild -showBuildSettings` and prints
+the path and the build time before launching. Any acceptance run that cannot say which
+binary it started is not an acceptance run.
+
+**Synthetic keystrokes still will not reach the chat input**, confirmed a second time. They
+drive the ⌘K switcher, the Options tab picker and a sheet's text field perfectly well, so
+this is a property of the input field — an `NSTextView` subclass inside an
+`NSViewRepresentable` — rather than of focus in general. Neither clicking it first nor
+tabbing to it helps. That is why the ignore was seeded through the file, and why the typed
+`/ignore` is covered by parser tests and by `applyIgnore` tests instead of live.
+
+### One thing the live run found in this prompt's own code
+
+**A mangled line survived from a failed edit**, and neither the compiler nor
+`swift format lint` had anything to say about it:
+
+    guard let event = event ?? Optional(event) ?? nil else { return }
+
+A first attempt at stubbing the suppression for the negative control had matched and been
+written after all. It is, by accident, *semantically correct* — right-associativity makes
+the whole expression `IRCEvent?` and `nil` still propagates — which is exactly why nothing
+caught it: every test passed, the negative control behaved, and the line reads like
+something deliberate. Now `guard let event = withIgnoresApplied(event) else { return }`.
+
+The lesson is about the tool, not the line: a scripted `str.replace` that finds no match
+silently changes nothing, and one that finds an unintended match silently changes something.
+The edit was verified by grepping for the *function name* afterwards, which was true either
+way. Verify a scripted edit by reading the line it produced.

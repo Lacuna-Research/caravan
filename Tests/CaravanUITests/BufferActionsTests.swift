@@ -54,6 +54,7 @@ struct BufferMenuTests {
         #expect(item("Kick", in: groups)?.action == .command("/kick bob"))
         #expect(item("Ban", in: groups)?.action == .command("/ban bob"))
         #expect(item("Kick and Ban", in: groups)?.action == .command("/kickban bob"))
+        #expect(item("Ignore", in: groups)?.action == .command("/ignore bob"))
         #expect(
             item("Slap", in: groups)?.action
                 == .command("/me slaps bob around a bit with a large trout")
@@ -61,11 +62,12 @@ struct BufferMenuTests {
     }
 
     /// `/op` in a conversation has no channel to name, and an item that could only ever
-    /// produce "no target in this window" is not an item.
+    /// produce "no target in this window" is not an item. **Ignore survives the cut**: it is
+    /// a decision about your own window, and a conversation is exactly where you want it.
     @Test("a conversation offers no membership items")
     func queryHasNoMembershipItems() {
         let groups = BufferMenu.items(for: .nick("bob"), channel: nil, canSetModes: true)
-        #expect(titles(groups) == ["Whois", "Query", "Slap"])
+        #expect(titles(groups) == ["Whois", "Query", "Slap", "Ignore"])
     }
 
     @Test("operator items are disabled rather than hidden when we hold no prefix")
@@ -82,8 +84,9 @@ struct BufferMenuTests {
             #expect(item(title, in: without)?.isEnabled == false, "\(title) should be disabled")
             #expect(item(title, in: with)?.isEnabled == true, "\(title) should be enabled")
         }
-        // Whois, Query and Slap need nothing from the server's permission model.
-        for title in ["Whois", "Query", "Slap"] {
+        // Whois, Query, Slap and Ignore need nothing from the server's permission model —
+        // ignoring somebody is a decision about your own window, not a request to anyone.
+        for title in ["Whois", "Query", "Slap", "Ignore"] {
             #expect(item(title, in: without)?.isEnabled == true)
         }
     }

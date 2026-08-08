@@ -76,7 +76,8 @@ public struct CommandParser: Sendable {
     /// Aliases are included: someone who types `/j` wants to see it offered.
     public static let knownCommands = [
         "ame", "amsg", "away", "back", "ban", "clear", "clearall", "connect", "ctcp",
-        "debug", "deop", "devoice", "disconnect", "invite", "j", "join", "kick", "kickban",
+        "debug", "deop", "devoice", "disconnect", "ignore", "invite", "j", "join", "kick",
+        "kickban",
         "leave", "list", "m", "me", "mode", "msg", "names", "nick", "notice", "op", "oper",
         "part", "ping", "q", "query", "quit", "quote", "raw", "say", "server", "topic",
         "unban", "voice", "who", "whois", "whowas",
@@ -238,6 +239,9 @@ public struct CommandParser: Sendable {
             return [.send(IRCMessage(verb: "PRIVMSG", parameters: [pingTarget, ping.wireForm]))]
 
         // MARK: The buffer itself
+
+        case "ignore":
+            return ignore(rest)
 
         case "clear":
             return [.clearScrollback(everywhere: false)]
@@ -465,6 +469,72 @@ public struct CommandParser: Sendable {
                 )
             ]
         }
+    }
+
+    /// `/ignore [-r] [-pcntikm] [-u<seconds>] [<nick|mask>]`.
+    ///
+    /// mIRC's shape, with mIRC's letters. Flags may be written together (`-pcnt`) or apart
+    /// (`-p -c`), which is what people who have used the client for thirty years type.
+    ///
+    /// **A bare nick is not turned into a mask here.** `IgnoreList.mask(for:)` owns that
+    /// convention, and a pure parser holding a second copy of it is how the menu item and
+    /// the typed command come to disagree.
+    private func ignore(_ rest: String) -> [CommandAction] {
+        var remainder = Substring(rest).drop(while: { $0 == " " })
+        var levels: IgnoreLevel = []
+        var duration: Int?
+        var isRemoval = false
+
+        while remainder.hasPrefix("-") {
+            let (flag, afterFlag) = split(String(remainder))
+            var letters = Substring(flag.dropFirst())
+            // `-u600` carries its argument in the flag, as mIRC's does. Taken off the end
+            // before the rest is read as levels, so `-u600` and `-pu600` both work.
+            if let u = letters.firstIndex(of: "u") {
+                let digits = letters[letters.index(after: u)...]
+                guard let seconds = Int(digits), seconds > 0 else {
+                    return [.error(CommandError.usage("/ignore -u<seconds> <nick>").message)]
+                }
+                duration = seconds
+                letters = letters[..<u]
+            }
+            if let r = letters.firstIndex(of: "r") {
+                isRemoval = true
+                letters.remove(at: r)
+            }
+            guard let parsed = IgnoreLevel(letters: letters) else {
+                let unknown = letters.first { IgnoreLevel(letters: String($0)) == nil }
+                return [
+                    .error(
+                        CommandError.unknownFlag(
+                            command: "/ignore",
+                            flag: "-\(unknown.map(String.init) ?? String(letters))"
+                        ).message
+                    )
+                ]
+            }
+            levels.formUnion(parsed)
+            remainder = Substring(afterFlag).drop(while: { $0 == " " })
+        }
+
+        // The subject is one word; anything after it is mIRC's optional network argument,
+        // which we do not have — ignores are global. Dropped rather than refused, so a
+        // muscle-memory `/ignore bob libera` still ignores bob.
+        let subject = remainder.split(separator: " ").first.map(String.init)
+        guard subject != nil || !isRemoval else {
+            return [.error(CommandError.usage("/ignore -r <nick|mask>").message)]
+        }
+        return [
+            .ignore(
+                subject: subject,
+                // No letters given means all of them, which is what a bare `/ignore bob`
+                // has always meant. `-r` never needs them: you remove the entry, not a
+                // level of it.
+                levels: levels.isEmpty ? .all : levels,
+                duration: duration,
+                isRemoval: isRemoval
+            )
+        ]
     }
 
     /// Plain text, to the window's target.
