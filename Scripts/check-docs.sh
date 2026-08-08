@@ -11,7 +11,7 @@ set -euo pipefail
 
 CLAUDE_MAX_LINES=100
 TOTAL_PROMPTS=11
-STAGE2_TOTAL_PROMPTS=17
+STAGE2_TOTAL_PROMPTS=18
 
 cd "$(git rev-parse --show-toplevel)"
 
@@ -171,8 +171,11 @@ else
 		err "README stage 2 badge disagrees with the status line; expected '$badge2'"
 	fi
 
+	# `[0-9]+[a-z]*` because a prompt may be split — 13a, 13b — which is the convention
+	# `PLAN.md` already uses for items and which keeps every existing reference to
+	# "prompt 13" true rather than renumbering everything after it.
 	stage2_rows=$(awk '/^### Stage 2/,/^### Stage 1/' README.md |
-		grep -cE '^\| *[0-9]+ *\|.*\| *✅ done *\|' || true)
+		grep -cE '^\| *[0-9]+[a-z]* *\|.*\| *✅ done *\|' || true)
 	if [ "$stage2_rows" -eq "$stage2" ]; then
 		ok "README stage 2 table matches ($stage2_rows done)"
 	else
@@ -181,10 +184,14 @@ else
 
 	site_progress 2 "$stage2" "$STAGE2_TOTAL_PROMPTS"
 
+	# **Position, not number.** The status line is a *count* of finished prompts, and a
+	# split prompt breaks the coincidence that the two were the same: with 13a and 13b in
+	# the queue, prompt "13" is the thirteenth and fourteenth things to do. Counting
+	# headings in order compares like with like, and works whether or not anything is split.
 	stale2=$(awk -v done="$stage2" '
-		/^## Prompt [0-9]+ / { n = $3 + 0; next }
-		/^\*\*Carry-forward\*\*/ { if (n > 0 && n <= done) printf "%d ", n }
-		/^### Carry-forward/ { if (n > 0 && n <= done) printf "%d ", n }
+		/^## Prompt [0-9]+[a-z]* / { position += 1; label = $3; next }
+		/^\*\*Carry-forward\*\*/ { if (position > 0 && position <= done) printf "%s ", label }
+		/^### Carry-forward/ { if (position > 0 && position <= done) printf "%s ", label }
 	' STAGE2-PROMPTS.md)
 	if [ -n "$stale2" ]; then
 		err "Unconsumed carry-forward notes on completed stage 2 prompt(s): ${stale2% }"

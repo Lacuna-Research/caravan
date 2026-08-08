@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 11/17 complete. Next: prompt 12.
+**Status:** 11/18 complete. Next: prompt 12.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -374,7 +374,7 @@ and read it; set a channel mode from the sheet and watch the tree and the header
 
 Do not: the *systems* behind three of these commands, which are later prompts and are
 deliberately not started here.
-  - `/ignore` — the matching machinery is prompt 13's, with the ignore list. Left out of
+  - `/ignore` — the matching machinery is prompt 13a's, with the ignore list. Left out of
     the table entirely rather than half-built.
   - `/list` sends LIST and renders the numerics; the channel *browser* is prompt 15.
   - `/away` and `/back` send the command; auto-away, away nick and the away log are
@@ -387,7 +387,7 @@ deliberately not started here.
 into is in `BUILD-LOG.md`.
 
 **`/ignore` is deliberately not in the table**, and `PLAN.md` item 14 now says so: the
-matching machinery belongs with the ignore list in prompt 13, and a half-built `/ignore`
+matching machinery belongs with the ignore list in prompt 13a, and a half-built `/ignore`
 that silently did nothing would be worse than one the server rejects out loud. `/list` and
 `/away` ship as the bare commands, with the channel browser (prompt 15) and the away system
 (prompt 14) still theirs.
@@ -451,7 +451,7 @@ channel has scrolled and copy the lot. Do the last of it in a detached channel w
 connection fix exists for, and the only one that proves it.
 
 Do not:
-  - **Ignore.** The matching machinery is prompt 13's, with the ignore list. A menu item
+  - **Ignore.** The matching machinery is prompt 13a's, with the ignore list. A menu item
     that silently did nothing is worse than no item; it arrives with the machinery.
   - **DCC chat/send.** Stage 3, `PLAN.md` item 31 — a transport problem, not a menu one.
   - A reason prompt for Kick and Ban. The default kick reason is an Options setting, and
@@ -479,7 +479,7 @@ regression. `ConfigFile` already behaves; the job is not to regress it, and to h
 that would notice.
 
 - **A tab exists when it has something in it.** mIRC's eight are Connect, IRC, Display,
-  Colors, Sounds, Logging, Mouse and Other. Sounds is prompt 13's and Logging is prompt
+  Colors, Sounds, Logging, Mouse and Other. Sounds is prompt 13b's and Logging is prompt
   12's; Mouse has one hard-coded behaviour and nothing to set. Build the five that have
   settings behind them and leave notes for the two that will grow one — an empty tab is
   chrome that teaches the user the client is unfinished. A segmented picker like
@@ -655,18 +655,68 @@ local log already covers, so the buffer needs de-duplication by message id or
 
 ---
 
-## Prompt 13 — What deserves attention, and what deserves none
+## Prompt 13a — What deserves none
 
-**Items:** Highlights & notifications · Ignore list.
+**Item:** Ignore list.
+
+Wildcard `nick!user@host` masks with mIRC's level flags (`-pcntikm`), temporary ignores
+with a duration, and the `/ignore` command that fronts them.
+
+**Split from a combined prompt 13**, which paired this with highlights on the grounds that
+they are "the same matching machinery pointed in opposite directions". They are not, quite:
+highlights match *message text* against keywords and patterns, ignores match *senders*
+against `nick!user@host` masks, and `IRCMask` already exists for the second. What they
+genuinely share is one seam — `ConnectionViewModel.append(_:)` — and that is a few lines,
+not a prompt's worth of common ground.
+
+**This half goes first, and the ordering is the reason.** An ignored line must never reach
+the highlight rules, so whichever lands second inherits the other's suppression points. If
+highlights ship first they add a fourth thing for ignore to suppress; if ignore ships first
+the highlight rules simply never see a suppressed line. One order costs nothing and the
+other costs a note nobody reads until it is wrong.
+
+*To be written out before it starts.*
+
+**Carry-forward** *(consumed when this prompt runs)*
+
+- From prompt 6: **an ignore has to suppress the activity state, not just the line.** A
+  buffer that goes pink for a message you never see is worse than no ignore at all. Both
+  happen in `ConnectionViewModel.append(_:)`, a few lines apart — the line goes to
+  `destinations(for:)` and the state to `raise(_:to:)`.
+- From prompt 9: **the catcher's line-by-line seam is a third thing to suppress.**
+  `ConnectionViewModel.append(_:)` calls `urlCatcher?.record(...)` in the same loop that
+  appends the line and raises the activity. An ignored message must not put its links in
+  the URL catcher either.
+- From prompt 9: **the Ignore menu item is this prompt's to add**, and its slot is already
+  shaped. `BufferMenu.nickItems(_:channel:canSetModes:)` in `Sources/CaravanUI/BufferMenu.swift`
+  builds the groups; Ignore belongs in the third group beside Kick and Ban, as
+  `BufferMenuItem("Ignore", .command("/ignore \(nick)"))` — enabled unconditionally, since
+  ignoring somebody needs no prefix. Prompt 9 left it out rather than shipping an item that
+  silently did nothing. Nothing else has to change: every item is a command string, so the
+  item works the moment `/ignore` is in `CommandParser`'s switch (and its `knownCommands`).
+  `Tests/CaravanUITests/BufferActionsTests.swift` asserts the exact command strings and the
+  exact enabled set, so both tests need the new item adding — which is the point of their
+  being exhaustive.
+- From prompt 10: **an ignore list is the first setting shaped as a *list* rather than a
+  scalar**, which `caravan.conf`'s one-value-per-key format does not hold directly. Decide
+  the encoding deliberately and write it down, because prompt 13b's keyword and pattern
+  lists have the same problem and must not invent a second answer. Two precedents:
+  `ChatSettings.encodeSuffix`'s `_`-for-space, for a value the format cannot carry
+  verbatim, and prompt 11's `chat.colour.N` and `<name>.<field>` — one key per element,
+  which a hand-edited file can add to or delete from a line at a time.
+
+---
+
+## Prompt 13b — What deserves your attention
+
+**Item:** Highlights & notifications.
 
 Nick mention, custom keyword and regex lists, per-window and per-event sounds, macOS
-notifications, Dock badge, menu-bar item — the dedicated notifications interface deferred
-from §18, with highlights and private messages as the out-of-the-box triggers. And
-wildcard `nick!user@host` ignore masks with mIRC's level flags (`-pcntikm`) and temporary
-ignores with a duration.
+notifications, a Dock badge and a menu-bar item — the dedicated notifications interface
+§18 deferred, with highlights and private messages as the out-of-the-box triggers.
 
-Together because they are the same matching machinery pointed in opposite directions: one
-decides what is worth interrupting you for, the other what is not worth showing at all.
+Split from a combined prompt 13; see 13a for why, and note that 13a runs first so an
+ignored line never reaches these rules.
 
 *To be written out before it starts.*
 
@@ -681,32 +731,13 @@ decides what is worth interrupting you for, the other what is not worth showing 
   grounds that highlights and private messages are the two default triggers. That is a
   reasonable default and a poor permanent rule — it is the first thing that should become a
   setting here, and `isConversation` is the flag it already keys off.
-- From prompt 6: **an ignore has to suppress the activity state, not just the line.** A
-  buffer that goes pink for a message you never see is worse than no ignore at all. Both
-  happen in `ConnectionViewModel.append(_:)`, a few lines apart — the line goes to
-  `destinations(for:)` and the state to `raise(_:to:)`.
-- From prompt 9: **the Ignore menu item is this prompt's to add**, and its slot is already
-  shaped. `BufferMenu.nickItems(_:channel:canSetModes:)` in `Sources/CaravanUI/BufferMenu.swift`
-  builds the groups; Ignore belongs in the third group beside Kick and Ban, as
-  `BufferMenuItem("Ignore", .command("/ignore \(nick)"))` — enabled unconditionally, since
-  ignoring somebody needs no prefix. Prompt 9 left it out rather than shipping an item that
-  silently did nothing. Nothing else has to change: every item is a command string, so the
-  item works the moment `/ignore` is in `CommandParser`'s switch (and its `knownCommands`).
-  `Tests/CaravanUITests/BufferActionsTests.swift` asserts the exact command strings and the
-  exact enabled set, so both tests need the new item adding — which is the point of their
-  being exhaustive.
-- From prompt 10: **the Sounds tab is yours to add**, and so is whatever Highlights needs.
-  Options built five of mIRC's eight tabs and skipped Sounds rather than ship it empty;
-  adding one is a case in `OptionsPane.Tab` in `SettingsDebugCanvas.swift` and a
-  `@ViewBuilder` pane, since the enum is `CaseIterable` and drives the picker. The
-  keyword and regex lists are the first setting here that is a *list* rather than a scalar,
-  which `caravan.conf`'s one-value-per-key format does not hold directly — decide the
-  encoding deliberately, and note that `ChatSettings.encodeSuffix`'s `_`-for-space trick is
-  the precedent for values the format cannot carry verbatim.
-- From prompt 9: **the catcher's line-by-line seam is where ignore has to bite too.**
-  `ConnectionViewModel.append(_:)` now calls `urlCatcher?.record(...)` in the same loop that
-  appends the line and raises the activity. An ignored message must not put its links in the
-  URL catcher either — a third thing to suppress, in the same three lines.
+- From prompt 10: **the Sounds tab is yours to add.** Options built five of mIRC's eight
+  tabs and skipped Sounds rather than ship it empty; adding one is a case in
+  `OptionsPane.Tab` in `SettingsDebugCanvas.swift` plus a `@ViewBuilder` pane, since the
+  enum is `CaseIterable` and drives the picker.
+- From prompt 13a: **use the list encoding 13a settled** for the keyword and pattern lists
+  rather than inventing a second one. Two settings of the same shape stored two ways is the
+  kind of thing that makes a hand-edited config file untrustworthy.
 
 ---
 
@@ -720,6 +751,14 @@ away log capturing what arrived while you were gone.
 
 Together because both answer "who is around" — one about other people, one about you —
 and both hang off the same presence events.
+
+**Examined for a split alongside prompt 13 and kept together**, on two grounds. The halves
+are each a good deal smaller than 13's were: the notify list is `MONITOR` with an `ISON`
+fallback and a window, and the away system is a command, an idle timer and a log. And the
+shared seam is real if narrower than the sentence above suggests — both read the presence
+capabilities `NegotiatedCapabilities` already tracks, and both have to distinguish "absent"
+from "this server does not say". Revisit if writing the detail turns up a third feature
+hiding inside either half; that is what happened to 13.
 
 *To be written out before it starts.*
 
@@ -744,6 +783,11 @@ and both hang off the same presence events.
 `/list` with min and max user filters, name and topic search, sortable columns, and
 join-on-double-click. A canvas rather than a buffer, and the first surface that has to
 stay responsive while tens of thousands of rows arrive.
+
+**Examined for a split and left whole.** One `PLAN.md` item, one surface, and the thing
+that makes it sound large — Libera answers `/list` with about 22,000 channels — is not a
+separable second prompt. A list built without that in mind is not a list to make fast
+later; it is a list to write again. The performance is a property of doing this once.
 
 *To be written out before it starts.*
 
