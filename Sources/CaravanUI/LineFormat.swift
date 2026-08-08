@@ -74,6 +74,14 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case rawOutbound
     /// The horizontal rule marking where you last left the buffer.
     case unreadMarker
+    /// A line read back out of the chat log when a window opened.
+    ///
+    /// **Carries no template of its own beyond `$text`**, because the text it carries was
+    /// already rendered — stamp, sentence and all — by the version of the client that wrote
+    /// it. Re-expanding it would be the second guess at a line the file already answers.
+    /// Dim, so the boundary where the past stops and the live conversation starts is
+    /// visible without a banner announcing it.
+    case logReplay
 
     /// Whether this line is our own words coming back to us.
     ///
@@ -245,6 +253,9 @@ public struct LineFormatTable: Sendable {
         .rawOutbound: LineFormat(template: "$timestamp>> $text", colour: .dim),
         // No timestamp: the rule marks a position, not a moment.
         .unreadMarker: LineFormat(template: "$text", colour: .marker),
+        // No timestamp either — the logged line brought its own, and it is the moment the
+        // line was *said* rather than the moment the file was read.
+        .logReplay: LineFormat(template: "$text", colour: .dim),
     ])
 }
 

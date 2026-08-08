@@ -329,6 +329,29 @@ public final class AppModel {
     /// three windows to search instead of one filter to change.
     public let urlCatcher = URLCatcher()
 
+    /// Where the conversation is written down. One store for the whole app, since a log
+    /// file is named by network and buffer rather than by connection — reconnecting to a
+    /// network appends to the same file, which is the point.
+    public let chatLog = ChatLog()
+
+    /// The log viewer, and which window it is a sheet on. Same reasoning as
+    /// ``urlCatcherPresentation``: a plain flag would put the sheet on the main window even
+    /// when a detached buffer asked for it.
+    public var logViewerPresentation: LogViewerPresentation?
+
+    /// Where a log viewer was opened from, which is the log it starts on.
+    public struct LogViewerPresentation: Hashable, Sendable {
+        public let window: KeyWindow
+        public let network: String?
+        public let buffer: String?
+
+        public init(window: KeyWindow, network: String?, buffer: String?) {
+            self.window = window
+            self.network = network
+            self.buffer = buffer
+        }
+    }
+
     /// The catcher window, and **which window it is a sheet on**.
     ///
     /// A plain `isShowing` flag would put the sheet on the main window even when it was
@@ -864,6 +887,7 @@ public final class AppModel {
         )
         connection.bufferOrder = bufferOrder
         connection.urlCatcher = urlCatcher
+        connection.chatLog = chatLog
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in

@@ -76,6 +76,32 @@ struct ServerConnectingTests {
         await server.stop()
     }
 
+    /// **The setting had no caller at all.** `connectStartupServers()` was written, the
+    /// toggle was drawn and `connect-on-startup` was written to `servers.conf` — and nothing
+    /// ever invoked the method, so the setting shipped doing nothing. Prompt 12's live run
+    /// found it with a hand-written `servers.conf` and a Dashboard that just sat there.
+    ///
+    /// This pins the method's behaviour; the caller is `RootView`'s `.task`, which no test
+    /// can reach because nothing in a SwiftUI `body` is observable from here.
+    @Test("only the entries marked connect-on-startup are dialled")
+    func startupServersConnect() async throws {
+        let (server, port) = try await scriptedServer()
+        let harness = harness()
+        var wanted = ServerEntry(name: "auto", host: "127.0.0.1", port: port, useTLS: false)
+        wanted.connectsOnStartup = true
+        harness.servers.save(wanted)
+        // Saved but not marked, and therefore not dialled: the flag is the whole point.
+        harness.servers.save(
+            ServerEntry(name: "manual", host: "127.0.0.1", port: port, useTLS: false)
+        )
+
+        await harness.model.connectStartupServers()
+        #expect(harness.model.connections.map(\.networkKey) == ["auto"])
+
+        await harness.model.disconnectAll()
+        await server.stop()
+    }
+
     /// A rename has to reach a connection that is already open, or `networkKey` disagrees
     /// with the freshly-rewritten `binding.N` and ⌘3 reports the network as not open while
     /// it sits in the tree.

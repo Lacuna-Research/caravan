@@ -39,6 +39,7 @@ public struct DetachedBufferView: View {
             // `isShowing` flag would put it on the main window, quite possibly behind this
             // one, when the link that prompted it was in this buffer.
             .urlCatcher(model: model, in: .detached(item))
+            .logViewer(model: model, in: .detached(item))
             // **Closing the window is reattaching.** A buffer that lived in neither place
             // would be a buffer you could no longer reach — so the red button is not a
             // second, destructive meaning of "close", it is the inverse of detaching.

@@ -334,6 +334,24 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     reconcile with `chathistory`: against a bouncer the server backfills the same
     period the local log already covers, so the buffer needs de-duplication by
     message id / `server-time` rather than blindly concatenating both sources.
+
+    *Shipped in stage 2 prompt 12. Three things it deliberately did not build, recorded
+    here rather than left implicit:*
+
+    - **A search index over the log directory.** The viewer filters the file it is
+      showing, which is what plain text answers instantly. Searching every network and
+      every channel at once is the SQLite half of this row's architecture entry, and it
+      is a stage 4 job — not because it is hard, but because an index has a staleness
+      story and a rebuild story and neither is worth writing before somebody wants it.
+      Prompt 17's ⌘F carries the note about the two searches disagreeing.
+    - **Rotation, compression and retention.** One file per buffer, appended forever. No
+      log is large yet, and a retention policy that deletes what somebody wanted is a
+      worse failure than a big file. Revisit if a real log gets uncomfortable; the
+      viewer's tail read is already bounded so the app does not care.
+    - **Per-server or per-channel logging overrides.** The setting is per *kind* of buffer
+      — channels, private messages, the status window. "Log #swift but not #offtopic" is a
+      real preference nobody has expressed; §15.5's global-first convention applies here
+      as much as to appearance.
 21. **Highlights & notifications.** Nick mention, custom keyword/regex list, per-window
     and per-event sounds, macOS notifications, Dock badge, menu-bar item. This is the
     dedicated notifications interface deferred from GUI-DESIGN-NOTES.md §18; the

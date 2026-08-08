@@ -4326,3 +4326,189 @@ restore a status line after testing the staleness rule, it took the entire promp
 with it — about eighty lines, rewritten. The undo wanted was to the *line*, and the tool
 operates on paths. Cheap here because the content was still in the session; it would not be
 cheap twice.
+
+---
+
+## Stage 2, prompt 12 — Logging
+
+Plain-text chat logs, a reload of the tail when a window opens, a viewer, a Logging tab,
+and the de-duplication that stops a bouncer's backfill arriving as a second copy of what
+is already on screen. `ChatLog`, `ReplayIndex`, `LoggedLine`, `LogViewerSheet` and
+`AppDirectories` are new; `ConnectionViewModel.append(_:)` is where they meet.
+
+### The decision the rest of the prompt hangs off: what keys a line
+
+**A log line carries `[yyyy-MM-dd HH:mm:ss]`, not mIRC's `[HH:mm:ss]`.** mIRC leaves the
+date to a `Session Start:` banner at the top of the file. Reconciling a logged line against
+a replayed one means comparing a *moment*, and a date recoverable only by scanning backwards
+for the nearest banner is not a moment a line carries — it is a moment the file carries, and
+only if the banner is intact. Everything else is mIRC's: the stock `LineFormatTable.mIRC`
+sentences, codes stripped, one file per buffer, `grep`-able.
+
+The consequence is that the fallback key — `(stamp to the second, nick, text)` — is strong
+enough to use on its own. A false positive needs the same person to say the same words in the
+same second, which is not a false positive; it is the duplicate being removed. `msgid` is
+used where both sides have one and decides *against* a match too: two lines that each carry
+an id and disagree are two lines.
+
+**Rejected: a sidecar file holding the `msgid` per log line.** It would have made the key
+exact everywhere. It would also have meant the log was no longer the plain text this feature
+promises — two files that can disagree, one of which is unreadable, and a user who edits or
+deletes one of them silently breaks the other. Worth revisiting only if the triple is ever
+observed producing a wrong answer in practice.
+
+### Two carry-forward notes were answered "no", which is the substantive result
+
+Prompt 4 left two, and both were built into the prompt as *questions* rather than
+instructions. Recording the measurements, because "we decided not to" is worth as much as
+"we did", and both will otherwise be proposed again.
+
+**No envelope over `IRCEvent`, and no `tags` on the replayed cases.** The note reasoned that
+"a local log holds joins, parts and topic changes too, and reconciling those against a replay
+needs their `time` and `msgid` as much as a message's". The premise is false in the direction
+that matters: `chathistory` is *message* history. A bouncer does not replay joins, parts or
+topic changes, so a logged join has nothing to collide with, and keying one would be
+machinery built for traffic that never arrives. `ConnectionViewModel.replayKey(for:at:)` is
+five lines and matches on `.message` alone; `LoggedLine` parses the three speaker shapes
+(`<nick>`, `* nick`, `-nick-`) and returns no key for `*** Joins:`. The envelope was the
+larger change and the note guessed it was "probably the right one" — it was not needed at
+all, and an envelope touching every consumer for a benefit nothing uses is the expensive
+kind of wrong.
+
+**No `CHATHISTORY BEFORE`/`AFTER` against the newest logged line.** The note wanted the
+request narrowed so there was less overlap to de-duplicate. But `LATEST <limit>` is bounded
+by the limit, and `AFTER <the newest line in a log last written to a month ago>` is bounded
+by nothing the client knows before the reply arrives. The overlap `LATEST` produces is at
+most `chatHistoryLimit` lines and is exactly what the index absorbs. Narrowing the request to
+avoid a bounded cost, by making an unbounded one, is the wrong trade.
+`IRCSession.requestHistory(for:)` carries the reasoning at the call site.
+
+### Where the suppression goes, and why it is one `continue`
+
+A de-duplicated line must not appear, must not raise the activity state, must not reach the
+URL catcher and must not be written to the log. Four consumers, all in the same loop in
+`append(_:)`. They are guarded by a single `continue` before any of them rather than four
+conditions, so a fifth consumer cannot be added and missed — which is precisely the failure
+prompt 13a's note now warns about for ignores, since ignore inherits this loop.
+
+`noteConversation` sits outside the loop and needed a `shown` flag: a message suppressed in
+every buffer must not update a query's header band either.
+
+### Rendering the log without paying for it twice
+
+The log is *not* the displayed line with its attributes discarded — a log whose shape moved
+when somebody previewed a timestamp format would be a log nothing could read back. It is
+rendered canonically: `LineRenderer.plainLine(for:context:)` reuses the private `describe`
+that already turns an event into a kind and its fields, then expands the same template with
+the canonical stamp.
+
+**The performance trap this avoids is `NSDataDetector`.** `render` runs a link scan over
+every line, and it is the most expensive step on the ingest path. A naive log implementation
+that rendered a second `AttributedString` and stringified it would have doubled it for every
+message. `plainLine` builds no attributes and runs no detector.
+
+`ChatLog.stamp` composes from `DateComponents` rather than using a `DateFormatter`: it runs
+once per line written and once per line read back, `DateFormatter` is not `Sendable` so it
+would have needed the lock-guarded cache `LineRenderer` keeps, and the format is fixed.
+Gregorian is named explicitly — `Calendar.autoupdatingCurrent` would stamp a
+Japanese-calendar user's log in the year 2569.
+
+### Smaller decisions
+
+**Logging is on by default for channels and private messages, off for the status window.**
+mIRC shipped with it off, which means the log you want is the one you did not have. This is a
+decision made on the user's behalf about writing what they say to disk, so the Logging tab
+says plainly what is written and where, and there is a Reveal button. The status window is a
+transcript of the client talking to itself, rewritten on every connect.
+
+**Reload happens on buffer *creation*, not on `JOIN`.** The item says "reload last N lines on
+join", and a reconnect is the case it names — but a buffer survives a reconnect, so replaying
+on every `JOIN` would prepend the log to a window that already holds the conversation.
+Creation is the moment there is genuinely nothing there.
+
+**Replayed lines are dimmed and carry no banner.** A new `LineKind.logReplay` with a bare
+`$text` template: the line was already rendered, stamp and all, by whatever wrote it, and
+re-expanding it would be a second guess at what the file already answers. The boundary where
+dimming stops is the signal.
+
+**Own messages are remembered at the neighbouring seconds too.** Our clock stamps a locally
+echoed line and the server stamps its replay of it; they agree to a fraction of a second and
+disagree about *which* second roughly half the time. Two extra keys at the one site where a
+local clock invents a stamp. Only reachable on a server with `chathistory` but not
+`echo-message` — with `echo-message` there is no local echo to disagree with.
+
+**Buffer names are percent-escaped narrowly.** `/`, `:`, `%` and the control range, plus a
+leading `.`. Nicks legitimately contain `[ ] \ { } | ^` and escaping those would make a
+directory the app invites people to open unreadable. `%` first, or `#a/b` and `#a%2Fb` would
+be one file.
+
+**`AppDirectories` was extracted at the third caller.** `ConfigFile` and `KnownHosts` each
+carried their own copy of the XDG dance; the log would have been the third. Both keep their
+documented `directory` property and now compute it from one place.
+
+### Measured
+
+`ReplayIndex` is a linear scan over a 500-entry array. A replay burst of 50 lines is 25,000
+comparisons of a small struct, which is nothing at human message rates; a dictionary would
+have needed two indices into one multiset to keep `msgid` and the triple pointing at the same
+entry. Revisit if a buffer ever needs a five-figure index, which it will not.
+
+The tail read is bounded to the last 1 MiB rather than reading the file. Two hundred
+characters a line puts five thousand lines inside that window, far past any reload count the
+form offers, and a partial first line is discarded when the window did not start at the
+beginning of the file. `ChatLogFileTests` writes past the window and asserts exactly that.
+
+### Learned
+
+**The negative control was worth the two minutes.** All ten end-to-end tests passed the first
+time they ran, which is not usually good news. Disabling the `consume` guard produced six
+failures across three tests with the exact duplicate counts — 2 where 1 was expected, 3 where
+2 was — which is what proves they were testing de-duplication rather than agreeing with it.
+The `suppressionIsTotal` test only started asserting the activity state after that pass;
+before it, it checked the catcher and the line count and would have missed a regression in
+the third seam.
+
+**A barrier has to land somewhere other than the buffer under test.** That same test waits
+for a marker line before asserting "nothing arrived here" — and the first version sent the
+marker to the channel it was asserting on, so the marker itself raised the activity the
+assertion was about. It now sends a server `NOTICE`, which lands in the status window.
+
+### The live run, and the defect it found in somebody else's code
+
+Against Libera, under its own `XDG_CONFIG_HOME`, with a scripted second client as the
+counterparty. What it confirmed: the file lands at
+`$XDG_DATA_HOME/caravan/logs/libera/#caravan-log-test.log`; the sentences are mIRC's; every
+line carries `[2026-08-07 23:34:37]`; the seven lines the peer sent carrying every
+formatting code arrived in the file stripped, with no control byte anywhere. Quitting and
+relaunching opened the channel with eleven dimmed lines above the live `*** Joins:` — and
+the two are visibly different, because the reloaded lines carry the canonical stamp and the
+live ones carry the user's `[HH:mm:ss]`. The reload did not re-write those eleven lines to
+the file, which is the check that the replay path stays out of the writer. The Logging tab
+came up with the right three defaults, and the viewer scanned the directory, un-escaped the
+names, loaded the transcript and filtered it.
+
+**`connectStartupServers()` had no caller.** Prompt 11 wrote the method, drew the toggle,
+wrote `connect-on-startup` into `servers.conf` and shipped the setting doing nothing. Found
+here in the first thirty seconds: a hand-written `servers.conf` with the flag set produced a
+Dashboard that just sat there, and `rg connectStartupServers Sources App Tests` returned one
+line — the definition. Fixed with `.task { await model.connectStartupServers() }` on
+`RootView`, and pinned by `ServerConnectingTests.startupServersConnect`, which asserts that
+the marked entry is dialled and the unmarked one is not.
+
+The method could not have been caught by a test, because the missing thing was a *caller* in
+a SwiftUI `body` and nothing in a `body` is reachable from `swift test`. It could only have
+been caught by launching the app — which is the whole argument for the live-run rule, making
+this the fourth defect it has caught that every unit test passed.
+
+**Not verified live:** de-duplication against a real bouncer, because there is still no soju
+to point at — `PLAN.md`'s "Where does a soju come from?" has blocked that acceptance since
+stage 1, and it was driven against a scripted server instead. And our own outbound line
+reaching the log: synthetic keystrokes would not land in the chat input, though they drove
+the quick switcher, the tab picker and the viewer's filter perfectly well. That path has an
+end-to-end test through the real `send()`.
+
+**Worth writing down about driving the app:** `System Events`'s `click at {x, y}` does not
+actuate a SwiftUI `List` row. It reports the element it would have hit — which reads exactly
+like success — and changes nothing. Keyboard works: Tab into the list and arrow down, or
+⌘K and type. A future acceptance run should reach for the keyboard first rather than
+spending four screenshots discovering this again.

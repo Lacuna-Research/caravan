@@ -82,6 +82,14 @@ public struct RootView: View {
             }
         }
         .urlCatcher(model: model, in: .main)
+        .logViewer(model: model, in: .main)
+        // **Nothing called this.** Prompt 11 built `connectStartupServers()`, wrote the
+        // toggle and the `connect-on-startup` key, tested the method — and never gave it a
+        // caller, so the setting has been shipped doing nothing. Found by prompt 12's live
+        // run, where a `servers.conf` with the flag set produced a Dashboard that just sat
+        // there. `.task` rather than `.onAppear` because connecting is `async`, and it runs
+        // once for the main window's lifetime.
+        .task { await model.connectStartupServers() }
         // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
         .modifier(CtrlTabModifier(model: model))
         .onChange(of: activeState, initial: true) { _, state in

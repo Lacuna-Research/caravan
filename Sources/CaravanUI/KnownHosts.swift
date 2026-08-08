@@ -22,14 +22,7 @@ public final class KnownHosts {
     private var entries: [String: String] = [:]
 
     /// `$XDG_DATA_HOME/caravan`, defaulting to `~/.local/share/caravan`.
-    public static var directory: URL {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let base = ProcessInfo.processInfo.environment["XDG_DATA_HOME"]
-        let root =
-            base.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
-            ?? home.appending(path: ".local/share")
-        return root.appending(path: "caravan")
-    }
+    public static var directory: URL { AppDirectories.data }
 
     public init(url: URL = KnownHosts.directory.appending(path: "known_hosts")) {
         self.url = url
