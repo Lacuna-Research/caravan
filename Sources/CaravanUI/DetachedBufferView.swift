@@ -25,7 +25,7 @@ public struct DetachedBufferView: View {
         content
             .environment(
                 \.chatFont,
-                ChatFont.font(family: model.settings.fontFamily, size: model.settings.fontSize)
+                model.settings.chatFont
             )
             .navigationTitle(model.title(of: item))
             .navigationSubtitle(model.subtitle(of: item))

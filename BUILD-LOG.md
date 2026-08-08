@@ -3947,3 +3947,152 @@ given time. The prose had rotted with it: "next: queries and CTCP, activity stat
 switcher, the full command set, mode tracking" listed four things that were all done.
 Corrected here to 9/17 and 52.9%, with the sentence rewritten to name what shipped through
 prompt 9 and what is genuinely next.
+
+## Stage 2, prompt 10 — Options
+
+**Commit:** see PR  **Date:** 2026-08-07
+
+mIRC's tabbed options on the Settings & Debug canvas, and the density and zoom model §15.5
+has been waiting for.
+
+### Decisions
+
+**A tab exists when it has something in it.** mIRC has eight; this ships five — Connect,
+IRC, Display, Colours, Other. Sounds is prompt 13's and Logging is prompt 12's, and an
+empty tab teaches the user the client is unfinished rather than that the feature is coming.
+Adding one is a case in `OptionsPane.Tab` plus a `@ViewBuilder` pane, since the enum is
+`CaseIterable` and drives the picker; both prompts have a note saying exactly that. A
+segmented picker like `ChannelModesSheet`'s rather than a second sidebar — it stops scaling
+around seven tabs, and that is when to reconsider.
+
+**Connect is identity; servers belong to the server list.** Prompt 3's note sent
+authentication here on the grounds that prompt 11 retires the Connect sheet. Prompt 11 is
+also where the *server list* lands, and a SASL method, an account and a password are
+per-server while Options is global — so the split is on that line: nickname, alternate,
+ident and real name here, everything per-server there. `ConnectionSettings.rememberIdentity(in:)`
+writes exactly those four keys and deliberately not the host, the port or the Keychain
+secrets, and there is a test asserting the absence rather than only the presence.
+
+**Sixteen swatches, not ninety-nine.** The stage 3 note asked where a 99-swatch grid
+belongs; the answer is that it was the wrong shape. §5 puts per-index overrides on top of
+the two 16-colour tables and leaves 16–98 fixed by the specification, so only 0–15 are the
+user's to retune — and sixteen wells fit a form without dwarfing it. Persisted as one
+`chat.colour.N = RRGGBB` key per overridden index, absent when not overridden, so the file
+stays as short as what was actually changed. **Per-nick overrides stay out**: the affordance
+is "Set Colour…" on a nick's own context menu, which is `BufferMenu` and therefore stage 3's
+scripted-menu work, not a row in a settings form.
+
+**Removals are read back from the file, not diffed against the old value.** A
+`chat.colour.7` somebody added by hand is a key this setting owns and must be able to
+clear, and it was never in `oldValue` to be diffed against. `ConfigFile.keys(withPrefix:)`
+exists for that, and it is the first setting shaped as a *set* rather than a scalar — worth
+knowing for prompt 13, whose keyword lists have the same problem and a harder version of it.
+
+**Zoom is a multiplier, not a second size.** `effectiveFontSize` is `fontSize * zoom`,
+clamped to the font-size range at the end so zooming cannot reach a size the stepper could
+never produce. Steps are multiplicative so out-and-back returns *exactly* to 1.0 rather than
+nearly; additive steps drift. Actual size is ⌥⌘0 because §10 gave ⌘0 to the canvas, and ⌘+
+is declared twice — as `+` and as `=` — because the key is physically `=` and declaring one
+of them makes the shortcut work for about half the ways people press it.
+
+**Density is line height, expressed as a multiplier over the font's natural one.** Compact
+is 1.0 — the natural height — so no preset can make a line shorter than its glyphs need,
+which is §15.6's "never clamp a requested size downward" holding by construction rather than
+by care. `minimumLineHeight` is what opens the lines; `maximumLineHeight` takes whichever is
+larger of the density and the existing Zalgo clamp, since a maximum below the minimum is a
+paragraph style that draws nothing.
+
+**One place builds the chat font.** Four call sites used to write
+`ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)`, which would have
+been three chances to forget zoom the moment zoom existed. `ChatSettings.chatNSFont` and
+`.chatFont` are now the only spelling.
+
+### The defect the live run found, and the fix
+
+**A colour override did not reach text already on screen.** Resetting colour 7 left every
+line above it in the old palette — the exact two-conventions-in-one-buffer failure the font,
+density and nick-colour settings all avoid by design, and the one this prompt walked into.
+
+The cause is a real distinction rather than an oversight. An indexed colour goes into the
+storage as an *appearance-resolving* `NSColor`, so switching between the light and dark
+tables needs no pass over the buffer at all — the colours re-read themselves. That made it
+look as though overrides came free with it. They do not: retuning what index 4 *means*
+changes the value, not the appearance, and a colour already resolved into the storage cannot
+know.
+
+So there is now a third recorded attribute beside `InlineTraits` and `NickColumn`:
+`InlineColours`, carrying the foreground and background *indices* and the `^R` flag, with
+`MessageLogController.applyInlineColours` re-resolving them on every restyle.
+`Palette.resolved(_:)` is the one place the reverse-video rule lives, so the renderer
+drawing a line for the first time and the restyle redrawing it afterwards cannot disagree.
+**Hex colours record nothing and are never touched**, which is §5's rule — `^D` names an
+exact value and second-guessing it would overrule the one thing the sender was explicit
+about.
+
+The regression test was checked the only way worth checking one: by disabling the fix and
+watching it fail, then restoring it.
+
+### The other defect: literal asterisks
+
+The Density caption rendered as `**Density is line height, not size.**`, asterisks and all.
+These captions are built by concatenating string literals, which makes them a `String`
+rather than a `LocalizedStringKey`, so SwiftUI draws markdown verbatim. Worth writing down
+because the surrounding captions all use backticks the same way and always have — the
+existing ones are consistent and this one was new.
+
+### Deliberately not built
+
+**§15.3's "Force monospaced grid" toggle**, which was in this item and is now stage 4's
+item 44a. "Clamp everything, emoji included, to one cell" means owning glyph advancement,
+and TextKit 1 exposes no supported per-glyph advance — the honest implementation measures
+each wide grapheme against the cell width and applies compensating `.kern` so the grid holds
+while the glyph overdraws, which is what a terminal does and is a layout subsystem rather
+than a checkbox. Stripping VS16 instead would fix §15.3's six-character overlap set
+(`☺ ☻ ♠ ♣ ♥ ♦`) and nothing else, under a label promising everything. It moved to stage 4
+rather than staying in stage 2 so that it sits beside the text-pipeline benchmark it needs,
+and so that it is scheduled somewhere real rather than left as an unattached item.
+
+### `Scripts/run-app.sh`, because the wrong binary has now been launched four times
+
+The live run opened the *previous* prompt's build and showed the old settings form.
+`DerivedData` is keyed on the project path, so every worktree gets its own folder and a
+hard-coded path launches whichever checkout built there last. `BUILD-LOG.md` records this
+three times already, twice with a "defect" that had been fixed in the source being read at
+the time.
+
+So the path is asked for rather than written down: `xcodebuild -showBuildSettings` yields
+`BUILT_PRODUCTS_DIR` and `FULL_PRODUCT_NAME`, and the script prints the binary, its build
+time and the throwaway profile before launching. It also exports the three `XDG_*`
+directories, which `CLAUDE.md` requires for a live run and which an inline assignment does
+not achieve.
+
+**And it got its own version of the same lesson immediately.** The first draft printed the
+*bundle's* mtime, which does not move when a rebuild replaces the binary inside
+`Contents/MacOS` — so it cheerfully reported 17:40 for a binary written at 17:51, which is
+the same lie as a hard-coded path told more convincingly. It stats the executable now.
+
+### The live run, against Libera in `##caravan-p10`
+
+Seeded `caravan.conf` by hand with two comment styles, blank lines, an unknown key and a
+`chat.colour.7 = 123456` the app had never written.
+
+- The tabs drew, and `chat.font-size = 15` and the identity fields were read from the file.
+- **The hand-added override was applied to real text**: a peer's `^C07SEVEN` arrived navy
+  rather than mIRC's orange.
+- Resetting colour 7 from the swatch's context menu turned `SEVEN` orange **in the line
+  already on screen** — after the fix; before it, nothing happened, which is how the defect
+  was found.
+- Comfortable density visibly opened the lines with the glyphs unchanged, and the colours
+  survived the restyle.
+- **⌘+, ⌘− and ⌥⌘0 all fired live**: 100% → 121% → 110% → 100%, with Actual Size disabling
+  itself at 100%. None was swallowed by a system binding, which is the check this stage has
+  failed twice before.
+- The Connect tab listed both seeded certificates in host order; Forget removed the row and
+  the line from `known_hosts`.
+- **The hand-edited file survived all of it.** Both comments, the blank lines and
+  `something.unknown = must be kept verbatim` are still there, `chat.colour.7` is gone
+  because it was reset, and the new keys were appended.
+
+**Not verified live: being asked again after forgetting a certificate.** That needs a server
+whose certificate the system rejects; the file and the list were both confirmed, and
+`TrustTests` already covers the prompt itself against a real self-signed handshake.

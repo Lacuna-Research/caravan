@@ -146,7 +146,8 @@ public final class DebugController {
     /// Adopts changed settings. The canvas is a buffer like any other in this one respect.
     public func applySettings() {
         log.lineCap = settings.scrollbackLines
-        log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        log.chatFont = settings.chatNSFont
+        log.density = settings.density
         log.palette = settings.palette
     }
 

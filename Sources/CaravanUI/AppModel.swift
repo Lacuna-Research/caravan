@@ -249,6 +249,21 @@ public struct ConnectionSettings: Sendable, Equatable {
         accountPassword = credentials.password(.account, host: host) ?? ""
     }
 
+    /// Writes the four identity fields, and nothing else.
+    ///
+    /// The Options Connect tab's setter. Separate from ``rememberAsLastUsed(in:credentials:)``
+    /// because that one also writes the host, the port and the two Keychain secrets — which
+    /// are per-server and none of a global identity form's business. Writes on every
+    /// keystroke, like every other control on the canvas: there is no Apply button anywhere
+    /// in this app, and identity is not where that starts.
+    @MainActor
+    public func rememberIdentity(in config: ConfigFile = .shared) {
+        config.set(nick, forKey: Key.nick)
+        config.set(altNick.isEmpty ? nil : altNick, forKey: Key.altNick)
+        config.set(ident.isEmpty ? nil : ident, forKey: Key.ident)
+        config.set(realName.isEmpty ? nil : realName, forKey: Key.realName)
+    }
+
     /// Records these as the last-used values. Called on connecting rather than on every
     /// keystroke: "last used" should mean used, not merely typed and cancelled.
     ///
@@ -453,6 +468,26 @@ public final class AppModel {
 
     /// Whether the canvas is what the detail area is showing.
     public var isShowingCanvas: Bool { selection == .settingsAndDebug }
+
+    // MARK: - Zoom
+
+    /// ⌘+, ⌘− and ⌥⌘0 (§15.5). Global, never per window.
+    ///
+    /// **Multiplicative steps**, so zooming out and back in returns exactly where it
+    /// started; adding and subtracting a constant drifts. `ChatSettings` clamps, so the
+    /// ends of the range are where these stop rather than something to check here.
+    public func zoomIn() { setZoom(settings.zoom * ChatSettings.zoomStep) }
+    public func zoomOut() { setZoom(settings.zoom / ChatSettings.zoomStep) }
+    public func resetZoom() { setZoom(ChatSettings.Default.zoom) }
+
+    /// Whether zooming further would change anything, for enabling the menu items.
+    public var canZoomIn: Bool { settings.zoom < ChatSettings.zoomRange.upperBound }
+    public var canZoomOut: Bool { settings.zoom > ChatSettings.zoomRange.lowerBound }
+
+    private func setZoom(_ value: Double) {
+        settings.zoom = value
+        applySettings()
+    }
 
     /// ⌘0, ⌘, and the pinned row all land here.
     ///

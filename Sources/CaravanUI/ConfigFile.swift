@@ -96,6 +96,16 @@ public final class ConfigFile {
         write()
     }
 
+    /// Every key currently in the file that begins with `prefix`.
+    ///
+    /// For settings that are a *set* rather than a scalar — the colour overrides are one
+    /// key per overridden index, and writing the new set means knowing which old keys to
+    /// remove. Reading the file back rather than remembering what was written keeps a
+    /// hand-added `chat.colour.7` from being invisible to the app that owns it.
+    public func keys(withPrefix prefix: String) -> [String] {
+        lines.compactMap { Self.parse($0)?.key }.filter { $0.hasPrefix(prefix) }
+    }
+
     public func set(_ value: Bool, forKey key: String) {
         set(value ? "true" : "false", forKey: key)
     }

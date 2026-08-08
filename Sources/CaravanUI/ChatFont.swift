@@ -103,25 +103,42 @@ public enum ChatFont {
     /// Two things it deliberately does *not* do: no `headIndent`, so a wrapped line
     /// continues flush-left at column 0 rather than hanging-indented under the message
     /// column — mIRC's shape — and no paragraph spacing, so messages sit directly under
-    /// one another.
+    /// one another (§15.5 asks for zero between messages by default, and this is it).
+    ///
+    /// **Density arrives as a multiplier over the font's natural line height** rather than
+    /// as a point value, which is what keeps it compatible with a user who has asked for
+    /// large text (§15.6). `minimumLineHeight` is what actually opens the lines up;
+    /// `maximumLineHeight` stays at whichever is larger of the density and the Zalgo
+    /// clamp, since a maximum below the minimum is a paragraph style that draws nothing.
     @MainActor
-    static func paragraphStyle(for font: NSFont) -> NSParagraphStyle {
+    static func paragraphStyle(
+        for font: NSFont,
+        density: ChatSettings.Density = .normal
+    ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
         style.lineBreakMode = .byWordWrapping
         style.headIndent = 0
         style.firstLineHeadIndent = 0
         style.paragraphSpacing = 0
         style.paragraphSpacingBefore = 0
-        style.maximumLineHeight = ceil(defaultLineHeight(for: font) * lineHeightClamp)
+        let natural = defaultLineHeight(for: font)
+        let multiplier = density.lineHeightMultiplier
+        // Compact is 1.0 — the natural height — so this floor can never shrink a line
+        // below what its glyphs need.
+        style.minimumLineHeight = ceil(natural * multiplier)
+        style.maximumLineHeight = ceil(natural * max(multiplier, lineHeightClamp))
         return style
     }
 
     /// The style for a line that must never wrap — the unread rule, which is deliberately
     /// longer than any window so that it spans the width whatever the width is.
     @MainActor
-    static func clippingParagraphStyle(for font: NSFont) -> NSParagraphStyle {
+    static func clippingParagraphStyle(
+        for font: NSFont,
+        density: ChatSettings.Density = .normal
+    ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.setParagraphStyle(paragraphStyle(for: font))
+        style.setParagraphStyle(paragraphStyle(for: font, density: density))
         style.lineBreakMode = .byClipping
         return style
     }

@@ -69,6 +69,16 @@ public final class MessageLogController {
         }
     }
 
+    /// How open the lines are (§15.5). Like the font, changing it restyles what is already
+    /// on screen — a density that applied only to arriving lines would leave the buffer in
+    /// two densities, which is worse than not offering the setting.
+    @ObservationIgnored public var density: ChatSettings.Density = .normal {
+        didSet {
+            guard density != oldValue else { return }
+            restyle()
+        }
+    }
+
     /// Which colours this buffer draws mIRC indices and nicks in.
     ///
     /// Changing it reaches text already on screen, by two different routes:
@@ -207,7 +217,7 @@ public final class MessageLogController {
         batch.addAttributes(
             [
                 .ligature: 0,
-                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
+                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont, density: density),
             ],
             range: whole
         )
@@ -245,6 +255,33 @@ public final class MessageLogController {
     /// the buffer. With it off, the nick goes back to its line's own colour — which is
     /// what the ``NickColumn`` carries the role for, since by then the storage has the
     /// nick's colour where the line's used to be.
+    /// Re-resolves every run that named a mIRC colour index.
+    ///
+    /// **What makes a colour override reach text already on screen.** An indexed colour
+    /// goes into the storage as an appearance-resolving `NSColor`, so switching between the
+    /// light and dark tables needs no pass at all — but retuning what index 4 *means*
+    /// changes the value rather than the appearance, and a resolved colour cannot know.
+    /// The live run found this the honest way: resetting a colour left the lines above it
+    /// in the old palette.
+    ///
+    /// Runs with only a `^D` hex colour carry no attribute and are skipped, which is the
+    /// behaviour §5 asks for — an override does not apply to a value the sender named
+    /// exactly.
+    private func applyInlineColours(to text: NSMutableAttributedString, in range: NSRange) {
+        text.enumerateAttribute(.inlineColours, in: range) { value, subrange, _ in
+            guard let encoded = value as? String,
+                let colours = InlineColours(encoded: encoded)
+            else { return }
+            let (foreground, background) = palette.resolved(colours)
+            if let foreground {
+                text.addAttribute(.foregroundColor, value: foreground, range: subrange)
+            }
+            if let background {
+                text.addAttribute(.backgroundColor, value: background, range: subrange)
+            }
+        }
+    }
+
     private func applyNickColours(to text: NSMutableAttributedString, in range: NSRange) {
         text.enumerateAttribute(.nickColumn, in: range) { value, subrange, _ in
             guard let encoded = value as? String,
@@ -303,11 +340,14 @@ public final class MessageLogController {
         textStorage.addAttributes(
             [
                 .ligature: 0,
-                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont),
+                .paragraphStyle: ChatFont.paragraphStyle(for: chatFont, density: density),
             ],
             range: whole
         )
         applyFont(to: textStorage, in: whole)
+        // Inline colours before nick colours: a nick column can carry both, and the nick's
+        // own colour is the one that has to win there.
+        applyInlineColours(to: textStorage, in: whole)
         applyNickColours(to: textStorage, in: whole)
         // The unread rule is deliberately wider than the window and clipped rather than
         // wrapped, so the blanket pass above has to be undone for its one line.
@@ -315,7 +355,7 @@ public final class MessageLogController {
             let location = lineLengths.prefix(index).reduce(0, +)
             textStorage.addAttribute(
                 .paragraphStyle,
-                value: ChatFont.clippingParagraphStyle(for: chatFont),
+                value: ChatFont.clippingParagraphStyle(for: chatFont, density: density),
                 range: NSRange(location: location, length: lineLengths[index])
             )
         }
@@ -351,7 +391,10 @@ public final class MessageLogController {
                 .ligature: 0,
                 // Clipping, not wrapping: the rule is deliberately longer than any window
                 // so it always spans the width, and a wrapped rule would be two rules.
-                .paragraphStyle: ChatFont.clippingParagraphStyle(for: chatFont),
+                .paragraphStyle: ChatFont.clippingParagraphStyle(
+                    for: chatFont,
+                    density: density
+                ),
             ],
             range: whole
         )

@@ -84,6 +84,29 @@ public struct NavigationCommands: Commands {
             Button("Channel Modes…") { model.isShowingChannelModes = true }
                 .disabled(model.selectedChannel == nil)
 
+            // **Zoom, per §15.5** — global, never per window. Actual size is ⌥⌘0 and not
+            // ⌘0, which §10 gave to the Settings & Debug canvas; that collision is the
+            // reason the design notes call it out by name.
+            //
+            // ⌘+ is declared as ⌘= as well. The key is physically `=`, and a user pressing
+            // Shift for the `+` sends a different key equivalent — declaring only one of
+            // them makes the shortcut work for about half the ways people press it.
+            Button("Zoom In") { model.zoomIn() }
+                .keyboardShortcut("+", modifiers: .command)
+                .disabled(!model.canZoomIn)
+            Button("Zoom In") { model.zoomIn() }
+                .keyboardShortcut("=", modifiers: .command)
+                .disabled(!model.canZoomIn)
+                .hidden()
+            Button("Zoom Out") { model.zoomOut() }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(!model.canZoomOut)
+            Button("Actual Size") { model.resetZoom() }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+                .disabled(model.settings.zoom == ChatSettings.Default.zoom)
+
+            Divider()
+
             // No shortcut, for the same reason. The scrollback's own right-click menu is
             // the affordance this is a fallback for — discovered there, and findable here
             // by anyone who never right-clicks.

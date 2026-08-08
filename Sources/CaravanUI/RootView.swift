@@ -26,7 +26,7 @@ public struct RootView: View {
         // one chat font, which is the requirement rather than a convenience.
         .environment(
             \.chatFont,
-            ChatFont.font(family: model.settings.fontFamily, size: model.settings.fontSize)
+            model.settings.chatFont
         )
         // **An identified toolbar, so macOS gives customization for free** (§8): a
         // drag-and-drop palette sheet, with the layout persisted by the system. mIRC's

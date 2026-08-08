@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 9/17 complete. Next: prompt 10.
+**Status:** 10/17 complete. Next: prompt 11.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -467,35 +467,70 @@ Do not:
 
 **Item:** Options.
 
-mIRC-shaped tabbed prefs — Connect, IRC, Display, Colors, Sounds, Logging, Mouse, Other —
-built out on the Settings & Debug canvas rather than in a separate window (§10). Two
-properties of the stage 1 form are requirements, not accidents: every control writes
-straight through to `caravan.conf` with no Apply button and nothing to cancel, and the
-file survives being hand-edited. Display carries the density and zoom model from §15.5.
+```
+Turn the one settings form into mIRC's tabbed options, on the Settings & Debug canvas
+(§10) rather than in a window of its own.
 
-*To be written out before it starts.*
+Two properties of the stage 1 form are requirements rather than accidents, and no tab may
+lose them: **every control writes straight through to `caravan.conf`** — no Apply, nothing
+to cancel, no pending state to get out of step — and **the file survives being hand
+edited**, so a tab that rewrites the whole file rather than the lines it owns is a
+regression. `ConfigFile` already behaves; the job is not to regress it, and to have a test
+that would notice.
 
-**Carry-forward** *(consumed when this prompt runs)*
+- **A tab exists when it has something in it.** mIRC's eight are Connect, IRC, Display,
+  Colors, Sounds, Logging, Mouse and Other. Sounds is prompt 13's and Logging is prompt
+  12's; Mouse has one hard-coded behaviour and nothing to set. Build the five that have
+  settings behind them and leave notes for the two that will grow one — an empty tab is
+  chrome that teaches the user the client is unfinished. A segmented picker like
+  `ChannelModesSheet`'s, not a second sidebar; revisit at about seven tabs.
+- **Connect is identity, not servers.** The prompt 3 note says the Connect tab inherits
+  the sheet's authentication because prompt 11 retires the sheet — but prompt 11 is also
+  where the *server list* lands, and authentication is per-server. Split it on that line:
+  the nickname, alternate, ident and real name are global and live here; which servers
+  exist, their passwords and their SASL method go with the server list. Say so on prompt 11
+  so it inherits deliberately rather than by omission.
+- **Known hosts get a list and a Forget button.** Today an accepted TLS fingerprint can be
+  withdrawn only by hand-editing `$XDG_DATA_HOME/caravan/known_hosts`. `KnownHosts.forget(_:)`
+  is written and tested and nothing calls it; a user who accepted the wrong certificate has
+  no way back inside the app, which makes this the one genuinely missing safety control.
+- **Display carries §15.5's density and zoom.** Density is *line height, not point size* —
+  Compact / Normal / Comfortable as multipliers over the user's size, never clamping a
+  requested size downward, zero paragraph spacing by default. `ChatFont.paragraphStyle(for:)`
+  is where it lands, beside the existing `lineHeightClamp`. Zoom is global: ⌘+, ⌘− and
+  actual-size on **⌥⌘0**, because ⌘0 is the canvas.
+- **Colours gets the 0–15 grid.** Sixteen swatches, not ninety-nine: §5 puts per-index
+  overrides on top of the two 16-colour tables and leaves the extended 16–98 range fixed by
+  the specification, so those are not the user's to retune. `Palette.overrides` is carried
+  and tested and nothing writes it; persist as one key per overridden index and leave the
+  rest absent. Per-*nick* overrides stay out — the affordance for them is "Set Colour…" on
+  a nick's context menu, which is prompt 9's `BufferMenu` and stage 3's scripted menus.
+- **Whitespace-bearing values use `_` for a space**, as `ChatSettings.encodeSuffix` already
+  does for the completion suffixes. Any new setting of that shape takes the same answer
+  rather than inventing a second one.
 
-- From prompt 1: the Colours tab already has rows to absorb — a Palette segmented control
-  and a "Colour nicknames" toggle, in `SettingsDebugCanvas`'s `SettingsPane`, backed by
-  `ChatSettings.paletteMode` and `.coloursNicks`. What it does *not* have is the per-index
-  and per-nick override UI §5 and §6 ask for; `Palette.overrides` and `.nickOverrides` are
-  carried and tested but nothing writes them, and `ChatSettings` does not persist them.
-  Whether that grid lands here or waits for stage 3's Colors dialog is this prompt's call —
-  the stage 3 item records the persistence question either way.
-- From prompt 3: **the Connect sheet now collects authentication, and prompt 11 retires that
-  sheet** — so the Connect tab inherits it. `ConnectionSettings.AuthenticationChoice` is the
-  flat four-option list the picker shows, `Key.authentication`/`.account`/`.certificateLabel`
-  are its config keys, and the two passwords go to `CredentialStore` rather than the file.
-  The one thing with no UI at all is `KnownHosts`: accepted TLS fingerprints can be forgotten
-  only by editing `$XDG_DATA_HOME/caravan/known_hosts` by hand. A list with a Forget button
-  belongs on a tab here, and `KnownHosts.forget(_:)` is already written and tested.
-- From prompt 2: a Typing section exists too, holding the two nick-completion suffixes
-  (`ChatSettings.completionSuffix`, a `CompletionStyle`). Note how they are stored: the
-  config format cannot hold a value with a leading or trailing space, so `_` stands for a
-  space — `ChatSettings.encodeSuffix`. Any later setting whose value is whitespace-bearing
-  has the same problem and should use the same answer rather than inventing a second one.
+Acceptance: hand-edit `caravan.conf` to carry comments, blank lines and an unknown key,
+then change something on every tab and confirm all three survived and only the owned lines
+moved. Set a density preset and watch the buffer reflow without the font size changing.
+Zoom in and out and back to actual size, **with a live key press for each of the three** —
+this stage has lost two shortcuts to system bindings that report no conflict at build
+time. Override colour 4 and watch text already on screen change. Accept a certificate,
+find the host in the list, forget it, and be asked again on the next connect.
+
+Do not:
+  - **§15.3's "Force monospaced grid" toggle**, which this prompt dropped on inspection
+    rather than half-build. "Clamp everything, emoji included, to one cell" means owning
+    glyph advancement, and TextKit 1 exposes no supported way to set an advance per glyph —
+    the honest implementation measures each wide grapheme and applies compensating `.kern`,
+    which is a layout subsystem rather than a checkbox. A toggle that only stripped VS16
+    would handle §15.3's six-character overlap set and nothing else, while its label
+    promised everything. Moved to `PLAN.md` item 18a with the reasoning.
+  - The server list, per-server settings, or retiring `ConnectSheet`. Prompt 11.
+  - Sounds and Logging tabs. Prompts 13 and 12 bring their own settings and their own tab.
+  - Per-window overrides of anything. §15.5's convention is global first, and per-window
+    later if wanted — "later" is not this prompt.
+  - Themes. The format table is a seam a theme will use; a theme *picker* is stage 3.
+```
 
 ---
 
@@ -526,11 +561,19 @@ delete rather than a paper plan. Statistics stay deferred to stage 4.
   are built by `ConnectionViewModel.networkKey`, so the migration is one function and two key
   prefixes. Retiring `ConnectSheet` also has to keep `ConnectionSettings.lastUsed` working
   or the seeded-config trick every acceptance run since prompt 3 has relied on stops working.
-
-*To be written out before it starts.*
-
-**Carry-forward** *(consumed when this prompt runs)*
-
+- From prompt 10: **authentication is yours, and deliberately so.** Prompt 3's note sent it
+  to the Options Connect tab on the grounds that this prompt retires the sheet; prompt 10
+  sent it back, because a SASL method, an account and a password are *per server* and
+  Options is global. So the Connect tab holds identity only — nickname, alternate, ident,
+  real name, in `ConnectionSettings.Key` — and `AuthenticationChoice`, `Key.authentication`,
+  `.account`, `.certificateLabel` and the two `CredentialStore` passwords arrive here with
+  the server list. Until they do, `ConnectSheet` is still the only way to set them, which is
+  a reason not to delete it a moment before its replacement works.
+- From prompt 10: **`ChatSettings` is no longer the only thing writing `caravan.conf`**, and
+  the server list will be the third. `OptionsPane` in `SettingsDebugCanvas.swift` is the
+  worked example of the two rules — write straight through on change, and touch only the
+  lines you own — and `ConfigFileTests` has a hand-edited-file test worth copying rather
+  than re-deriving.
 - **Give every server-list entry a stable, user-editable short name**, and treat it as an
   identifier rather than a label. `PLAN.md` item 34a addresses buffers as `libera/#swift`
   from the command line, and stage 3's scripting will name networks the same way, so this
@@ -540,6 +583,8 @@ delete rather than a paper plan. Statistics stay deferred to stage 4.
   after people have scripted against it is a breaking change with no good migration. It
   wants a uniqueness check and a slug-shaped constraint (no `/`, since that is the
   separator).
+
+*To be written out before it starts.*
 
 ---
 
@@ -568,6 +613,12 @@ local log already covers, so the buffer needs de-duplication by message id or
   against a replay needs their `time` and `msgid` as much as a message's. Either add `tags`
   to the replayed cases or give every event a common envelope — the envelope is the larger
   change and by now probably the right one.
+- From prompt 10: **the Logging tab is yours to add.** Options built five of mIRC's eight
+  tabs and deliberately skipped this one rather than shipping it empty. Adding it is one
+  case in `OptionsPane.Tab` in `SettingsDebugCanvas.swift` plus a `@ViewBuilder` pane; the
+  enum is `CaseIterable` and drives the picker, so there is nothing else to wire. Whatever
+  it holds — log directory, what to log, reload-last-N — writes through `ChatSettings` on
+  change like every other control, with no Apply button.
 - From prompt 4: `CHATHISTORY LATEST <target> * <limit>` fires on our own `JOIN`, in
   `IRCSession.requestHistoryIfOurJoin`, with the count in
   `SessionConfiguration.chatHistoryLimit`. De-duplication wants `BEFORE`/`AFTER` against the
@@ -621,6 +672,14 @@ decides what is worth interrupting you for, the other what is not worth showing 
   `Tests/CaravanUITests/BufferActionsTests.swift` asserts the exact command strings and the
   exact enabled set, so both tests need the new item adding — which is the point of their
   being exhaustive.
+- From prompt 10: **the Sounds tab is yours to add**, and so is whatever Highlights needs.
+  Options built five of mIRC's eight tabs and skipped Sounds rather than ship it empty;
+  adding one is a case in `OptionsPane.Tab` in `SettingsDebugCanvas.swift` and a
+  `@ViewBuilder` pane, since the enum is `CaseIterable` and drives the picker. The
+  keyword and regex lists are the first setting here that is a *list* rather than a scalar,
+  which `caravan.conf`'s one-value-per-key format does not hold directly — decide the
+  encoding deliberately, and note that `ChatSettings.encodeSuffix`'s `_`-for-space trick is
+  the precedent for values the format cannot carry verbatim.
 - From prompt 9: **the catcher's line-by-line seam is where ignore has to bite too.**
   `ConnectionViewModel.append(_:)` now calls `urlCatcher?.record(...)` in the same loop that
   appends the line and raises the activity. An ignored message must not put its links in the

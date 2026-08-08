@@ -156,7 +156,8 @@ public final class ConnectionViewModel: Identifiable {
         self.givenName = name
         self.status = StatusBuffer(displayName: name ?? configuration.host)
         self.settings = settings
-        log.chatFont = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        log.chatFont = settings.chatNSFont
+        log.density = settings.density
         log.palette = settings.palette
     }
 
@@ -408,10 +409,12 @@ public final class ConnectionViewModel: Identifiable {
     /// buffers — otherwise the setting only applies to windows opened afterwards, which is
     /// the sort of half-working that is worse than not offering it.
     public func applySettings() {
-        let font = ChatFont.nsFont(family: settings.fontFamily, size: settings.fontSize)
+        let font = settings.chatNSFont
         let palette = settings.palette
+        let density = settings.density
         for controller in [log] + channels.map(\.log) + queries.map(\.log) {
             controller.chatFont = font
+            controller.density = density
             controller.lineCap = settings.scrollbackLines
             controller.palette = palette
         }
