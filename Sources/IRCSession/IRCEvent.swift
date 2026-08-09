@@ -192,6 +192,31 @@ public enum IRCEvent: Sendable, Equatable {
     case batchStarted(reference: String, type: String, parameters: [String])
     case batchEnded(reference: String)
 
+    // MARK: - Presence
+
+    /// Somebody on the notify list came online or went offline.
+    ///
+    /// **A change, never a state.** The session diffs `MONITOR`'s 730/731 — or the `ISON`
+    /// poll's 303 — against what it already knew, and emits one of these only when the
+    /// answer moved. The first reply after a connection sets the baseline and emits
+    /// ``notifyBaseline(online:offline:)`` instead, because turning "here is everyone who is
+    /// online" into an event per person is how a client announces that all your friends
+    /// just arrived every time you reconnect.
+    case presenceChanged(nick: String, isOnline: Bool)
+
+    /// The first presence answer of a connection: everything known at once.
+    ///
+    /// Both halves, because "not online" is only meaningful against a list you asked about
+    /// — a consumer that saw only the online half could not tell an offline friend from one
+    /// that is not on the list at all.
+    case notifyBaseline(online: [String], offline: [String])
+
+    /// Our own away state, from 305 and 306.
+    ///
+    /// The server is the authority: `/away` is a request, and a client that assumed it
+    /// worked would be wrong on the servers that ignore it.
+    case awayStateChanged(isAway: Bool)
+
     // MARK: - The bouncer
 
     /// The upstream networks a bouncer is holding, as they now stand.

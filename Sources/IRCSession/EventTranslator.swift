@@ -210,6 +210,19 @@ public enum EventTranslator {
     /// Suppression is conditional on a specific event actually being produced, not on the
     /// code alone: a 353 too short to name a channel falls through to `.numeric` and is
     /// still shown, rather than vanishing because its code is on a list.
+    /// The nicks in a 730/731 trailing parameter, without their user@host.
+    ///
+    /// Servers differ: some send `bob`, some `bob!u@h`, and some send several separated by
+    /// commas with spaces after them. All three are one list of nicks.
+    static func monitorTargets(_ parameters: [String]) -> [String] {
+        guard let list = parameters.last else { return [] }
+        return
+            list
+            .split(whereSeparator: { $0 == "," || $0 == " " })
+            .map { $0.split(separator: "!").first.map(String.init) ?? String($0) }
+            .filter { !$0.isEmpty }
+    }
+
     private static func numericEvents(
         code: UInt16,
         parameters: [String],
@@ -220,6 +233,42 @@ public enum EventTranslator {
         case 1:
             // The session emits `.registered` for this one, unconditionally.
             return []
+        // MARK: Presence
+
+        case 730, 731:
+            // `<client> :nick[!user@host][,nick...]`. The trailing parameter is a list, and
+            // the user@host part is optional and not wanted here — the notify list is keyed
+            // on nicks, and the host of somebody who just signed on is not news.
+            let online = code == 730
+            return monitorTargets(parameters).map {
+                .presenceChanged(nick: $0, isOnline: online)
+            }
+
+        case 303:
+            // `RPL_ISON`: `<client> :nick nick nick`, and it names *only* who is online.
+            // Diffing it against what was asked for is the session's job, because the
+            // question is not in the answer.
+            let online = parameters.last.map { $0.split(separator: " ").map(String.init) } ?? []
+            return [.notifyBaseline(online: online, offline: [])]
+
+        case 734:
+            // `ERR_MONLISTFULL`: `<client> <limit> <targets> :Monitor list is full`. The
+            // user has to see this — the names past the limit are indistinguishable from
+            // offline, which is the one way this feature can lie.
+            let limit = parameters.count > 1 ? parameters[1] : "?"
+            let refused = parameters.count > 2 ? parameters[2] : ""
+            return [
+                .clientError(
+                    "This server monitors at most \(limit) names, so it refused: \(refused)"
+                )
+            ]
+
+        case 305:
+            return [.awayStateChanged(isAway: false)]
+
+        case 306:
+            return [.awayStateChanged(isAway: true)]
+
         case 331:
             // `<client> <channel> :No topic is set`. An empty topic *is* the answer, and
             // saying so keeps one representation of "no topic" rather than two.

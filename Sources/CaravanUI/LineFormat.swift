@@ -74,6 +74,12 @@ public enum LineKind: String, Sendable, Hashable, CaseIterable {
     case rawOutbound
     /// The horizontal rule marking where you last left the buffer.
     case unreadMarker
+    /// Somebody on the notify list arrived or left, and the summary of who was already
+    /// around when the connection opened.
+    ///
+    /// Its own kind rather than ``status`` because a user who has curated a notify list
+    /// wants those lines findable among the numerics, and a theme is the seam for that.
+    case notify
     /// A line read back out of the chat log when a window opened.
     ///
     /// **Carries no template of its own beyond `$text`**, because the text it carries was
@@ -251,6 +257,7 @@ public struct LineFormatTable: Sendable {
         .status: LineFormat(template: "$timestamp*** $text", colour: .event),
         .rawInbound: LineFormat(template: "$timestamp<< $text", colour: .dim),
         .rawOutbound: LineFormat(template: "$timestamp>> $text", colour: .dim),
+        .notify: LineFormat(template: "$timestamp*** $text", colour: .notice),
         // No timestamp: the rule marks a position, not a moment.
         .unreadMarker: LineFormat(template: "$text", colour: .marker),
         // No timestamp either — the logged line brought its own, and it is the moment the

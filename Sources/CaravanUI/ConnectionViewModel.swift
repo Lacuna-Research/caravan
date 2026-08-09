@@ -127,11 +127,33 @@ public final class ConnectionViewModel: Identifiable {
     /// the rest, and `nil` in tests that only care about the activity state.
     @ObservationIgnored public var alerts: Alerts?
 
+    /// Whether the *server* has us marked away. Set from 305 and 306 rather than assumed
+    /// when `/away` is sent: the request can be ignored, and a client that believed itself
+    /// would show the wrong thing on the servers that do.
+    public private(set) var isAway = false
+
     /// Whether a buffer is on screen *and* the app is frontmost, which is the difference
     /// between a notification and noise. Supplied by `AppModel`, which is the only thing
     /// that knows either.
     @ObservationIgnored
     public var isBufferOnScreen: @MainActor (any ChatBuffer) -> Bool = { _ in false }
+
+    /// Called when somebody on the notify list arrives or leaves, so the app can alert.
+    /// A callback rather than the app reading the event stream, which the pump owns.
+    @ObservationIgnored public var presenceDidChange: (@MainActor (String, Bool) -> Void)?
+
+    /// Hands the session the list to watch. Called on connect and whenever the list changes.
+    public func updateNotifyList(_ nicks: [String]) async {
+        await session.setNotifyList(nicks)
+    }
+
+    /// `/away <reason>`, or `/away` to come back. Goes on the wire; ``isAway`` follows the
+    /// server's answer rather than this call.
+    public func setAway(_ reason: String?) async {
+        await session.send(
+            IRCMessage(verb: "AWAY", parameters: reason.map { [$0] } ?? [])
+        )
+    }
 
     /// Called after a buffer's activity state rises, so the Dock badge can be recomputed.
     /// A callback rather than the app observing, for the same reason
@@ -704,6 +726,10 @@ public final class ConnectionViewModel: Identifiable {
         case .bouncerNetworks(let networks):
             bouncerNetworks = networks
             bouncerNetworksDidChange?(self)
+        case .awayStateChanged(let away):
+            isAway = away
+        case .presenceChanged(let nick, let isOnline):
+            presenceDidChange?(nick, isOnline)
         default:
             break
         }
@@ -1164,7 +1190,10 @@ public final class ConnectionViewModel: Identifiable {
         case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
             .namesReply, .endOfNames, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply,
-            .batchStarted, .batchEnded, .bouncerNetworks:
+            .batchStarted, .batchEnded, .bouncerNetworks,
+            // Presence is about somebody who may be in no channel of ours at all, and our
+            // own away state is about the connection. Both are the network talking.
+            .presenceChanged, .notifyBaseline, .awayStateChanged:
             return [status]
         }
     }
@@ -1210,7 +1239,10 @@ public final class ConnectionViewModel: Identifiable {
         case .raw, .stateChanged, .registered, .quit, .nickChanged, .numeric,
             .clientError, .clientNotice, .capabilitiesChanged, .authenticated,
             .standardReply, .awayChanged, .accountChanged, .hostChanged, .realNameChanged,
-            .batchStarted, .batchEnded, .bouncerNetworks:
+            .batchStarted, .batchEnded, .bouncerNetworks,
+            // A notify list is nicks as the *user* typed them; nothing here was folded on
+            // its way in, so there is no mapping to learn from it.
+            .presenceChanged, .notifyBaseline, .awayStateChanged:
             break
         }
     }

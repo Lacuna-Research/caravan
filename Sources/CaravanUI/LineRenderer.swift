@@ -144,6 +144,25 @@ public struct LineRenderer: Sendable {
             // where these land; `.raw` has the raw-traffic toggle.
             return nil
 
+        case .presenceChanged(let nick, let isOnline):
+            fields.text = "\(nick) is \(isOnline ? "online" : "offline")"
+            return (.notify, fields)
+
+        case .notifyBaseline(let online, let offline):
+            // **One line, not one per person.** This is the whole reason the event exists:
+            // a connection with six friends already online would otherwise open with six
+            // announcements of things that did not just happen.
+            guard !online.isEmpty || !offline.isEmpty else { return nil }
+            var parts: [String] = []
+            if !online.isEmpty { parts.append("online: \(online.joined(separator: ", "))") }
+            if !offline.isEmpty { parts.append("offline: \(offline.joined(separator: ", "))") }
+            fields.text = "Notify — " + parts.joined(separator: "; ")
+            return (.notify, fields)
+
+        case .awayStateChanged(let isAway):
+            fields.text = isAway ? "You are now marked as away" : "You are no longer away"
+            return (.status, fields)
+
         case .batchStarted, .batchEnded, .bouncerNetworks:
             // Structure, not content. A batch's lines are what gets rendered, and the
             // bouncer's network list is a shape the *tree* takes rather than a line.

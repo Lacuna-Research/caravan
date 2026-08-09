@@ -75,6 +75,12 @@ public enum CommandAction: Sendable, Equatable {
     /// `subject` is `nil` for a bare `/ignore`, which lists them.
     case ignore(subject: String?, levels: IgnoreLevel, duration: Int?, isRemoval: Bool)
 
+    /// `/notify`: add somebody to the notify list, drop them, or say who is on it.
+    ///
+    /// Client-side like `/ignore`, and for the same reason — the list is the user's and
+    /// outlives any one connection. `nick` is `nil` for a bare `/notify`, which lists them.
+    case notify(nick: String?, isRemoval: Bool)
+
     /// `/debug`: point the wire trace somewhere, or stop.
     ///
     /// The answer the user reads back is the *controller's*, not the parser's — it names

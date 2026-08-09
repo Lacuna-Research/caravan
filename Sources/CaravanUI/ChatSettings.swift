@@ -80,7 +80,25 @@ public final class ChatSettings {
         /// **Off.** The menu-bar item is the one surface here that takes space the user did
         /// not ask for, and the Dock badge already answers "is anyone talking to me".
         public static let showsMenuBarItem = false
+
+        /// **On.** Somebody you deliberately asked to be told about arriving is the least
+        /// noisy notification in the client — the list is short and people sign on once.
+        /// Its own toggle rather than a case of `AlertTrigger`, which describes buffer
+        /// activity and does not describe this.
+        public static let alertsOnNotify = true
+
+        /// **Zero, meaning off.** Auto-away speaks on the user's behalf, which §19's
+        /// "defaults taken without asking" does not cover. Fifteen minutes is what the form
+        /// offers when it is switched on.
+        public static let autoAwayMinutes = 0
+        public static let suggestedAutoAwayMinutes = 15
+
+        public static let awayMessage = "Away from keyboard"
     }
+
+    /// The range the form offers, and the range a hand-edited file is held to. Zero is
+    /// meaningful — it is how auto-away is off.
+    public static let autoAwayRange = 0...1440
 
     /// The range the form offers, and the range a hand-edited file is held to. Zero is
     /// meaningful — it is how you keep logs without having them replayed at you.
@@ -156,6 +174,9 @@ public final class ChatSettings {
         public static let alertTrigger = "alert.trigger"
         public static let alertSound = "alert.sound"
         public static let showsMenuBarItem = "alert.menu-bar-item"
+        public static let alertsOnNotify = "alert.notify"
+        public static let autoAwayMinutes = "away.auto-minutes"
+        public static let awayMessage = "away.message"
 
         /// One key per overridden colour index — `chat.colour.4 = FF0000`. A *set* rather
         /// than a scalar, and the only setting of that shape so far: indices the user has
@@ -372,6 +393,29 @@ public final class ChatSettings {
         didSet { config.set(showsMenuBarItem, forKey: Key.showsMenuBarItem) }
     }
 
+    /// Whether somebody on the notify list arriving is worth an interruption.
+    public var alertsOnNotify: Bool {
+        didSet { config.set(alertsOnNotify, forKey: Key.alertsOnNotify) }
+    }
+
+    /// Minutes of system idle before the client says you are away. Zero is off.
+    public var autoAwayMinutes: Int {
+        didSet {
+            let clamped = Self.autoAwayRange.clamping(autoAwayMinutes)
+            guard clamped == autoAwayMinutes else {
+                autoAwayMinutes = clamped
+                return
+            }
+            config.set(autoAwayMinutes, forKey: Key.autoAwayMinutes)
+        }
+    }
+
+    /// What it says. Written with `_` for a space, as `completionSuffix` does — the format
+    /// cannot carry a leading or trailing one and an away message very plausibly has both.
+    public var awayMessage: String {
+        didSet { config.set(Self.encodeSuffix(awayMessage), forKey: Key.awayMessage) }
+    }
+
     /// Whether a buffer of this shape is written down.
     public func logs(_ buffer: any ChatBuffer) -> Bool {
         switch buffer {
@@ -426,6 +470,12 @@ public final class ChatSettings {
             ?? Default.alertTrigger
         self.alertSound = config.string(Key.alertSound) ?? Default.alertSound
         self.showsMenuBarItem = config.bool(Key.showsMenuBarItem) ?? Default.showsMenuBarItem
+        self.alertsOnNotify = config.bool(Key.alertsOnNotify) ?? Default.alertsOnNotify
+        self.autoAwayMinutes = Self.autoAwayRange.clamping(
+            config.int(Key.autoAwayMinutes) ?? Default.autoAwayMinutes
+        )
+        self.awayMessage =
+            config.string(Key.awayMessage).map(Self.decodeSuffix) ?? Default.awayMessage
         // An index outside 0–15, or a value that is not six hex digits, is skipped rather
         // than refused: this file is hand-edited, and a typo should cost you the one
         // colour, not the launch.

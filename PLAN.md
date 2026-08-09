@@ -399,6 +399,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     `PLAN.md` recorded without one; see `BUILD-LOG.md`.
 23. **Notify list.** `MONITOR` where available, `ISON` polling as fallback; online/offline
     events, notify window, sounds.
+
+    *Shipped in stage 2 prompt 14, without the window: the list is a handful of nicks, the
+    status window announces changes and Options shows the list, and a window for five rows
+    is chrome. `WATCH` is also deliberately absent — a third presence protocol supported by
+    a shrinking set of servers that almost all have `MONITOR` too, and two code paths
+    already cost a fallback story.*
 24. **Channel list window.** `/list` with min/max user filters, name and topic search,
     sortable columns, join-on-double-click.
 25. **URL catcher.** Clickable links in the buffer, a URL history window, copy/open all.
@@ -409,6 +415,15 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     network / everywhere, with Open All asking first above five.*
 26. **Away system.** `/away`, auto-away on idle, optional away nick, away log capturing
     messages received while away.
+
+    *Shipped in stage 2 prompt 14, with two deliberate changes.* The **away log became a
+    return summary** — one line counting what happened — because the unread rule, the
+    activity states, item 20's log viewer and item 21's badges already cover browsing what
+    arrived, and a second viewer over the same data is not worth building. The **away nick
+    is not built**: renaming somebody mid-session collides with `binding.N`, the manual tree
+    order and every scripted reference to their nick, all of which key on identity that a
+    rename moves, and nobody has asked for it. Auto-away is **off by default** — it speaks
+    on your behalf, which §19's "defaults taken without asking" does not cover.
 27. **Flood protection.** Outbound send-rate throttling to avoid `Excess Flood`, inbound
     flood detection with auto-ignore.
 
