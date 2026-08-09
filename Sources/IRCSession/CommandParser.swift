@@ -78,8 +78,9 @@ public struct CommandParser: Sendable {
         "ame", "amsg", "away", "back", "ban", "clear", "clearall", "connect", "ctcp",
         "debug", "deop", "devoice", "disconnect", "ignore", "invite", "j", "join", "kick",
         "kickban",
-        "leave", "list", "m", "me", "mode", "msg", "names", "nick", "notice", "op", "oper",
-        "part", "ping", "q", "query", "quit", "quote", "raw", "say", "server", "topic",
+        "leave", "list", "m", "me", "mode", "msg", "names", "nick", "notice", "notify",
+        "op", "oper", "part", "ping", "q", "query", "quit", "quote", "raw", "say", "server",
+        "topic",
         "unban", "voice", "who", "whois", "whowas",
     ]
 
@@ -242,6 +243,30 @@ public struct CommandParser: Sendable {
 
         case "ignore":
             return ignore(rest)
+
+        case "notify":
+            // mIRC's `/notify [-r] <nick>`, and a bare `/notify` lists them. No level
+            // flags: there is one thing to be told about a person, which is that they are
+            // there.
+            var remainder = Substring(rest).drop(while: { $0 == " " })
+            var isRemoval = false
+            if remainder.hasPrefix("-") {
+                let (flag, afterFlag) = split(String(remainder))
+                guard flag == "-r" else {
+                    return [
+                        .error(
+                            CommandError.unknownFlag(command: "/notify", flag: flag).message
+                        )
+                    ]
+                }
+                isRemoval = true
+                remainder = Substring(afterFlag).drop(while: { $0 == " " })
+            }
+            let nick = remainder.split(separator: " ").first.map(String.init)
+            guard nick != nil || !isRemoval else {
+                return [.error(CommandError.usage("/notify -r <nick>").message)]
+            }
+            return [.notify(nick: nick, isRemoval: isRemoval)]
 
         case "clear":
             return [.clearScrollback(everywhere: false)]

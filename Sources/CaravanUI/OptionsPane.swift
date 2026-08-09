@@ -155,6 +155,12 @@ private struct IRCOptions: View {
 
     @State private var newPatternText = ""
     @State private var newPatternKind: HighlightPattern.Kind = .word
+    @State private var newNotifyNick = ""
+
+    private func addNotify() {
+        model.notifyList.add(newNotifyNick)
+        newNotifyNick = ""
+    }
 
     private var draft: HighlightPattern {
         HighlightPattern(kind: newPatternKind, text: newPatternText)
@@ -195,6 +201,35 @@ private struct IRCOptions: View {
                         + "An ignore hides what somebody says from this moment on — it does "
                         + "not remove them from the nickname list, and it does not go back "
                         + "and hide what is already on screen or already in a log file."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Notify") {
+                if model.notifyList.nicks.isEmpty {
+                    Text("Nobody is on the notify list.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.notifyList.nicks, id: \.self) { nick in
+                        LabeledContent(nick) {
+                            HStack(spacing: 8) {
+                                Button("Remove") { model.notifyList.remove(nick) }
+                            }
+                        }
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField("nickname", text: $newNotifyNick)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(addNotify)
+                    Button("Add", action: addNotify)
+                        .disabled(newNotifyNick.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                Text(
+                    "People you want to be told about arriving. Also `/notify <nick>`. "
+                        + "Where the server offers `MONITOR` this costs nothing; where it "
+                        + "does not, the client asks every half a minute instead."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -645,6 +680,36 @@ private struct SoundOptions: View {
                 Text("The system sounds, plus anything in ~/Library/Sounds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Away") {
+                LabeledContent("Away after") {
+                    HStack(spacing: 8) {
+                        TextField(
+                            "Minutes",
+                            value: $settings.autoAwayMinutes,
+                            format: .number.grouping(.never)
+                        )
+                        .labelsHidden()
+                        .frame(width: 60)
+                        Text("minutes idle")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                TextField("Away message", text: $settings.awayMessage)
+                Toggle(
+                    "Tell me when somebody on the notify list arrives",
+                    isOn: $settings.alertsOnNotify
+                )
+                Text(
+                    "Zero minutes turns it off, which is the default: marking you away "
+                        + "tells a channel full of people something about where you are, so "
+                        + "it is opt-in. The clock is the system's — you are away from your "
+                        + "desk, not from this window — and typing `/away` yourself is never "
+                        + "undone by coming back to the keyboard."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("Menu bar") {

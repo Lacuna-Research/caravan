@@ -349,6 +349,13 @@ public final class AppModel {
     /// The menu-bar item, which is off unless asked for.
     @ObservationIgnored public let menuBarItem = MenuBarItem()
 
+    /// The people you want to know about. Global, like the ignore and highlight lists.
+    public let notifyList: NotifyList
+
+    /// The idle clock behind auto-away. One for the app: you are away from your desk, not
+    /// from a particular network.
+    @ObservationIgnored public let away: AwayController
+
     /// The log viewer, and which window it is a sheet on. Same reasoning as
     /// ``urlCatcherPresentation``: a plain flag would put the sheet on the main window even
     /// when a detached buffer asked for it.
@@ -592,6 +599,8 @@ public final class AppModel {
         self.ignores = IgnoreList(config: config)
         self.highlights = HighlightRules(config: config)
         self.alerts = Alerts(settings: settings)
+        self.notifyList = NotifyList(config: config)
+        self.away = AwayController(settings: settings)
         self.debug = DebugController(trace: trace, settings: settings)
         // **The Dashboard is what you land on** (§13). It is the splash screen and the
         // empty state, which is the whole reason the app has no onboarding flow: the thing
@@ -780,6 +789,8 @@ public final class AppModel {
                     password: password,
                     reportingInto: target
                 )
+            case .notify(let nick, let isRemoval):
+                connection.showNotice(applyNotify(nick: nick, isRemoval: isRemoval), in: target)
             case .ignore(let subject, let levels, let duration, let isRemoval):
                 connection.showNotice(
                     applyIgnore(
@@ -801,6 +812,77 @@ public final class AppModel {
         }
     }
 
+    /// Somebody on the notify list arrived or left.
+    ///
+    /// **Its own toggle, not a case of `AlertTrigger`.** Prompt 13b's note asked for that to
+    /// be decided rather than defaulted: `AlertTrigger` describes what a *buffer* did, and a
+    /// person signing on is not a buffer doing anything.
+    func announcePresence(nick: String, isOnline: Bool) {
+        guard isOnline, settings.alertsOnNotify else { return }
+        alerts.post(
+            Alert(
+                source: "Caravan",
+                sender: nil,
+                text: "\(nick) is online",
+                item: nil
+            )
+        )
+    }
+
+    /// Starts the idle clock, and points it at every connected network.
+    ///
+    /// Away is per connection on the wire and one decision to the user, so this fans out.
+    func startAwayClock() {
+        away.setAway = { [weak self] reason in
+            guard let self else { return }
+            for connection in connections where connection.isConnected {
+                Task { await connection.setAway(reason) }
+            }
+            guard reason == nil else { return }
+            // Coming back is where the away log went — one line, counted from state that
+            // already exists, rather than a second viewer over what prompt 12 already logs.
+            guard let sentence = awaySummary().sentence else { return }
+            for connection in connections where connection.isConnected {
+                connection.showNotice(sentence, in: nil)
+            }
+        }
+        away.start()
+    }
+
+    /// What happened while you were gone, from the activity states that already know.
+    func awaySummary() -> AwaySummary {
+        let waiting = allBuffers.filter { $0.activity > .none }
+        // A conversation is read off the row's own identity rather than a flag: `BufferRef`
+        // is a snapshot for the tree and the switcher, and giving it a second way to say
+        // what kind of buffer it is would be a second thing to keep in step.
+        func isConversation(_ ref: BufferRef) -> Bool {
+            if case .query = ref.item { return true }
+            return false
+        }
+        return AwaySummary(
+            highlights: waiting.filter { $0.activity == .highlight && !isConversation($0) }.count,
+            conversations: waiting.filter(isConversation).count,
+            busyBuffers: waiting.filter { $0.activity == .message || $0.activity == .activity }
+                .count
+        )
+    }
+
+    /// `/notify`, answering in the window it was typed in.
+    func applyNotify(nick: String?, isRemoval: Bool) -> String {
+        guard let nick else {
+            guard !notifyList.nicks.isEmpty else { return "The notify list is empty" }
+            return "Notify list: " + notifyList.nicks.joined(separator: ", ")
+        }
+        if isRemoval {
+            return notifyList.remove(nick)
+                ? "No longer watching for \(nick)"
+                : "\(nick) was not on the notify list"
+        }
+        return notifyList.add(nick)
+            ? "Watching for \(nick)"
+            : "\(nick) is already on the notify list"
+    }
+
     /// Asks for notification permission and puts up whatever surfaces are switched on.
     ///
     /// Called once from `RootView`'s `.task` rather than from `init`: asking for permission
@@ -813,6 +895,14 @@ public final class AppModel {
         }
         alerts.requestAuthorisation()
         refreshAttentionSurfaces()
+        startAwayClock()
+        // A list edited in Options has to reach every open connection, not only the next one.
+        notifyList.didChange = { [weak self] in
+            guard let self else { return }
+            for connection in connections where connection.isConnected {
+                Task { await connection.updateNotifyList(self.notifyList.nicks) }
+            }
+        }
     }
 
     /// Recomputes the Dock badge and the menu-bar item from the buffers themselves.
@@ -1014,6 +1104,9 @@ public final class AppModel {
             self?.onScreenBuffers.contains { $0 === buffer } ?? false
         }
         connection.activityDidChange = { [weak self] in self?.refreshAttentionSurfaces() }
+        connection.presenceDidChange = { [weak self] nick, isOnline in
+            self?.announcePresence(nick: nick, isOnline: isOnline)
+        }
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in
@@ -1029,6 +1122,10 @@ public final class AppModel {
         connections.append(connection)
         if selecting { selection = .status(connection.id) }
         await connection.connect()
+        // **After `connect()`, which waits for registration.** `MONITOR` before the server
+        // has welcomed us is a line the server is entitled to ignore, and an `ISON` poll
+        // with nothing to poll is a timer doing nothing.
+        await connection.updateNotifyList(notifyList.nicks)
         return connection
     }
 

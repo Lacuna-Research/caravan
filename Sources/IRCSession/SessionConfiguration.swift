@@ -62,6 +62,13 @@ public struct SessionConfiguration: Sendable {
 
     public var backoff: BackoffPolicy
 
+    /// How long the answers to a freshly-issued notify watch count as the current state
+    /// rather than as arrivals. See ``IRCSession/notifyBaselineGrace``.
+    ///
+    /// Configurable only so a test need not wait five seconds for it; there is no form
+    /// field and no key, because a user has no way to have an opinion about it.
+    public var notifyBaselineGrace: Duration = .seconds(30)
+
     public init(
         host: String,
         port: UInt16,

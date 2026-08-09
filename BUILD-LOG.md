@@ -4850,3 +4850,166 @@ picker is a segmented control and the coordinates recorded during prompt 12 poin
 Display once Sounds existed, which cost two screenshots. Anything clicking a segmented
 control should screenshot it first and read the positions off that, rather than reusing
 coordinates from a previous prompt.
+
+---
+
+## Stage 2, prompt 14 — Presence
+
+The notify list — `MONITOR` where the server has it, `ISON` polling where it does not — and
+the away system: `/away` tracked from the server's own answer, auto-away on system idle, and
+a summary of what happened while you were gone. `NotifyTracker` is new in `IRCSession`;
+`NotifyList`, `AwayController` and `AwaySummary` in `CaravanUI`.
+
+### The bug both halves share, which is why they are one prompt
+
+**An unknown is not an absence.** A notify list with no reply yet is not a list of people who
+are offline. An `ISON` still in flight is not everybody having signed off. `Member.isAway` is
+`false` for "here" and for "this server does not offer `away-notify`". Every state in this
+prompt is three-valued, and collapsing it to two is how a client comes to announce that all
+your friends left the moment you connected.
+
+`NotifyTracker` stores `[IRCNick: Bool]` and treats *absent* as its own answer, all the way
+through: `isOnline(_:)` returns `Bool?`, and `takeBaseline()` puts a nick in neither the
+online nor the offline half until something has said.
+
+### The baseline, and the bug it prevents
+
+Connecting produces one 730 naming everybody already online. Turning that into an event per
+person is prompt 13b's `chathistory` bug wearing a different hat — a burst of announcements
+for things that did not just happen — and this time it would fire on every reconnect.
+
+So the first answer of a connection sets the baseline and emits **one** summary line; only
+changes after it announce. `hasBaseline` is reset on disconnect, because answers from the
+last connection say nothing about this one.
+
+**The first implementation had this subtly wrong and a test caught it.** One 730 can carry a
+dozen names, which arrive as a dozen events from a single message — and settling the baseline
+inside the per-event loop meant the first name established it and the other eleven looked
+like arrivals. `baselineIsNotABurst` reported `["carol"]` where it expected nothing. The
+baseline is now taken in a `defer` after the whole message has been translated, which is the
+honest unit: one message is one answer.
+
+The negative control on the finished version produces `["bob", "carol"]` — both friends
+announced as having just arrived — which is exactly the bug.
+
+### Where the away log went
+
+`PLAN.md` asks for "an away log capturing messages received while away". Most of that job is
+now done by things that did not exist when the line was written: the unread rule marks where
+you left, the activity states say which windows moved, prompt 12 logs every line and gives it
+a viewer, and prompt 13b badges what was addressed to you.
+
+What none of them give is the one-glance answer on return. So the away log is `AwaySummary` —
+a count, rendered as one sentence — and the window is deferred on the item with that
+reasoning. **This is the split conversation reaching a different verdict from prompt 13's**,
+which is the point of having it each time: 13 found a second feature and split; 14 found a
+third and shrank it.
+
+**Also not built: the away nick.** Renaming somebody mid-session collides with `binding.N`,
+`order.<name>.*` and every scripted reference to their nick — all of which key on identity
+that a rename moves — and nobody has asked for it. Recorded on the item rather than dropped.
+
+### Smaller decisions
+
+**Auto-away is off by default**, because it speaks on the user's behalf: it tells a channel
+full of people something about where you are. §19's "defaults taken without asking" covers
+the ones nobody would mind, and this is not one.
+
+**The idle clock is the system's**, via `CGEventSource.secondsSinceLastEventType` — away
+means away from your desk, not away from this window, and somebody reading a backlog in
+another app has not left. It needs no permission and it is one call, behind a closure so a
+test of the timer is not a test of waiting five minutes.
+
+**A typed `/away` is never undone by touching the keyboard.** `isAutoAway` distinguishes the
+two, and a client that cancelled a deliberate away the moment the mouse moved would be
+useless to anybody who sets one before a meeting.
+
+**Our own away state comes from 305 and 306, not from having sent `AWAY`.** The request can
+be ignored, and a client that believed itself would show the wrong thing on the servers that
+do ignore it.
+
+**The `MONITOR` limit is refused out loud.** Silently watching the first thirty of forty
+names is worse than refusing, because the other ten are indistinguishable from offline —
+which is the one way this feature can lie.
+
+**A notify list is nicks, not masks.** `IgnoreList` matches `nick!user@host` because an
+ignore is about a person however they connect; `MONITOR` and `ISON` both speak nicks and
+neither takes a wildcard, so a mask here would be a promise the protocol cannot keep.
+
+**An arriving friend has its own toggle**, `alert.notify`, rather than a case of
+`AlertTrigger` — 13b's note asked for that decision to be made rather than defaulted, and
+`AlertTrigger` describes what a *buffer* did.
+
+### Measured
+
+`ISON` polls every thirty seconds, in a loop that sleeps to a deadline in the shape
+`IRCSession.idleMonitor()` already uses. A constant rather than a setting: it trades how
+quickly an arrival is noticed against traffic generated while idle, and nobody has an opinion
+until it is wrong in one direction.
+
+The idle clock is consulted every fifteen seconds — the resolution, not the timeout. Finer
+than any timeout worth setting, coarse enough that a client idle overnight is not why a
+laptop's fan comes on.
+
+### Learned
+
+**`#expect` captures its expression in a closure, so a mutating call on a `var` struct will
+not compile inside one.** `#expect(tracker.apply(...))` fails with "cannot use mutating member
+on immutable value: '$0' is immutable", which does not obviously point at the macro. The call
+goes on its own line and the result into a `let`; three tests needed it, and the fix also made
+them read better, because the assertion then says what the value *means*.
+
+**A sortedness assertion on `knownCommands` caught `/notify` inserted in the wrong place.**
+Fourth prompt running where an exhaustive or invariant assertion from an earlier prompt did
+the noticing rather than a note.
+
+### The live run, and the three timing bugs it found
+
+Against Libera, which advertises `MONITOR=100`, with the notify list written into
+`caravan.conf` by hand. **Every defect this prompt shipped with was about *when* something
+happened, and none of them was visible to a scripted server.**
+
+**One: the watch list was never sent.** The app hands the list to a connection as soon as
+one exists, which is before registration; `setNotifyList` guarded on `.connected`, returned,
+and nothing retried. The first run produced no `MONITOR` at all.
+
+**Two: 001 is too early to know whether the server has `MONITOR`.** Moving the issue point
+to registration-complete looked right and was still wrong — `supportsMonitor` comes from 005,
+which arrives *after* 001, so the `ISON` fallback won every time. The watch is now issued
+once ISUPPORT has been applied, with end-of-MOTD as a backstop for a server that sends no
+005, and a per-connection flag so a burst of 005 lines does not issue it three times.
+
+**Three, and the interesting one: the baseline closed before the answer arrived.** The
+baseline needs a terminator and `MONITOR +` has none — the 730s and 731s simply arrive. The
+first attempt settled on a message boundary, which closed it on the very next line of the
+MOTD. A five-second grace period looked generous and was not: **Libera took a little over six
+seconds to answer**, so the reply landed just outside the window and the baseline became two
+false arrivals — exactly the bug the baseline exists to prevent, produced by the mechanism
+meant to prevent it.
+
+The fix is to stop treating the deadline as the mechanism. `MONITOR +` is answered with a 730
+or a 731 for *every* target, so `NotifyTracker.isComplete` is an exact terminator: the first
+answer is finished when every watched nick is known. The grace is now thirty seconds and is
+a backstop for what completeness cannot see — a server that silently drops a name it thinks
+invalid, or one that never answers.
+
+Which it did, twice, in this very run: `caravan-nobody-here` is nineteen characters and
+Libera's `NICKLEN` is sixteen, so the server dropped it without a word and completeness could
+never fire. Twenty minutes went into that before the acceptance config was fixed and a
+comment left in it.
+
+**What the run finally showed.** One line — `*** Notify — offline: caravan-peer3,
+caravan-away9` — where the previous attempts showed two announcements; then, when a scripted
+client took the watched nick, `730` followed by a single `*** caravan-peer3 is online`. Then
+auto-away, from a config with `away.auto-minutes = 1`: `306` from the server and
+`*** You are now marked as away`, which is the state coming from the server's answer rather
+than from having sent the request.
+
+**Not verified live: the `ISON` fallback**, because Libera has `MONITOR` and pointing at a
+server without it was not worth a second acceptance — it has an end-to-end test against a
+scripted server with `MONITOR` absent. Nor the return-from-away summary, which needs unread
+buffers and keyboard input in the same breath.
+
+**Worth keeping:** three timing bugs, three fixes, and a scripted server that could not have
+found any of them, because a scripted server answers instantly and registers in one gulp. It
+is the fifth prompt running where the live run earned its place.

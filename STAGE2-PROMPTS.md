@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 14/18 complete. Next: prompt 14.
+**Status:** 15/18 complete. Next: prompt 15.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -971,33 +971,104 @@ capabilities `NegotiatedCapabilities` already tracks, and both have to distingui
 from "this server does not say". Revisit if writing the detail turns up a third feature
 hiding inside either half; that is what happened to 13.
 
-*To be written out before it starts.*
+**A third feature was hiding, and it is the away log.** "Capturing what arrived while you
+were gone" is a capture buffer, a window and a rule about what counts — and most of its job
+is now done by things that did not exist when this line was written: the unread rule marks
+where you left, the activity states say which windows moved, prompt 12 logs everything and
+gives it a viewer, and prompt 13b badges what was addressed to you. What is *not* covered is
+the one-glance answer on return. So the away log is reduced to that answer and the window is
+deferred, on the item, with the reasoning. This is the split conversation reaching a
+different verdict from 13's, which is the point of having it each time.
 
-**Carry-forward** *(consumed when this prompt runs)*
+```
+Who is around, and whether you are.
 
-- From prompt 3: **`away-notify` and `account-notify` are negotiated and tracked already.**
-  `Member.isAway`, `.account` and `.realName` are on the channel snapshot and maintained by
-  `ChannelRoster.edit(nick:_:)`, so a nick list that dims away members needs no protocol
-  work — only a renderer that reads the flag. The trap is the opposite direction: `isAway`
-  is `false` both for "present" and for "this server does not offer the capability", so
-  anything drawing absence as presence must first check
-  `NegotiatedCapabilities.isEnabled(.awayNotify)`.
-- From prompt 3: `/away` has to reach `CommandParser.knownCommands` as well as its switch —
-  the same trap prompt 8 carries.
-- From prompt 13b: **reuse `Alerts`, do not grow a second notifier.** `Alerts.post(_:)` takes
-  an `Alert` — a title, a body and a sidebar item to focus — and everything behind it is
-  already solved: permission, the sound, the "not while you are looking at it" filter and the
-  refusal to fire outside an `.app`. A friend coming online is exactly that shape. What it is
-  *not* is a `BufferActivity`, so `AlertTrigger` does not describe it; decide whether a notify
-  event gets its own toggle rather than riding on one that means something else.
-- From prompt 13b: **`ChatSettings` has an `alert.` key family now** — `alert.trigger`,
-  `alert.sound`, `alert.menu-bar-item`. A notify-list sound belongs in it by name rather than
-  starting a `notify.` family for one key.
-- From prompt 13b: **the away system's idle timer is a setting where `Alerts.staleAfter` is
-  deliberately not one.** Worth noticing the difference rather than copying the pattern: a
-  user has no opinion about how old a line may be and still deserve a notification, and a
-  very firm one about how long they must be idle before the client speaks for them.
+**Both halves have the same trap, and it is the reason they are one prompt: an unknown is
+not an absence.** `Member.isAway` is `false` for "here" and for "this server does not offer
+`away-notify`"; a notify list with no reply yet is not a list of people who are offline; an
+`ISON` that has not come back is not everyone having left. Every state in this prompt is
+three-valued — here, gone, not yet known — and collapsing it to two is how a client comes to
+announce that all your friends left the moment you connected.
 
+- **`MONITOR` where the server has it, `ISON` polling where it does not.**
+  `ServerCapabilities.supportsMonitor` and `.monitorLimit` are already parsed and tested and
+  nothing reads them; this is what they were for. Respect the limit and say so out loud when
+  the list is longer — silently monitoring the first thirty of forty names is worse than
+  refusing, because the ten are indistinguishable from offline.
+- **730 and 731 are the events; 734 is an error the user has to see.** 732/733 (`MONLIST`) need
+  no case beyond `.raw` — we know what we asked for.
+- **The first answer is a summary, not a storm.** Connecting produces one reply naming
+  everyone who is online, and turning that into an alert per person is prompt 13b's
+  reattach bug wearing a different hat. The first reply after a connection sets the baseline
+  and produces **one status line**; only changes after it announce.
+- **`ISON` polling is a loop that sleeps to a deadline**, like `IRCSession.idleMonitor()`
+  already does, not a repeating timer. Same file, same shape, and the reason is the same:
+  a deadline that moves is re-evaluated rather than fired against.
+- **Auto-away is off by default.** It speaks on the user's behalf, which is precisely the
+  kind of thing to make opt-in; §19's "defaults taken without asking" is about the ones
+  nobody would mind. When on, the idle clock is the *system's* — you are away from your
+  desk, not from this window — behind a closure so a test is not a test of waiting.
+- **Coming back is where the away log went.** One line: what happened while you were gone,
+  counted from the activity states and the highlight buffers that already know. A window
+  listing the lines would be a second log viewer over data prompt 12 already shows.
+- **Away is per connection; the idle clock is one.** You are away on a network, and the
+  reason you are away is that you left the room. So the timer lives on `AppModel` and sets
+  away on every connected network, and `/away` on one network stays on that one.
+- Storage is `notify.<n> = <nick>`, the shape 13a settled. The alert for somebody coming
+  online gets **its own toggle** rather than riding on `AlertTrigger`, which describes
+  buffer activity and does not describe this — 13b's note asked for that decision to be
+  made rather than defaulted.
+
+Acceptance: with a scripted second client, put its nick on the notify list and watch it come
+online and go offline, on a server with `MONITOR` and again with the fallback forced. Connect
+with two names already online and confirm **one** line rather than two alerts. Set auto-away
+to a minute, leave the machine alone, and watch it go away and come back with a summary.
+Confirm a server without `MONITOR` still works, and that a list longer than `MONITOR=` says
+so.
+
+Do not:
+  - **A notify *window*.** The list is five nicks; Options shows them with their state, the
+    status window announces changes, and a window for five rows is chrome. Say so on the item.
+  - **An away-log window.** See above — reduced to the return summary deliberately.
+  - **Per-network away messages or per-network notify lists.** Global first, as everywhere.
+  - **`WATCH`.** The third presence protocol, supported by a shrinking set of servers that
+    almost all also have `MONITOR`. Two code paths already cost a fallback story.
+  - **Presence in the nick list** — dimming away members. It reads off `Member.isAway`, which
+    is prompt 3's work and needs only a renderer, but it is a *rendering* change to the
+    scrollback's neighbour and belongs with whoever next touches that view.
+```
+
+**Status:** complete. All six notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`.
+
+**The split conversation reached a different verdict from prompt 13's.** A third feature was
+hiding — the away log — and rather than splitting the prompt it was *reduced*: the unread
+rule, the activity states, prompt 12's log viewer and prompt 13b's badges already do most of
+what "capturing what arrived while you were gone" meant when the line was written. What none
+of them gave was the one-glance answer on return, so that is what shipped. `AwaySummary`.
+
+**Both halves turned out to share one bug, which is the justification for them being one
+prompt.** An unknown is not an absence: a notify list with no reply yet is not a list of
+people who are offline, and `Member.isAway` is `false` for "here" and for "this server does
+not say". `NotifyTracker` is three-valued throughout for that reason.
+
+**One note asked for a decision and got one.** Prompt 13b said an arriving friend is not a
+`BufferActivity` and `AlertTrigger` therefore does not describe it — so it has its own
+toggle, `alert.notify`, on by default because the list is short and people sign on once.
+
+**The live run found three timing bugs, and a scripted server could not have found any of
+them.** The watch list was sent before registration and never retried; then issued at 001,
+which is before 005 says whether the server even has `MONITOR`; then closed its baseline on a
+five-second deadline that Libera beat by a second, turning the baseline into the exact burst
+of false arrivals it exists to prevent. The terminator is now
+`NotifyTracker.isComplete` — `MONITOR +` answers every target — with a thirty-second backstop.
+All three are in `BUILD-LOG.md`.
+
+**Not verified live: the `ISON` fallback**, since Libera has `MONITOR` and a second server was
+not worth a second acceptance; it has an end-to-end test with `MONITOR` absent. Nor the
+return-from-away summary, which needs unread buffers and keyboard input in the same breath.
+Verified live: the one-line baseline, a change announced on its own, and auto-away taking its
+state from the server's 306 rather than from having sent the request.
 ---
 
 ## Prompt 15 — Channel list

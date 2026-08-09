@@ -163,11 +163,14 @@ struct ChannelRoster {
             .joinFailed, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply, .invited,
             .batchStarted, .batchEnded, .bouncerNetworks, .ctcpRequest, .ctcpReply,
-            .listModeEntry, .listModeEnd:
+            .listModeEntry, .listModeEnd,
+            .presenceChanged, .notifyBaseline, .awayStateChanged:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
             // the channel it names may be one we have never seen. `.invited` likewise —
             // an invitation is not a membership. A CTCP is addressed to the client rather
-            // than to a channel, even when it arrives via one.
+            // than to a channel, even when it arrives via one. Presence is about people
+            // who may be in no channel at all, and our own away state is about us — the
+            // roster tracks membership, and neither is one.
             return []
         }
     }

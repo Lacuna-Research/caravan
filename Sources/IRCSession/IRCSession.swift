@@ -55,6 +55,14 @@ public actor IRCSession {
     private var transportTasks: [Task<Void, Never>] = []
     private var connectDeadlineTask: Task<Void, Never>?
     private var idleTask: Task<Void, Never>?
+    private var notifyTask: Task<Void, Never>?
+
+    /// Who on the notify list is around. See ``NotifyTracker``.
+    private var notify = NotifyTracker()
+
+    /// Whether this connection has issued its watch list yet. Reset per connection, so a
+    /// reconnect re-establishes the watch and a burst of 005 lines does not issue it thrice.
+    private var notifyWatchIssued = false
     private var reconnectTask: Task<Void, Never>?
 
     /// Set by ``disconnect()`` and cleared by ``connect()``. The hard stop on reconnect.
@@ -211,6 +219,8 @@ public actor IRCSession {
 
         let connection = IRCConnection(trace: trace, credentials: credentials)
         self.connection = connection
+        notifyWatchIssued = false
+        notify.reset()
         setState(.connecting)
 
         transportTasks = [
@@ -417,8 +427,27 @@ public actor IRCSession {
             roster.updateCapabilities(capabilities)
         }
 
+        // **The notify list is issued here, and the timing took two goes to get right.**
+        // The app hands the list over as soon as a connection object exists, which is
+        // before registration — a `MONITOR` sent then is a line the server may ignore, and
+        // the first live run produced none at all. Moving it to 001 was still wrong:
+        // whether the server *has* `MONITOR` is declared by 005, which arrives after 001,
+        // so the fallback would win every time. So: once ISUPPORT has been applied, or at
+        // the end of the MOTD for a server that sends no 005 at all.
+        if [5, 376, 422].contains(message.command.numericCode ?? 0) {
+            await issueNotifyWatchIfNeeded()
+        }
+
         // Emission comes before the session acts on the message, so `.raw` is first for
         // every line — including the ones handled entirely down here, like PING.
+        var pendingPresence: [IRCEvent] = []
+        defer {
+            // Every watched nick answered: the first answer is complete and the baseline
+            // closes now rather than waiting out a grace period that exists for the cases
+            // where the server does not answer at all.
+            if notify.isComplete { settleBaselineIfNeeded() }
+            for presence in pendingPresence { emit(presence) }
+        }
         for event in EventTranslator.events(for: message, capabilities: capabilities) {
             // Our own `NICK` moves the session's idea of who we are. The roster tracks it
             // separately, since it is what tells a self-join from anyone else's.
@@ -427,6 +456,21 @@ public actor IRCSession {
             {
                 currentNick = newNick
                 serverInfo?.nick = newNick
+            }
+            // **Presence is diffed before it is emitted, not after.** A consumer must
+            // never see a 730 for somebody already known to be online, nor the burst that
+            // arrives at connect — `handlePresence` turns both into nothing, and the
+            // baseline into one summary event.
+            switch event {
+            case .presenceChanged, .notifyBaseline:
+                // **Collected, not settled here.** One 730 can carry a dozen names, which
+                // arrive as a dozen events from one message — settling the baseline after
+                // the first would make the other eleven look like arrivals. The whole
+                // message is one answer, so the baseline is taken once it has all landed.
+                pendingPresence.append(contentsOf: handlePresence(event))
+                continue
+            default:
+                break
             }
             emit(event)
             if case .ctcpRequest(_, let sender, let request, _) = event {
@@ -794,6 +838,189 @@ public actor IRCSession {
             capabilities.caseMapping.equal(who, currentNick)
         else { return }
         await requestHistory(for: channel)
+    }
+
+    // MARK: - Presence
+
+    /// How often the `ISON` fallback asks.
+    ///
+    /// A constant rather than a setting: it is a trade between how quickly a friend
+    /// appearing is noticed and how much traffic a client generates while idle, and nobody
+    /// has an opinion about it until it is wrong in one direction. Thirty seconds is what
+    /// every client that has ever done this settled on.
+    public static let isonInterval = Duration.seconds(30)
+
+    /// Replaces the notify list, and starts watching it however this server allows.
+    ///
+    /// **Two protocols, one list.** `MONITOR` is push and exact; `ISON` is a poll and the
+    /// only thing that works everywhere else. Which one is in use is not the caller's
+    /// problem — it hands over names and gets ``IRCEvent/presenceChanged(nick:isOnline:)``
+    /// back either way.
+    public func setNotifyList(_ nicks: [String]) async {
+        let mapping = capabilities.caseMapping
+        let (added, removed) = notify.setWatched(nicks, mapping: mapping)
+        // Not connected yet: the list is remembered and `issueNotifyWatchIfNeeded()` issues
+        // it the moment ISUPPORT has settled. Sending now would be a line into a socket
+        // that has not been welcomed.
+        guard case .connected = currentState else { return }
+        // **A list set after the watch was issued needs its own baseline.** The app hands
+        // the list over post-connect and the user can add to it at any time; without this
+        // the grace window is never opened, `hasBaseline` never becomes true, and every
+        // answer is swallowed forever. A no-op once a baseline has been taken.
+        if !notify.watched.isEmpty { scheduleBaseline() }
+
+        guard capabilities.supportsMonitor else {
+            // Nothing to send: the poll picks the new list up on its next pass, and asking
+            // immediately as well would double the traffic for no earlier answer.
+            startNotifyPolling()
+            return
+        }
+        // **The limit is refused out loud, not silently truncated.** Names past it would be
+        // indistinguishable from offline, which is the one way this feature can lie.
+        if let limit = capabilities.monitorLimit, nicks.count > limit {
+            emit(
+                .clientError(
+                    "This server monitors at most \(limit) names; the notify list has "
+                        + "\(nicks.count). The extra ones are not being watched."
+                )
+            )
+        }
+        for chunk in Self.chunked(removed, limit: capabilities.monitorLimit) {
+            await connection?.send(
+                IRCMessage(verb: "MONITOR", parameters: ["-", chunk.joined(separator: ",")])
+            )
+        }
+        let allowed = capabilities.monitorLimit.map { Array(added.prefix($0)) } ?? added
+        for chunk in Self.chunked(allowed, limit: capabilities.monitorLimit) {
+            await connection?.send(
+                IRCMessage(verb: "MONITOR", parameters: ["+", chunk.joined(separator: ",")])
+            )
+        }
+    }
+
+    /// `MONITOR + a,b,c` in lines that cannot overrun the 512-byte limit.
+    ///
+    /// Ten at a time, which is far below anything `IRCProtocolLimits` would refuse even for
+    /// the longest nicks a server allows, and keeps the arithmetic out of a hot path that
+    /// runs once per list change.
+    static func chunked(_ names: [String], limit: Int?) -> [[String]] {
+        guard !names.isEmpty else { return [] }
+        return stride(from: 0, to: names.count, by: 10).map {
+            Array(names[$0..<min($0 + 10, names.count)])
+        }
+    }
+
+    /// Issues the whole watch list once per connection, once the server has said what it
+    /// supports.
+    ///
+    /// `MONITOR C` first: a reconnect to a bouncer may find the server still holding the
+    /// list from last time, and adding to it would double every entry.
+    private func issueNotifyWatchIfNeeded() async {
+        guard !notifyWatchIssued, case .connected = currentState else { return }
+        notifyWatchIssued = true
+        notify.reset()
+        let names = notify.watched.map(\.raw)
+        guard !names.isEmpty else { return }
+        scheduleBaseline()
+        guard capabilities.supportsMonitor else {
+            startNotifyPolling()
+            await pollISON()
+            return
+        }
+        await connection?.send(IRCMessage(verb: "MONITOR", parameters: ["C"]))
+        if let limit = capabilities.monitorLimit, names.count > limit {
+            emit(
+                .clientError(
+                    "This server monitors at most \(limit) names; the notify list has "
+                        + "\(names.count). The extra ones are not being watched."
+                )
+            )
+        }
+        let allowed = capabilities.monitorLimit.map { Array(names.prefix($0)) } ?? names
+        for chunk in Self.chunked(allowed, limit: capabilities.monitorLimit) {
+            await connection?.send(
+                IRCMessage(verb: "MONITOR", parameters: ["+", chunk.joined(separator: ",")])
+            )
+        }
+    }
+
+    /// Asks now, and keeps asking. The `ISON` half.
+    ///
+    /// Sleeps to a deadline in a loop rather than using a repeating timer, which is the
+    /// shape ``idleMonitor()`` already uses in this file and for the same reason.
+    private func startNotifyPolling() {
+        guard notifyTask == nil else { return }
+        notifyTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.pollISON()
+                try? await Task.sleep(for: IRCSession.isonInterval, clock: ContinuousClock())
+            }
+        }
+    }
+
+    private func pollISON() async {
+        let names = notify.watched.map(\.raw)
+        guard !names.isEmpty, case .connected = currentState else { return }
+        await connection?.send(IRCMessage(verb: "ISON", parameters: names))
+    }
+
+    /// Turns a presence answer into the events the rest of the app sees.
+    ///
+    /// **The first answer of a connection is a baseline, not a burst.** Everything known at
+    /// that point is the starting position; only what moves afterwards is news. Without
+    /// this a reconnect announces every friend as having just arrived, which is prompt
+    /// 13b's `chathistory` bug in a different costume.
+    private func handlePresence(_ event: IRCEvent) -> [IRCEvent] {
+        let mapping = capabilities.caseMapping
+        switch event {
+        case .presenceChanged(let nick, let isOnline):
+            let changed = notify.apply(nick: nick, isOnline: isOnline, mapping: mapping)
+            guard notify.hasBaseline else { return [] }
+            return changed ? [event] : []
+
+        case .notifyBaseline(let online, _):
+            // An `ISON` reply. It names only who is online, so everything else on the list
+            // is offline as of this answer — the one place that inference is safe.
+            let changes = notify.applyISON(online: online, mapping: mapping)
+            guard notify.hasBaseline else { return [] }
+            return changes.map { .presenceChanged(nick: $0.nick, isOnline: $0.isOnline) }
+
+        default:
+            return [event]
+        }
+    }
+
+    /// How long the answers to a freshly-issued watch list are treated as the *current
+    /// state* rather than as things that just happened.
+    ///
+    /// **A backstop, not the mechanism.** The real terminator is
+    /// ``NotifyTracker/isComplete`` — `MONITOR +` is answered with a 730 or a 731 for every
+    /// target, so the first answer is finished when all of them are known. This only covers
+    /// what completeness cannot see: a server that silently drops a name it thinks invalid,
+    /// or one that never answers at all.
+    ///
+    /// **Thirty seconds, and the live run is why it is not five.** Libera took a little over
+    /// six seconds to answer a `MONITOR +`, which closed a five-second window before the
+    /// reply arrived and turned the baseline into two false arrivals. Since completeness
+    /// almost always fires first, a long backstop costs nothing; a short one is a bug that
+    /// only appears against a real server under load.
+    /// Overridable per session; see `SessionConfiguration.notifyBaselineGrace`.
+    var notifyBaselineGrace: Duration { configuration.notifyBaselineGrace }
+
+    /// Closes the baseline after the grace period, whatever has arrived by then.
+    private func scheduleBaseline() {
+        Task { [weak self] in
+            let grace = await self?.notifyBaselineGrace ?? .seconds(5)
+            try? await Task.sleep(for: grace, clock: ContinuousClock())
+            await self?.settleBaselineIfNeeded()
+        }
+    }
+
+    /// Emits the one line that stands in for a burst, once the grace period is over.
+    private func settleBaselineIfNeeded() {
+        guard !notify.hasBaseline, !notify.watched.isEmpty else { return }
+        let baseline = notify.takeBaseline()
+        emit(.notifyBaseline(online: baseline.online, offline: baseline.offline))
     }
 
     /// Asks for what was said to a target, whatever opened the window.
