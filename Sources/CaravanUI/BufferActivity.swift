@@ -64,10 +64,22 @@ public enum BufferActivity: Int, Sendable, Hashable, Comparable, CaseIterable {
     /// notifying about. A query buffer that could only ever reach `message` would wear the
     /// same colour as somebody chatting in `#swift`, and the whole reason a PM has its own
     /// window is that it is addressed to you.
+    /// **`@MainActor` since prompt 13b, and that is a real change in kind**: the table used
+    /// to be a pure function of the event and now reads the user's rules, which are
+    /// observable state. Every caller was already on the main actor, so it costs nothing —
+    /// but it is no longer testable off it, and pretending otherwise by snapshotting
+    /// compiled regular expressions into a `Sendable` box would be machinery for a property
+    /// nothing needs.
+    ///
+    /// - Parameter highlights: what counts as a highlight. `nil` falls back to "your own
+    ///   nick, as a word", which is the one rule that has to exist for the four states to
+    ///   mean anything and the behaviour every caller had before prompt 13b.
+    @MainActor
     public static func caused(
         by event: IRCEvent,
         ownNick: String,
-        isConversation: Bool
+        isConversation: Bool,
+        highlights: HighlightRules? = nil
     ) -> BufferActivity {
         switch event {
         case .message(_, let sender, let text, _, _, _):
@@ -78,7 +90,10 @@ public enum BufferActivity: Int, Sendable, Hashable, Comparable, CaseIterable {
                 return .none
             }
             if isConversation { return .highlight }
-            return mentions(ownNick, in: text) ? .highlight : .message
+            let isHighlight =
+                highlights?.matches(text, ownNick: ownNick)
+                ?? HighlightRules.containsWord(ownNick, in: text)
+            return isHighlight ? .highlight : .message
 
         case .raw, .channelChanged, .channelClosed, .namesReply, .endOfNames,
             .batchStarted, .batchEnded, .bouncerNetworks, .capabilitiesChanged:
@@ -93,34 +108,9 @@ public enum BufferActivity: Int, Sendable, Hashable, Comparable, CaseIterable {
         }
     }
 
-    /// Whether `nick` appears in `text` as a word rather than as a fragment.
+    /// The word-boundary rule lives in ``HighlightRules/containsWord(_:in:)`` now.
     ///
-    /// `bob` is mentioned by "bob: look at this" and by "thanks, bob!", and is *not*
-    /// mentioned by "bobbins". Without the boundary check a short nick highlights on
-    /// almost every line, which trains people to ignore the state entirely.
-    ///
-    /// Prompt 13 owns the configurable keyword and regex lists; this is the one rule that
-    /// has to exist for the four states to mean anything.
-    static func mentions(_ nick: String, in text: String) -> Bool {
-        guard !nick.isEmpty else { return false }
-        let haystack = Array(text.lowercased())
-        let needle = Array(nick.lowercased())
-        guard haystack.count >= needle.count else { return false }
-
-        for start in 0...(haystack.count - needle.count) {
-            guard Array(haystack[start..<start + needle.count]) == needle else { continue }
-            let before = start > 0 ? haystack[start - 1] : nil
-            let afterIndex = start + needle.count
-            let after = afterIndex < haystack.count ? haystack[afterIndex] : nil
-            if !isNickCharacter(before) && !isNickCharacter(after) { return true }
-        }
-        return false
-    }
-
-    /// Characters that can be part of a nickname, so a match butting up against one is a
-    /// fragment rather than a mention. Digits count: `bob2` is not `bob`.
-    private static func isNickCharacter(_ character: Character?) -> Bool {
-        guard let character else { return false }
-        return character.isLetter || character.isNumber
-    }
+    /// **Moved rather than copied**, per prompt 6's note: keywords and your own nick want
+    /// exactly the same matching, and two implementations of "is this a word" is two
+    /// answers to give a user who asks why `bobbins` highlighted.
 }

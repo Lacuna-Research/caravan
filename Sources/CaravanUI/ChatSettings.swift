@@ -67,6 +67,19 @@ public final class ChatSettings {
         /// `SessionConfiguration.chatHistoryLimit`'s default, deliberately: the two sources
         /// cover the same span, which is what makes the overlap worth de-duplicating.
         public static let logReloadLines = 50
+
+        /// §18's sentence, as a default: "highlights and private messages — not every
+        /// message, not highlights alone".
+        public static let alertTrigger = AlertTrigger.highlightsAndPrivateMessages
+
+        /// A sound by default, because a notification you have to be looking at the screen
+        /// to notice is half a notification. Submarine rather than one of the sharp ones:
+        /// this fires while somebody is working in another window.
+        public static let alertSound = "Submarine"
+
+        /// **Off.** The menu-bar item is the one surface here that takes space the user did
+        /// not ask for, and the Dock badge already answers "is anyone talking to me".
+        public static let showsMenuBarItem = false
     }
 
     /// The range the form offers, and the range a hand-edited file is held to. Zero is
@@ -140,6 +153,9 @@ public final class ChatSettings {
         public static let logsQueries = "log.queries"
         public static let logsStatus = "log.status"
         public static let logReloadLines = "log.reload-lines"
+        public static let alertTrigger = "alert.trigger"
+        public static let alertSound = "alert.sound"
+        public static let showsMenuBarItem = "alert.menu-bar-item"
 
         /// One key per overridden colour index — `chat.colour.4 = FF0000`. A *set* rather
         /// than a scalar, and the only setting of that shape so far: indices the user has
@@ -341,6 +357,21 @@ public final class ChatSettings {
         }
     }
 
+    /// What is worth an interruption. See ``AlertTrigger``.
+    public var alertTrigger: AlertTrigger {
+        didSet { config.set(alertTrigger.rawValue, forKey: Key.alertTrigger) }
+    }
+
+    /// The system sound an alert plays. Empty is silence, which is a real choice.
+    public var alertSound: String {
+        didSet { config.set(alertSound, forKey: Key.alertSound) }
+    }
+
+    /// Whether the menu-bar item is showing.
+    public var showsMenuBarItem: Bool {
+        didSet { config.set(showsMenuBarItem, forKey: Key.showsMenuBarItem) }
+    }
+
     /// Whether a buffer of this shape is written down.
     public func logs(_ buffer: any ChatBuffer) -> Bool {
         switch buffer {
@@ -388,6 +419,13 @@ public final class ChatSettings {
         self.logReloadLines = Self.logReloadRange.clamping(
             config.int(Key.logReloadLines) ?? Default.logReloadLines
         )
+        // An unknown value takes the default rather than refusing to launch, as every other
+        // hand-editable enum in this file does.
+        self.alertTrigger =
+            config.string(Key.alertTrigger).flatMap(AlertTrigger.init(rawValue:))
+            ?? Default.alertTrigger
+        self.alertSound = config.string(Key.alertSound) ?? Default.alertSound
+        self.showsMenuBarItem = config.bool(Key.showsMenuBarItem) ?? Default.showsMenuBarItem
         // An index outside 0–15, or a value that is not six hex digits, is skipped rather
         // than refused: this file is hand-edited, and a typo should cost you the one
         // colour, not the launch.

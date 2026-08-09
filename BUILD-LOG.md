@@ -4707,3 +4707,146 @@ The lesson is about the tool, not the line: a scripted `str.replace` that finds 
 silently changes nothing, and one that finds an unintended match silently changes something.
 The edit was verified by grepping for the *function name* afterwards, which was true either
 way. Verify a scripted edit by reading the line it produced.
+
+---
+
+## Stage 2, prompt 13b — What deserves your attention
+
+Highlights on your nick, your keywords and your own regular expressions; notifications, a
+sound, a Dock badge and an optional menu-bar item behind them. `HighlightRules`, `Alerts`,
+`AlertTrigger` and `MenuBarItem` are new; the decision hangs off the same
+`ConnectionViewModel.append(_:)` seam as everything else in this stage.
+
+### The filter that earns the prompt
+
+Three conditions stand between a match and an interruption. Two are obvious — not your own
+words, and not a window you are looking at. The third was not in any carry-forward note and
+is the one that matters:
+
+**A bouncer reattach replays `CHATHISTORY` through the ordinary message path, and those
+lines survive prompt 12's de-duplication — correctly, because they are new to this client.**
+Fifty of them carrying your nick is fifty notifications the moment you connect. The
+de-duplicator cannot help: its whole job is to recognise what you have *already seen*, and
+this is a backlog you have not.
+
+So the rule is age. Anything whose `server-time` is older than `Alerts.staleAfter` — five
+minutes — raises the buffer and stays silent. The buffer still goes pink, which is right:
+the backlog genuinely is unread, it is merely not worth an interruption.
+
+**Not a setting.** A user cannot be expected to have an opinion about it, and every value in
+the sane range behaves identically for the case it exists for. The failure modes are
+asymmetric in a way that picks the value: a notification five minutes late is mildly odd, and
+fifty notifications for last night's conversation is what makes somebody switch the feature
+off for good — after which it is worse than absent, because they believe it is working.
+
+`replayIsSilent` is the test, and the negative control on it produced exactly the six
+notifications the rule exists to prevent.
+
+### A carry-forward note consumed by disagreeing with it
+
+Prompt 12 suggested copying `ChatSettings.logs(_:)`'s per-buffer-kind split — channels,
+queries, status — for the notification triggers. Rereading §18 says otherwise. "Highlights
+and private messages, not every message, not highlights alone" is **one four-way choice**,
+not three toggles that happen to add up to one, and `AlertTrigger`'s default is that sentence
+verbatim.
+
+The difference is not cosmetic. Three toggles can express "notify for channels but not
+highlights", which is not a thing anybody means, and cannot express "every message" without a
+fourth control. One enum has exactly the four states the design note describes.
+
+The same note's other half — that `IgnoreLevel`'s `OptionSet` is the shape a highlight level
+should copy — also did not hold, and for a reason worth recording: **an ignore has levels
+because it filters kinds of traffic; a highlight is a predicate over text and either matches
+or does not.** There is nothing to make a set of.
+
+### `BufferActivity.caused` is `@MainActor` now
+
+The table used to be a pure function of the event, our nick and one boolean. It now reads the
+user's rules, which are observable state, so it is main-actor bound and so is
+`BufferActivityTests`.
+
+**Rejected: snapshotting the compiled rules into a `Sendable` box** to keep it pure.
+`NSRegularExpression`'s `Sendable` conformance is not something to rely on, and the machinery
+would exist for a property — testability off the main actor — that nothing needs. Every
+caller was already on the main actor. The annotation is the honest description of what the
+function became; the doc comment says so at the declaration.
+
+### Smaller decisions
+
+**A pattern that will not compile costs the pattern, not the launch.** These arrive from a
+text field and from a hand-edited file. They are compiled once on load, the bad ones are kept
+in the list and marked in the form, and they are written back to the file — silently deleting
+somebody's typo on the next save is a worse answer than showing it to them as broken.
+
+**One list, not two.** The first attempt kept `patterns` and `rejected` as separate arrays,
+which produced a broken pattern that `remove` could not reach and a write order that depended
+on which array it had landed in. `rejected` is now computed from the absence of a compiled
+expression.
+
+**Split on the first space only** — the one deliberate difference from `ignore.<n>`'s format,
+because a keyword phrase may contain spaces where a mask never can. `word build failed` is
+one rule about two words.
+
+**The Dock badge counts highlights only** (§3: badges are additive for the highlight case),
+and it is **derived, never counted**. A second counter incremented on a highlight and
+decremented on a read drifts the first time a buffer is closed while unread. `allBuffers`
+already knows; recomputing on the two events that can change it is cheap.
+
+**The menu-bar item is off by default** and is an `NSStatusItem` rather than SwiftUI's
+`MenuBarExtra` — the latter is a `Scene`, so it can only be created in the app target, where
+nothing is testable, and toggling it needs a binding into the scene graph.
+
+**Delivery refuses to fire outside an `.app`.** `Bundle.main.bundleURL.pathExtension == "app"`
+guards it, so a test bundle cannot post a user notification or make a noise on somebody's
+machine. Making that a property of the code rather than of test discipline is what stops it
+happening the one time nobody remembered; `inertInTests` asserts the guard itself.
+
+### Learned
+
+**A local named for the method it calls produces an error three lines from the cause.**
+`let isOwn = sender.nick.map { isOwn(nick: $0) }` shadows `isOwn(nick:)` inside its own
+initialiser, and the compiler says "cannot call value of non-function type 'Bool'" pointing at
+a different argument. Renamed to `isOurs`, with a comment, because the next person to write
+this will write it the same way.
+
+**Two of this prompt's tests were placeholders left by earlier ones**, and both fired: the
+Options tab list, and `BufferActivity.mentions` moving to `HighlightRules.containsWord`. That
+is three prompts running where the previous prompt's deliberate omission was pinned by an
+assertion rather than by a note nobody rereads.
+
+### The live run
+
+Against Libera, with the highlight rules **written into `caravan.conf` by hand** — one
+keyword, one pattern, and one deliberately broken pattern — and a scripted peer saying one
+line per rule plus one that matches nothing plus a private message.
+
+What held: both the channel and the query went pink, bold and badged in the tree, so a nick
+mention, a keyword and a regular expression each reached the state they should; the
+menu-bar item appeared with the count **2** beside its icon, which is the same derived
+number the Dock badge uses; the IRC tab listed all three rules with `[unclosed` **in red
+with a warning triangle** and a Remove button, which is the "kept and marked rather than
+silently ignored" behaviour being visible rather than merely tested; and the Sounds tab came
+up with "Highlights and private messages" selected, which is §18's sentence as a default.
+
+The relaunch also confirmed the prompt 13a launcher fix: it printed the worktree, the
+resolved binary and its build time before starting, and it was this prompt's build.
+
+**The notification permission prompt fired on launch** and was left unanswered. Granting a
+persistent system permission to a debug build is the user's call rather than something to do
+to their machine mid-acceptance, so the notification *banner* and the *sound* are the two
+things this run did not see. What that leaves unverified is thin — build a
+`UNMutableNotificationContent`, call `add`, call `NSSound.play` — and the part that is not
+thin, the decision about whether to interrupt at all, is `Alerts.shouldAlert` and is
+exhaustively tested including a negative control.
+
+**The Dock badge was not verified live either**, for a duller reason: the Dock is set to
+auto-hide on this machine, and revealing it means either a synthetic mouse move that does not
+work or changing somebody's Dock settings. `badgeCountsHighlights` drives the real
+`NSApplication.shared.dockTile.badgeLabel` instead, and the menu-bar count observed live is
+the same computation from the same `allBuffers` filter.
+
+**Also learned about driving the app:** an added tab moves every other tab. The Options
+picker is a segmented control and the coordinates recorded during prompt 12 pointed at
+Display once Sounds existed, which cost two screenshots. Anything clicking a segmented
+control should screenshot it first and read the positions off that, rather than reusing
+coordinates from a previous prompt.

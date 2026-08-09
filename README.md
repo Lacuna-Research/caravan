@@ -22,7 +22,7 @@
 [![BSD 3-Clause](https://img.shields.io/badge/licence-BSD--3--Clause-blue)](LICENSE)
 [![dependencies 0](https://img.shields.io/badge/dependencies-0-2ea44f)](Package.swift)
 [![stage 1: 11/11](https://img.shields.io/badge/stage%201-11%2F11%20prompts-2ea44f)](STAGE1-PROMPTS.md)
-[![stage 2: 9/17](https://img.shields.io/badge/stage%202-13%2F18%20prompts-blue)](STAGE2-PROMPTS.md)
+[![stage 2: 9/17](https://img.shields.io/badge/stage%202-14%2F18%20prompts-blue)](STAGE2-PROMPTS.md)
 
 </div>
 
@@ -161,7 +161,7 @@ roadmap item below is attached to one of them.
 | 11 | The Dashboard and the server list | ✅ done |
 | 12 | Logging | ✅ done |
 | 13a | What deserves none | ✅ done |
-| 13b | What deserves your attention | ⬜ |
+| 13b | What deserves your attention | ✅ done |
 | 14 | Presence | ⬜ |
 | 15 | Channel list | ⬜ |
 | 16 | Flood protection | ⬜ |

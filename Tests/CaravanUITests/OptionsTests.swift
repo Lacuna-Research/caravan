@@ -310,13 +310,16 @@ struct OptionsTests {
 
     // MARK: - The tabs themselves
 
-    /// Sounds is deliberately absent until prompt 13b brings settings for it. This is the
-    /// assertion that notices if an empty one is ever added.
+    /// Seven of mIRC's eight. Mouse has one hard-coded behaviour and nothing to set, so it
+    /// stays absent — this is the assertion that notices if an empty tab is ever added.
+    ///
+    /// **Seven is also where the segmented picker stops scaling**, which `OptionsPane` has
+    /// said since prompt 10. An eighth is the point to reconsider the shape.
     @Test("every tab has a pane behind it")
     func everyTabIsBuilt() {
         #expect(
             OptionsPane.Tab.allCases.map(\.rawValue)
-                == ["Connect", "IRC", "Display", "Colours", "Logging", "Other"]
+                == ["Connect", "IRC", "Display", "Colours", "Logging", "Sounds", "Other"]
         )
     }
 }
