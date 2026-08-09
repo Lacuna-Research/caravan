@@ -57,7 +57,7 @@ extension AppModel {
             return connection(id: id)?.buffer(named: name)
         case .query(let id, let nick):
             return connection(id: id)?.query(named: nick)
-        case .settingsAndDebug, .dashboard:
+        case .settingsAndDebug, .dashboard, .channelList:
             // A canvas, not a buffer (§10). The distinction is the whole reason this
             // returns an optional.
             return nil
@@ -184,7 +184,7 @@ extension AppModel.SidebarItem {
     var connectionID: UUID? {
         switch self {
         case .status(let id), .channel(let id, _), .query(let id, _): id
-        case .settingsAndDebug, .dashboard: nil
+        case .settingsAndDebug, .dashboard, .channelList: nil
         }
     }
 }

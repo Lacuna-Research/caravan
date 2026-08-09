@@ -44,38 +44,64 @@ struct SidebarTree: View {
         .listStyle(.sidebar)
         .font(chatFont)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            settingsAndDebugRow
+            pinnedCanvases
         }
     }
 
-    /// The canvas's row, pinned to the bottom of the tree.
+    /// The canvases' rows, pinned to the bottom of the tree.
     ///
-    /// In the tree without being a buffer: the tree is a navigation list rather than
-    /// strictly a list of buffers (§10). Pinned rather than listed, because it must not
-    /// drift below thirty channels — and it carries no activity dot, because activity is
+    /// In the tree without being buffers: the tree is a navigation list rather than
+    /// strictly a list of buffers (§10). Pinned rather than listed, because they must not
+    /// drift below thirty channels — and they carry no activity dot, because activity is
     /// a concept belonging to buffers only.
-    private var settingsAndDebugRow: some View {
+    ///
+    /// The channel list is here rather than under each network because it is one canvas for
+    /// all of them, with the network chosen inside it: a row per network would grow the tree
+    /// permanently for something consulted twice a month.
+    private var pinnedCanvases: some View {
         VStack(spacing: 0) {
             Divider()
-            Button {
-                model.showSettingsAndDebug()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape")
-                        .frame(width: 7)
-                    Text("Settings & Debug")
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .font(chatFont)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(model.isShowingCanvas ? Color.accentColor.opacity(0.2) : Color.clear)
+            canvasRow(
+                "Channel List",
+                icon: "list.bullet.rectangle",
+                item: .channelList,
+                isCurrent: model.selection == .channelList
+            ) { model.showChannelList() }
+            canvasRow(
+                "Settings & Debug",
+                icon: "gearshape",
+                item: .settingsAndDebug,
+                isCurrent: model.isShowingCanvas
+            ) { model.showSettingsAndDebug() }
         }
         .background(.bar)
+    }
+
+    private func canvasRow(
+        _ title: String,
+        icon: String,
+        item: AppModel.SidebarItem,
+        isCurrent: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .frame(width: 7)
+                Text(title)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                DetachedMarker(isDetached: model.isDetached(item))
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .font(chatFont)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(isCurrent ? Color.accentColor.opacity(0.2) : Color.clear)
+        // The one eject affordance, on the canvases' rows as on every other row (§10).
+        .contextMenu { DetachMenuItem(model: model, item: item) }
     }
 }
 

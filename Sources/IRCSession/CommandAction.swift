@@ -86,6 +86,17 @@ public enum CommandAction: Sendable, Equatable {
     /// The answer the user reads back is the *controller's*, not the parser's — it names
     /// the file that was actually opened, which is knowledge no pure function has.
     case debug(DebugCommand)
+
+    /// `/list`: ask for the channel list, and show the canvas that receives it.
+    ///
+    /// **Not `.send(LIST)`, because the reply has to be expected before it arrives.** The
+    /// canvas has to be told a collection is starting, and on a large network the first 322
+    /// follows the request by milliseconds — a client that opened the list when the first
+    /// row landed would drop whatever preceded its own bookkeeping.
+    ///
+    /// `parameters` is whatever followed the command, passed through untouched: server-side
+    /// `ELIST` narrowing is not this client's to invent, but a user who types one gets it.
+    case channelList(parameters: [String])
 }
 
 /// Where the wire trace should go, following mIRC's `/debug`.

@@ -5013,3 +5013,137 @@ buffers and keyboard input in the same breath.
 **Worth keeping:** three timing bugs, three fixes, and a scripted server that could not have
 found any of them, because a scripted server answers instantly and registers in one gulp. It
 is the fifth prompt running where the live run earned its place.
+
+---
+
+## Stage 2, prompt 15 — Channel list
+
+`/list` on a canvas: every channel the network will name, searchable by name and topic,
+narrowed by size, sortable, and joined with a double-click or Return. `ChannelDirectory`,
+`ChannelListing` and `ChannelListQuery` are new in `CaravanUI`, with `ChannelListCanvas`
+over them; `IRCEvent` gains `.channelListEntry` and `.channelListEnd`.
+
+### The feature started as a bug fix, and that is not a figure of speech
+
+Before this prompt, `/list` sent `LIST` and nothing was typed for the reply — so every 322
+arrived as `.numeric`, and `.numeric` is exactly the case the status window renders
+verbatim. Asking a real network for a channel list appended thousands of lines to a
+scrollback nobody wanted them in. So the first thing the prompt does is stop that: 322 and
+323 became typed events chiefly *so that they are not drawn*, joining `.namesReply` and its
+neighbours in the set `LineRenderer` renders as nothing.
+
+That is also the shape of the test that guards it. `ChannelListBehaviourTests` drives five
+hundred entries through a scripted server and asserts the status window's text contains
+none of them — a regression invisible against four channels and unmissable against four
+thousand.
+
+### The performance is the design, not a pass over it afterwards
+
+Rows accumulate into an array the view does not observe, and `listings` — the one property
+the table reads — is assigned at most once per 250 ms plus once at 323. Without it, a list
+is one observed mutation per channel, which is thousands of view invalidations while the
+user is trying to type in the search field.
+
+The coalescing is behaviour, so it is tested as behaviour rather than trusted: 22,000
+`add(_:)` calls with a 60-second flush interval publish **once**, at `endCollecting()`.
+
+Two smaller decisions in the same spirit, both about not doing per-row work per keystroke:
+the topic is stripped of formatting codes and folded for searching **once, on arrival**, and
+matching is plain case-insensitive substring rather than `FuzzyMatch`. Fuzzy is the quick
+switcher's tool, where the corpus is forty buffers and the user is aiming at one they can
+name; over thousands of topics it costs what this surface exists to avoid and answers
+nonsense, because a short query's letters appear in scattered order in almost any sentence.
+
+`handle(_:)` returns on these two events above everything else — above the case-mapping
+note, the ignore test and a `RenderContext` that calls `Date()`. All of it is per-event work
+multiplied by the size of the network to produce a line the renderer then declines to draw.
+
+### Decision — one canvas with a picker, not one per network
+
+A channel list belongs to a connection, so the obvious shape is a row per network. It is the
+wrong trade: a channel list is *consulted*, not kept, and §12's tree would grow a permanent
+row per network for an object opened twice a month. So there is one `SidebarItem.channelList`
+pinned beside Settings & Debug, with the network chosen inside it — and, because it is the
+one canvas that is about a network, it is also the one whose window subtitle names one.
+
+Revisit if somebody genuinely browses two networks side by side; the canvas detaches, so
+that case has an answer already.
+
+### Decision — the filters are local, and `ELIST` stays unparsed
+
+Many servers narrow `LIST` server-side, and Libera advertises `ELIST=CMNTU`. Filtering
+locally anyway, for two reasons: refine-as-you-type must not be a network round trip, and a
+second `LIST` is the most expensive thing a client can ask a server for. `ELIST` and
+`SAFELIST` stay uninterpreted in `ServerCapabilities.rawTokens` until something needs them.
+What a user types after `/list` is passed through untouched, so `/list >100 <500` still
+works — that is their round trip to spend.
+
+Revisit if a network appears whose full list is too large to hold, which is the only thing
+this trade is actually betting against.
+
+### Decision — Stop stops collecting, and says so
+
+`LIST` has no cancel in the protocol. The button could not stop the server if it wanted to,
+so it does not pretend: it stops *collecting*, drops what keeps arriving until 323, and its
+help text says the server sends the rest regardless. The alternative — a Cancel that leaves
+rows appearing for another ten seconds — is worse than no button.
+
+Related, and found by thinking about the same ten seconds: `beginCollecting()` deliberately
+leaves the previous rows on screen until the first new one arrives. Blanking the table for
+the duration of a re-list loses whatever the user was reading, often the row they were about
+to click.
+
+### The live run found two defects, and both were invisible to the tests
+
+**The canvas opened saying "connect to a network" from a connected client.** `showChannelList()`
+resolved the network *after* setting the selection — and `activeConnection` reads the
+selection, which had just become a canvas, which has no network. So it was `nil` every time
+and Get List was greyed out on a live connection. The fix is to capture the network first;
+the regression test asserts the awkward pair directly — `activeConnection == nil` and
+`channelListConnection === connection` at the same moment.
+
+**One stray line survived the silencing.** After an otherwise perfectly quiet `/list`, the
+status window held a single `Channel Users  Name` — numeric 321, still an ordinary numeric
+because the prompt had said nothing may depend on it. True, and beside the point: nothing
+depends on it *and* nobody wants to read column headings for a table drawn elsewhere. It now
+translates to no event at all. The prompt text was corrected in the same commit rather than
+left describing a client that no longer exists.
+
+### Measured, on Libera, first list on a fresh connection
+
+- **3,902 channels in 5.0 s**, arriving in visible increments with the footer saying so.
+  There is a two-second plateau at 2,211 in the middle of it that is the server's pacing,
+  not the client's flush: our deadline is 250 ms.
+- **~143 MB resident idle, ~231 MB with the list on screen.** About 23 KB a row against
+  roughly 400 bytes of data — the rows are cheap and something per-row in the view is not.
+  It does not matter at four thousand; the prompt was written for twenty-two, where it would
+  be half a gigabyte. In `PLAN.md`'s **Still open**, with the caveat that every way of
+  driving the app attaches an accessibility client, so the figure is an upper bound.
+- **Keystroke to filtered result: no perceptible delay**, with a 200 ms debounce in front of
+  it. Typing `zig` into the search field left `#zig`, `#vaxis` and `##vanshack`; unchecking
+  Topics left `#zig` alone; a minimum of 100 dropped `#gdzig` at four members.
+
+**The premise number was wrong, and in an interesting direction.** The prompt was written
+around "Libera answers `/list` with about 22,000 channels", which is the MOTD's *channels
+formed* — including every secret and single-occupant one. What `LIST` actually returns is
+about 3,900. More surprising, each repeat returns fewer — 4,572, 3,180, 4,061, 3,683, 3,304,
+1,988 across one session — every one of them terminated cleanly with 323, so the client
+cannot tell a throttled list from a complete one. That means Refresh can hand back a smaller
+list than it replaced with nothing visibly wrong. In **Still open**; it needs a second
+network to know whether it is Libera's pacing or general.
+
+The design does not change for the smaller number. A list built without the arrival cost in
+mind is not a list to make fast later, and the coalescing is what let the search field stay
+responsive at 2,000 rows a second.
+
+### Not verified live
+
+Column-header sorting and join-by-double-click: `System Events` cannot actuate a SwiftUI
+table header or row — the same limitation prompt 12 recorded for `List` rows, which is now
+three prompts old and worth remembering before spending screenshots on it again. Both have
+the keyboard route as evidence instead: Return on a selected row joined `#zig` on Libera and
+opened the window with its 652 members. The sort binding is `Table`'s own, exercised by
+`recompute()` under test.
+
+Multi-select join above five, which asks first, has no live evidence either — selecting six
+rows needs a drag, and `System Events` cannot synthesise one.

@@ -141,6 +141,21 @@ decision entry.
   shipped a form row that every test passed and no eye had seen. Either the runs have to be
   scheduled when someone is at the machine, or something has to render the views offscreen
   and diff the image.
+- **What does a `Table` row cost, and does the channel list need an AppKit one?**
+  *(not blocking)* Prompt 15's live run measured resident memory going from ~143 MB idle to
+  ~231 MB with 3,902 rows on screen — about 23 KB a row, against roughly 400 bytes of actual
+  data each. The rows themselves are cheap; something per-row in the view or its
+  accessibility tree is not. It did not matter at four thousand, and the prompt was written
+  for twenty-two: at that size this is half a gigabyte. Measure it without an accessibility
+  client attached first — every way of driving the app is one — and only then consider the
+  `NSTableView` the scrollback already uses. `ChannelListCanvas`.
+- **Is a second `/list` worth offering at all?** *(not blocking)* Libera answers the first
+  `LIST` on a fresh connection with about 3,900 channels and each repeat with fewer —
+  4,572, then 3,180, 4,061, 3,683, 3,304, 1,988 across one session — always terminated
+  cleanly with 323. So the Refresh button can hand back a *smaller* list than the one it
+  replaced, with nothing wrong and nothing to say about it. Whether the honest answer is to
+  keep the larger result, to say what happened, or to leave it alone needs a second network
+  to know whether this is Libera's pacing or general. `ChannelDirectory`.
 
 ### Testing strategy
 
@@ -407,6 +422,13 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     already cost a fallback story.*
 24. **Channel list window.** `/list` with min/max user filters, name and topic search,
     sortable columns, join-on-double-click.
+    *Done (stage 2 prompt 15), as a canvas rather than a window and as **one** canvas with a
+    network picker rather than one per network — a channel list is consulted, not kept. 322
+    and 323 became typed events chiefly so they are **not** drawn: as plain numerics a
+    `/list` appended thousands of lines to the status window. Rows accumulate unobserved and
+    publish on a 250 ms deadline, so arrival costs a handful of view updates rather than one
+    per channel. Filtering is local and always will be — see "Still open" for the `ELIST`
+    question and for the table's per-row memory.*
 25. **URL catcher.** Clickable links in the buffer, a URL history window, copy/open all.
     *Done (stage 2 prompt 9). Collected off the `.link` runs the renderer already leaves on
     each line rather than by a second detector pass, so the history and the underline can

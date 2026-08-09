@@ -175,9 +175,7 @@ public struct CommandParser: Sendable {
             return [.send(IRCMessage(verb: "NAMES", parameters: [channel]))]
 
         case "list":
-            // The channel *browser* is a later prompt; this sends LIST and lets the
-            // numerics land in the status window like any other reply.
-            return [.send(IRCMessage(verb: "LIST", parameters: words(rest)))]
+            return [.channelList(parameters: words(rest))]
 
         case "oper":
             let (name, password) = split(rest)

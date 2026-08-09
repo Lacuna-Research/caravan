@@ -139,9 +139,13 @@ public struct LineRenderer: Sendable {
         var fields = LineFields()
 
         switch event {
-        case .raw, .namesReply, .endOfNames, .channelChanged, .channelClosed:
+        case .raw, .namesReply, .endOfNames, .channelChanged, .channelClosed,
+            .channelListEntry, .channelListEnd:
             // State and wire traffic. The nick list, the header band and the tree row are
             // where these land; `.raw` has the raw-traffic toggle.
+            //
+            // **The channel list is here or the status window has twenty-two thousand
+            // lines in it.** That is what `/list` did before it had a canvas to land in.
             return nil
 
         case .presenceChanged(let nick, let isOnline):

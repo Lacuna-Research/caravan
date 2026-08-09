@@ -508,6 +508,59 @@ struct EventTranslatorTests {
         )
     }
 
+    // MARK: - The channel list
+
+    @Test("322 becomes an entry, with its topic")
+    func channelListEntry() throws {
+        #expect(
+            try events(":irc.example.org 322 alice #swift 214 :[+nt] Swift talk").last
+                == .channelListEntry(
+                    channel: channel("#swift"),
+                    members: 214,
+                    topic: "[+nt] Swift talk"
+                )
+        )
+    }
+
+    /// The mode flags some servers prefix are left alone deliberately: they are information,
+    /// and they are what the server said.
+    @Test("a missing topic is an empty one, not a missing row")
+    func channelListWithoutTopic() throws {
+        #expect(
+            try events(":irc.example.org 322 alice #quiet 3").last
+                == .channelListEntry(channel: channel("#quiet"), members: 3, topic: "")
+        )
+    }
+
+    /// `*` is the server declining to say which channel this is — there is nothing to show
+    /// for it and nothing to join, so it falls through to a plain numeric.
+    @Test("a `*` channel is not an entry")
+    func channelListMasked() throws {
+        let last = try events(":irc.example.org 322 alice * 5 :hidden").last
+        #expect(last == .numeric(code: 322, parameters: ["alice", "*", "5", "hidden"]))
+    }
+
+    /// A channel hidden because a server padded a field is worse than one sorted wrong.
+    @Test("a count that is not a number is zero, and the row survives")
+    func channelListJunkCount() throws {
+        #expect(
+            try events(":irc.example.org 322 alice #odd ??? :topic").last
+                == .channelListEntry(channel: channel("#odd"), members: 0, topic: "topic")
+        )
+    }
+
+    @Test("323 ends the list, and 321 starts nothing and is not shown")
+    func channelListEnd() throws {
+        #expect(try events(":irc.example.org 323 alice :End of /LIST").last == .channelListEnd)
+        // 321 is column headings for a table the client draws itself. Nothing may depend on
+        // it — several servers skip it — so it starts nothing, and it is not shown either:
+        // `.raw` and nothing else. A live `/list` otherwise leaves one stray
+        // "Channel Users  Name" in the status window.
+        let start = try events(":irc.example.org 321 alice Channel :Users  Name")
+        #expect(start.count == 1)
+        if case .raw? = start.first {} else { Issue.record("expected only .raw, got \(start)") }
+    }
+
     // MARK: - Casemapping
 
     /// The channel in the event compares under the server's declared mapping, so a

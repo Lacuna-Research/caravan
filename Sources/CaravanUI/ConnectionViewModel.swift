@@ -127,6 +127,14 @@ public final class ConnectionViewModel: Identifiable {
     /// the rest, and `nil` in tests that only care about the activity state.
     @ObservationIgnored public var alerts: Alerts?
 
+    /// What this network last answered `LIST` with.
+    ///
+    /// Owned rather than injected, unlike its neighbours above: a channel list belongs to
+    /// the connection that fetched it and has no meaning without one, and it survives a
+    /// disconnect deliberately — it is data the user asked for, and reading it while
+    /// reconnecting is reasonable.
+    @ObservationIgnored public let channelDirectory = ChannelDirectory()
+
     /// Whether the *server* has us marked away. Set from 305 and 306 rather than assumed
     /// when `/away` is sent: the request can be ignored, and a client that believed itself
     /// would show the wrong thing on the servers that do.
@@ -697,6 +705,23 @@ public final class ConnectionViewModel: Identifiable {
     }
 
     private func handle(_ event: IRCEvent) {
+        // **Above everything else, and it is the twenty-two thousand that puts it here.**
+        // Everything below — the case mapping, the ignore test, the render context with its
+        // `Date()` — is per-event work that a `LIST` reply would multiply by the size of the
+        // network, to produce a line that `LineRenderer` then declines to draw.
+        switch event {
+        case .channelListEntry(let channel, let members, let topic):
+            channelDirectory.add(
+                ChannelListing(name: channel, members: members, topic: topic)
+            )
+            return
+        case .channelListEnd:
+            channelDirectory.endCollecting()
+            return
+        default:
+            break
+        }
+
         noteCaseMapping(in: event)
         collectListMode(event)
         switch event {
@@ -1187,6 +1212,11 @@ public final class ConnectionViewModel: Identifiable {
             // window, which is exactly where an offer to join something should appear.
             return [existing(channel) ?? status]
 
+        case .channelListEntry, .channelListEnd:
+            // Nowhere, not even the status window. The canvas is the whole destination,
+            // and `handle(_:)` returns before this for the same reason.
+            return []
+
         case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
             .namesReply, .endOfNames, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply,
@@ -1242,7 +1272,12 @@ public final class ConnectionViewModel: Identifiable {
             .batchStarted, .batchEnded, .bouncerNetworks,
             // A notify list is nicks as the *user* typed them; nothing here was folded on
             // its way in, so there is no mapping to learn from it.
-            .presenceChanged, .notifyBaseline, .awayStateChanged:
+            .presenceChanged, .notifyBaseline, .awayStateChanged,
+            // A 322's channel *was* folded under the live mapping, and learning from it
+            // anyway would be twenty-two thousand assignments to an observed property —
+            // which is twenty-two thousand invalidations of every view reading it. The
+            // mapping is already known from `ISUPPORT` before any `LIST` can be asked for.
+            .channelListEntry, .channelListEnd:
             break
         }
     }
