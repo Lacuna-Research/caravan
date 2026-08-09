@@ -517,6 +517,12 @@ public final class AppModel {
         /// and a *peer row above* the networks rather than the root of the tree — the two
         /// canvases bracket the buffer list, which keeps the tree's root level meaningful.
         case dashboard
+        /// What `/list` answers with, for whichever network you ask about.
+        ///
+        /// **One row, not one per network.** A channel list is consulted rather than kept,
+        /// and a permanent tree row per network for an object opened twice a month is the
+        /// wrong trade against §12's tree — so the network is a picker inside the canvas.
+        case channelList
     }
 
     /// Whether the canvas is what the detail area is showing.
@@ -533,6 +539,60 @@ public final class AppModel {
             return
         }
         selection = .dashboard
+    }
+
+    /// Which network the channel-list canvas is showing. `nil` follows the selection.
+    ///
+    /// Set by `/list` and by the canvas's own picker, and it outlives the selection moving
+    /// on: the point of the canvas is to be somewhere you can sit and read.
+    public var channelListNetwork: UUID?
+
+    /// Opens the channel list, or focuses its window when it has been ejected.
+    ///
+    /// **The network is captured before the selection moves, and that is not incidental.**
+    /// `activeConnection` reads the selection, and the selection is about to become a canvas
+    /// — which has no network. Deciding afterwards gets `nil` every time, which is a list
+    /// that opens saying "connect to a network" from a connected client. Found live.
+    public func showChannelList(on connection: ConnectionViewModel? = nil) {
+        channelListNetwork =
+            connection?.id ?? channelListNetwork ?? activeConnection?.id ?? connections.first?.id
+        if isDetached(.channelList) {
+            windowToFocus = .channelList
+            return
+        }
+        selection = .channelList
+    }
+
+    /// The connection the channel-list canvas is about.
+    ///
+    /// The remembered network, then whatever the tree has selected, then any connection at
+    /// all — the last because a canvas opened by a route that never set one should still
+    /// show the network you have, rather than nothing.
+    public var channelListConnection: ConnectionViewModel? {
+        channelListNetwork.flatMap { id in connections.first { $0.id == id } }
+            ?? activeConnection
+            ?? connections.first
+    }
+
+    /// Joins channels picked out of the channel list, and lands in the last one.
+    ///
+    /// **A channel already open is selected rather than re-joined.** Double-clicking a row
+    /// for a window you are sitting in should take you there, not send a `JOIN` the server
+    /// answers with 443. The window opens before the reply for the same reason
+    /// `BufferBindings` opens one: the feedback belongs to the click.
+    public func join(channels: [IRCChannelName], on connection: ConnectionViewModel) async {
+        for name in channels {
+            if connection.buffer(named: name) == nil {
+                connection.openChannelBuffer(named: name)
+                if connection.isConnected {
+                    await connection.send(
+                        IRCMessage(verb: "JOIN", parameters: [name.raw]),
+                        from: nil
+                    )
+                }
+            }
+            selection = .channel(connection: connection.id, channel: name)
+        }
     }
 
     // MARK: - Zoom
@@ -659,7 +719,7 @@ public final class AppModel {
         case .status(let id): connection(id: id)
         case .channel(let id, _): connection(id: id)
         case .query(let id, _): connection(id: id)
-        case .settingsAndDebug, .dashboard, nil: nil
+        case .settingsAndDebug, .dashboard, .channelList, nil: nil
         }
     }
 
@@ -684,7 +744,7 @@ public final class AppModel {
         switch selection {
         case .channel(_, let name): .channel(name)
         case .query(_, let nick): .nick(nick)
-        case .status, .settingsAndDebug, .dashboard, nil: nil
+        case .status, .settingsAndDebug, .dashboard, .channelList, nil: nil
         }
     }
 
@@ -697,7 +757,7 @@ public final class AppModel {
         switch selection {
         case .channel: "Close Channel"
         case .query: "Close Conversation"
-        case .status, .settingsAndDebug, .dashboard, nil: nil
+        case .status, .settingsAndDebug, .dashboard, .channelList, nil: nil
         }
     }
 
@@ -717,7 +777,7 @@ public final class AppModel {
             guard let connection = connection(id: connectionID) else { return }
             connection.closeQuery(nick)
             selection = .status(connection.id)
-        case .status, .settingsAndDebug, .dashboard, nil:
+        case .status, .settingsAndDebug, .dashboard, .channelList, nil:
             return
         }
     }
@@ -808,6 +868,15 @@ public final class AppModel {
                 let answer = debug.apply(command)
                 if case .toCanvas = command { showSettingsAndDebug() }
                 connection.showNotice(answer, in: target)
+            case .channelList(let parameters):
+                // Told before asked, in that order: on a large network the first 322 is
+                // back before the next line of this function would have run.
+                connection.channelDirectory.beginCollecting()
+                showChannelList(on: connection)
+                await connection.send(
+                    IRCMessage(verb: "LIST", parameters: parameters),
+                    from: target
+                )
             }
         }
     }
@@ -1341,7 +1410,7 @@ public final class AppModel {
         case .query(let id, let nick):
             connection(id: id)?.query(named: nick)?.log
                 .markUnreadPosition(with: renderer.unreadRule())
-        case .settingsAndDebug, .dashboard:
+        case .settingsAndDebug, .dashboard, .channelList:
             // A canvas has no scrollback to mark. §10 draws the buffer/canvas line and
             // this is one of the places it pays for itself.
             break

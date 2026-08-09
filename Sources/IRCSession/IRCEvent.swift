@@ -123,10 +123,19 @@ public enum IRCEvent: Sendable, Equatable {
     case namesReply(channel: IRCChannelName, names: [String])
     case endOfNames(channel: IRCChannelName)
 
+    /// One 322: a channel from `LIST`, with how many are in it and its topic.
+    ///
+    /// **Typed chiefly so that it is not shown.** As a `.numeric` this renders into the
+    /// status window, and Libera answers `LIST` with about twenty-two thousand of them.
+    case channelListEntry(channel: IRCChannelName, members: Int, topic: String)
+
+    /// 323. Arrives whether or not any entry did; 321 is headings and has no case.
+    case channelListEnd
+
     /// Any numeric not already represented by a more specific event.
     ///
     /// The exceptions are the numerics whose whole content another case already
-    /// carries: 001, 331/332/333, 324, 353, 366 and the join failures 471–477.
+    /// carries: 001, 322/323, 331/332/333, 324, 353, 366 and the join failures 471–477.
     /// Everything else — including the MOTD, 002–005, and
     /// every error numeric — arrives here, so a status window that renders `.numeric`
     /// shows the server's own words without needing a case per code.

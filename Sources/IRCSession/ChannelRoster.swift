@@ -163,7 +163,7 @@ struct ChannelRoster {
             .joinFailed, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply, .invited,
             .batchStarted, .batchEnded, .bouncerNetworks, .ctcpRequest, .ctcpReply,
-            .listModeEntry, .listModeEnd,
+            .listModeEntry, .listModeEnd, .channelListEntry, .channelListEnd,
             .presenceChanged, .notifyBaseline, .awayStateChanged:
             // `.joinFailed` changes nothing: a join that failed left no state behind, and
             // the channel it names may be one we have never seen. `.invited` likewise —

@@ -258,6 +258,14 @@ struct CommandTableTests {
         )
     }
 
+    /// **Not a `.send`.** The canvas has to be told a collection is starting before the
+    /// first 322 lands, which on a large network is milliseconds after the request.
+    @Test("/list asks for the canvas, and passes any narrowing straight through")
+    func channelList() throws {
+        #expect(actions("/list") == [.channelList(parameters: [])])
+        #expect(actions("/list >100 <500") == [.channelList(parameters: [">100", "<500"])])
+    }
+
     @Test("ignore takes a duration, a removal, and a bare listing")
     func ignoreModes() throws {
         #expect(

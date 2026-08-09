@@ -123,6 +123,8 @@ public struct RootView: View {
             DetachedElsewhere(model: model, item: selection)
         } else if model.selection == .dashboard {
             DashboardCanvas(model: model)
+        } else if model.selection == .channelList {
+            ChannelListCanvas(model: model)
         } else if model.isShowingCanvas {
             SettingsDebugCanvas(model: model)
         } else if let connection = model.activeConnection {

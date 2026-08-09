@@ -381,6 +381,34 @@ public enum EventTranslator {
             if parameters.count >= 2 {
                 return [.endOfNames(channel: IRCChannelName(parameters[1], mapping: mapping))]
             }
+        case 321:
+            // `RPL_LISTSTART`: `<client> Channel :Users  Name` — column headings for a table
+            // the client draws itself, and **nothing may depend on it**, because several
+            // servers skip it entirely. So it starts nothing; it is merely not shown, on the
+            // same rule the other list numerics follow: its whole content is already carried
+            // by the canvas's own header row. Found live, as one stray "Channel Users Name"
+            // sitting in the status window after an otherwise silent `/list`.
+            return []
+        case 322:
+            // `<client> <channel> <count> :<topic>`. The topic is optional; a name of `*`
+            // is the server declining to say which channel this is, and there is nothing
+            // to show for it. A count that is not a number becomes zero rather than
+            // dropping the row — a channel hidden because a server padded a field is
+            // worse than a channel sorted wrong.
+            if parameters.count >= 3, parameters[1] != "*" {
+                return [
+                    .channelListEntry(
+                        channel: IRCChannelName(parameters[1], mapping: mapping),
+                        members: Int(parameters[2]) ?? 0,
+                        topic: parameters.count > 3 ? parameters[3] : ""
+                    )
+                ]
+            }
+        case 323:
+            // `<client> :End of /LIST`. Carries nothing else, and arrives whether or not
+            // any 322 did. 321 is column headings and is deliberately not a case: several
+            // servers skip it, so the list begins at the first entry.
+            return [.channelListEnd]
         case 341:
             // `<client> <nick> <channel>` — our own `/invite` was accepted.
             if parameters.count >= 3 {

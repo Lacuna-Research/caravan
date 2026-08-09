@@ -97,6 +97,7 @@ extension AppModel.SidebarItem: Codable {
         case query = "q"
         case canvas = "x"
         case dashboard = "d"
+        case channelList = "l"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -112,6 +113,11 @@ extension AppModel.SidebarItem: Codable {
             self = .settingsAndDebug
         case .dashboard:
             self = .dashboard
+        case .channelList:
+            // Which network it was showing is not encoded: the list itself does not survive
+            // a restart, so restoring the window pointed at a network with nothing in it
+            // would restore a promise the app cannot keep.
+            self = .channelList
         case .status:
             guard parts.count == 2, let id = UUID(uuidString: String(parts[1])) else {
                 throw DecodingError.dataCorrupted(
@@ -149,6 +155,8 @@ extension AppModel.SidebarItem: Codable {
             return Kind.canvas.rawValue
         case .dashboard:
             return Kind.dashboard.rawValue
+        case .channelList:
+            return Kind.channelList.rawValue
         case .status(let id):
             return [Kind.status.rawValue, id.uuidString].joined(separator: separator)
         case .channel(let id, let channel):

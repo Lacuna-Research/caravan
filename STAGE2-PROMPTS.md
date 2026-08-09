@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 15/18 complete. Next: prompt 15.
+**Status:** 16/18 complete. Next: prompt 16.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -1084,7 +1084,87 @@ that makes it sound large — Libera answers `/list` with about 22,000 channels 
 separable second prompt. A list built without that in mind is not a list to make fast
 later; it is a list to write again. The performance is a property of doing this once.
 
-*To be written out before it starts.*
+```
+Twenty-two thousand rooms, and the one you were looking for.
+
+**Start by reading what `/list` does today, because it is already wrong.** `CommandParser`
+sends `LIST` and nothing is typed for the reply, so 322 arrives as `.numeric` — and
+`.numeric` is the case the status window renders verbatim. Asking Libera for a channel list
+today appends twenty-two thousand lines to a scrollback nobody wanted them in. So the first
+thing this prompt does is *stop* that: 322 becomes a typed event, and it joins
+`.namesReply` and friends in the set `LineRenderer` renders as nothing at all
+(`LineRenderer.swift:142`). A test for that, specifically — the regression is invisible in
+a scripted server with four channels and unmissable on a real one.
+
+- **321 carries nothing; do not wait for it, and do not show it either.** `RPL_LISTSTART`
+  is column headings for a table the client draws itself, and several servers skip it — so
+  nothing may depend on it, and it renders as nothing on the same rule as the entries. The
+  list begins at the first 322, ends at 323, and a 323 with no 322 before it is an empty
+  list rather than a failure. Parse leniently: the topic is
+  optional, a name of `*` is the server declining to say and is dropped, and a member count
+  that is not a number becomes zero rather than dropping the row. A channel hidden because
+  a server padded a field is worse than a channel sorted wrong.
+- **The topic is displayed as plain text, formatting codes stripped**, through the
+  `IRCFormat` path that already exists. Colour in a dense table is noise, and the raw
+  control bytes in a table cell are worse. Some servers prefix the topic with `[+ntr]`;
+  that stays — it is information, and it is what the server said.
+
+**The performance is the design, not a pass over it afterwards.**
+
+- **Twenty-two thousand events must not be twenty-two thousand view updates.** Rows
+  accumulate into an array the view does not observe, and a snapshot is published on a
+  deadline — a loop that sleeps to a deadline, the shape `IRCSession.idleMonitor()` and
+  prompt 14's poller already use, not a repeating timer — plus once more at 323. The
+  coalescing is behaviour, so test it: N entries produce a bounded number of snapshots.
+- **Filter and sort once per snapshot, never per row and never per keystroke.** The search
+  field debounces; the filtered array is one pass.
+- **Plain case-insensitive substring, not `FuzzyMatch`.** That file exists for the quick
+  switcher, where the corpus is forty buffers and the user is aiming at one they can name.
+  Fuzzy over twenty-two thousand topics per keystroke is the exact cost this prompt is
+  about, and it returns nonsense: every topic contains the letters of every short query.
+- **Numbers in `BUILD-LOG.md`, measured on the live run.** Time to the full Libera list,
+  peak memory, keystroke to filtered result. Adjectives are not measurements.
+
+**One canvas, not one per network.** A third `SidebarItem` case pinned beside Settings &
+Debug, ejectable by the same affordance as everything else (§10), with a network picker in
+its own header. A channel list is consulted, not kept: giving every network a permanent tree
+row for a transient object you open twice a month is the wrong trade, and §12's tree is
+channels then queries per network with the canvases bracketing them. The row is present
+always rather than appearing after a successful `/list` — a surface you can only reach by
+knowing a command is not discoverable — and shows an empty state with the button that asks.
+`/list` opens it as well, the way `/debug window` opens the other canvas
+(`AppModel.swift:805`). **No new global shortcut**; the row is one click away and the
+unclaimed letter keys are worth more than this.
+
+- **There is no way to cancel a `LIST`, so do not draw a button that pretends there is.**
+  Stopping stops collecting; the server keeps sending until it is done. Say that on the
+  button's label or beside it.
+- **Re-listing keeps the old rows until the first new 322 arrives.** Blanking the canvas
+  for the ten seconds a re-list takes loses the thing you were reading.
+- **The list outlives its connection** — it is data you asked for, and reading it while
+  reconnecting is reasonable — but Join disables while the connection is down and the
+  header says why.
+- **Nothing goes to disk.** Twenty-two thousand rows are a cache with no invalidation story
+  and the app writes nothing it cannot justify; the list dies with the process.
+- **Join: double-click, or Return on the selection.** A channel already open is selected
+  rather than re-joined. Multi-select joins ask first above five, which is prompt 9's
+  Open All rule and the same reasoning.
+
+Acceptance: live against Libera. `/list`, and watch the whole list arrive — then type in the
+search field *while it is still arriving* and confirm the field does not stutter. Sort by
+members, narrow with min/max, double-click a channel and land in it. Then open the status
+window and confirm it has no twenty-two thousand lines in it. Record the three numbers.
+
+Do not:
+  - **A channel-list row per network.** One canvas with a picker; see above.
+  - **Persist the list between runs.**
+  - **Server-side `ELIST` filtering.** Fetch once, filter locally: refine-as-you-type must
+    not be a round trip, and a second `LIST` is the most expensive thing a client can ask a
+    server for. `ELIST`/`SAFELIST` sit uninterpreted in `ServerCapabilities.rawTokens` and
+    stay that way until something needs them — that is where a later prompt would start.
+  - **Auto-`/list` on connect.** Twenty-two thousand rows nobody asked for.
+  - **A "join everything matching" button.**
+```
 
 ---
 
@@ -1116,6 +1196,12 @@ auto-ignore.
   "replies stopped and nobody knows why". The live run measured the real constraint —
   Libera throttles the *sender*, answering twenty rapid `PRIVMSG`s with `*** Message to
   <nick> throttled due to flooding` — so the outbound limit has a number to aim at.
+- From prompt 15: **inbound flood detection must not trip on `/list`.** One outbound line
+  asks for twenty-two thousand inbound ones, and on Libera they arrive faster than anything
+  else the client will ever see. Whatever counts inbound rate has to know that a `LIST` is
+  outstanding — `ChannelDirectory.isCollecting` on the connection says so — or the first
+  thing auto-ignore does is fire on the server itself. The same holds, smaller, for `NAMES`
+  on a large channel and for a bouncer's replay at attach.
 
 ---
 

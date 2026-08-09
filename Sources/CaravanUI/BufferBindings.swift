@@ -157,7 +157,7 @@ extension AppModel {
         case .query(let id, let nick):
             guard let connection = connection(id: id) else { return nil }
             return BufferBinding(network: connection.networkKey, buffer: nick.raw)
-        case .settingsAndDebug, .dashboard:
+        case .settingsAndDebug, .dashboard, .channelList:
             // Neither canvas is a buffer, and §11 reserves no digit for either.
             return nil
         }
