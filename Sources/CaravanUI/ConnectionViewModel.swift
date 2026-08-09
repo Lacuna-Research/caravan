@@ -1,3 +1,4 @@
+import AppKit
 import Diagnostics
 import Foundation
 import IRCFormat
@@ -117,6 +118,25 @@ public final class ConnectionViewModel: Identifiable {
     /// Who is not to be shown. Injected like ``urlCatcher``, and `nil` in the tests that do
     /// not care — which makes "nothing is ignored" and "there is no list" one code path.
     @ObservationIgnored public var ignores: IgnoreList?
+
+    /// What counts as somebody talking to you. `nil` falls back to your own nick alone,
+    /// which is what every buffer did before there were rules to configure.
+    @ObservationIgnored public var highlights: HighlightRules?
+
+    /// Where an interruption goes once something has decided it is worth one. Injected like
+    /// the rest, and `nil` in tests that only care about the activity state.
+    @ObservationIgnored public var alerts: Alerts?
+
+    /// Whether a buffer is on screen *and* the app is frontmost, which is the difference
+    /// between a notification and noise. Supplied by `AppModel`, which is the only thing
+    /// that knows either.
+    @ObservationIgnored
+    public var isBufferOnScreen: @MainActor (any ChatBuffer) -> Bool = { _ in false }
+
+    /// Called after a buffer's activity state rises, so the Dock badge can be recomputed.
+    /// A callback rather than the app observing, for the same reason
+    /// ``bouncerNetworksDidChange`` is one.
+    @ObservationIgnored public var activityDidChange: (@MainActor () -> Void)?
 
     private var renderer: LineRenderer { settings.renderer }
 
@@ -756,14 +776,14 @@ public final class ConnectionViewModel: Identifiable {
                 buffer: destination.displayName,
                 date: context.now
             )
-            raise(
-                destination,
-                to: BufferActivity.caused(
-                    by: event,
-                    ownNick: currentNick,
-                    isConversation: destination.isConversation
-                )
+            let state = BufferActivity.caused(
+                by: event,
+                ownNick: currentNick,
+                isConversation: destination.isConversation,
+                highlights: highlights
             )
+            raise(destination, to: state)
+            alert(for: event, in: destination, state: state, at: context.now)
             if let key { destination.replay.remember(key) }
             if let logged, settings.logs(destination) {
                 chatLog?.write(logged, network: networkKey, buffer: destination.displayName)
@@ -771,6 +791,51 @@ public final class ConnectionViewModel: Identifiable {
         }
         guard shown else { return }
         noteConversation(event, at: context.now)
+    }
+
+    /// Interrupts the user, if this line is worth interrupting them for.
+    ///
+    /// **Strictly below the ignore filter**, which returned long ago for anything
+    /// suppressed — that ordering is the whole reason prompt 13a shipped first, and it costs
+    /// nothing as long as nothing moves above it. Also below the de-duplication `continue`,
+    /// so a replayed line already on screen cannot alert twice.
+    ///
+    /// The decision itself is `Alerts.shouldAlert`, which takes everything it needs rather
+    /// than reaching for `NSApp`; this only gathers the arguments.
+    private func alert(
+        for event: IRCEvent,
+        in destination: any ChatBuffer,
+        state: BufferActivity,
+        at when: Date
+    ) {
+        guard let alerts, case .message(_, let sender, let text, _, _, _) = event else { return }
+        // Named `isOurs` rather than `isOwn`: a local called `isOwn` shadows the method of
+        // that name inside its own initialiser, which the compiler reports as "cannot call
+        // value of non-function type Bool" three lines away from the cause.
+        let isOurs = sender.nick.map { isOwn(nick: $0) } ?? false
+        guard
+            alerts.shouldAlert(
+                activity: state,
+                isConversation: destination.isConversation,
+                isOwnMessage: isOurs,
+                isOnScreen: isBufferOnScreen(destination),
+                appIsActive: NSApplication.shared.isActive,
+                at: when
+            )
+        else { return }
+        alerts.post(
+            Alert(
+                source: "\(destination.displayName) on \(treeName)",
+                sender: sender.nick,
+                text: IRCFormatting.stripping(text),
+                item: item(for: destination)
+            )
+        )
+    }
+
+    /// The sidebar row a buffer is, so a clicked notification can go there.
+    private func item(for buffer: any ChatBuffer) -> AppModel.SidebarItem? {
+        buffers.first { $0.buffer === buffer }?.item
     }
 
     /// The event as the ignore list leaves it: unchanged, stripped of its formatting, or
@@ -910,6 +975,7 @@ public final class ConnectionViewModel: Identifiable {
     private func raise(_ buffer: any ChatBuffer, to state: BufferActivity) {
         guard state > buffer.activity, !isSelected(buffer) else { return }
         buffer.activity = state
+        activityDidChange?()
     }
 
     /// Whether a buffer is the one on screen. Set by `AppModel`, because the selection is

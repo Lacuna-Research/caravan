@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 13/18 complete. Next: prompt 13b.
+**Status:** 14/18 complete. Next: prompt 14.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -849,56 +849,106 @@ notifications, a Dock badge and a menu-bar item — the dedicated notifications 
 Split from a combined prompt 13; see 13a for why, and note that 13a runs first so an
 ignored line never reaches these rules.
 
-*To be written out before it starts.*
+```
+Decide what is worth interrupting somebody for, and then interrupt them — once.
 
-**Carry-forward** *(consumed when this prompt runs)*
+**The hazard this prompt is really about is the false positive.** A client that notifies
+too much is a client whose notifications get switched off, and then the feature is worse
+than absent because the user believes it is working. Every decision below is a filter.
 
-- From prompt 6: **the one highlight rule that exists is `BufferActivity.mentions(_:in:)`** —
-  own nick, matched as a word rather than a substring, so `bobbins` does not mention `bob`.
-  The keyword and regex lists replace that function rather than sitting beside it, and
-  `BufferActivity.caused(by:ownNick:isConversation:)` is the pure table they plug into. It
-  takes the nick as a parameter precisely so it never had to reach for app state.
-- From prompt 6: **a private message is currently hard-coded to `.highlight`**, on §18's
-  grounds that highlights and private messages are the two default triggers. That is a
-  reasonable default and a poor permanent rule — it is the first thing that should become a
-  setting here, and `isConversation` is the flag it already keys off.
-- From prompt 10: **the Sounds tab is yours to add.** Options built five of mIRC's eight
-  tabs and skipped Sounds rather than ship it empty; adding one is a case in
-  `OptionsPane.Tab` in `SettingsDebugCanvas.swift` plus a `@ViewBuilder` pane, since the
-  enum is `CaseIterable` and drives the picker.
-- From prompt 13a: **the list encoding is settled and it is `ignore.<n> = <levels> <mask>`** —
-  one key per element, one line each, fields separated by spaces, the whole family rewritten
-  and renumbered on every change. `IgnoreList.parse(_:)` and `.format(_:)` in
-  `Sources/CaravanUI/IgnoreList.swift` are the twenty lines to copy. Two settings of the same
-  shape stored two ways is the thing that makes a hand-edited config file untrustworthy, so
-  the keyword and pattern lists take this and not a second answer. Note the one trap it
-  already avoids: prompt 11's `<name>.<field>` cannot be used for anything whose *name* may
-  contain a dot, which a mask always does and a keyword may.
-- From prompt 13a: **the suppression point is `ConnectionViewModel.withIgnoresApplied(_:)`,
-  and the highlight rules go strictly after it.** It returns the event, a rewritten event, or
-  `nil`, and `append(_:)` gives up on `nil` before any of the five consumers runs. Put the
-  highlight test below that call and an ignored line can never reach it — which is the whole
-  reason 13a went first, and it costs nothing as long as nothing moves above it.
-- From prompt 13a: **`IgnoreLevel` is the shape a highlight *level* should copy** — a pure
-  `OptionSet` in `IRCProtocol` with a letter table, a `letters` round trip and a `summary`
-  that spells itself in English. `Tests/IRCProtocolTests/IgnoreLevelTests.swift` is the
-  exhaustiveness pattern. It also runs on Linux, which is why the table lives there.
-- From prompt 13a: **there is now an Ignored section on the IRC tab**, list plus Remove,
-  built like Connect's trusted certificates. If highlights get a list UI, it belongs beside
-  that one rather than on the Sounds tab — the two read as the same kind of thing to a user,
-  and Sounds is about what a trigger *does* rather than what the triggers are.
-- From prompt 12: **a reloaded log line must never notify, and today it cannot** — say so in
-  a test before that stops being true. `ConnectionViewModel.reloadLog(into:)` puts up to
-  fifty lines from yesterday's log the instant a window opens, and it appends them straight
-  to `MessageLogController` rather than through `append(_:)`, which is where the highlight
-  rules will live. So fifty notifications on launch is a bug this prompt is already safe
-  from *by construction* — and it is exactly the kind of safety that a later refactor
-  removes silently. The Sounds tab note above is the pane where a "notify for" setting
-  lands; this is the case it must not fire on.
-- From prompt 12: **`ChatSettings.logs(_:)` is the precedent for a per-buffer-kind setting**,
-  switching on `ChannelBuffer` / `QueryBuffer` / the status window. Sounds and notification
-  triggers want the same three-way split, and copying its shape is cheaper than a second
-  answer to "which kinds of window does this apply to".
+- **`HighlightRules` replaces `BufferActivity.mentions(_:in:)` rather than sitting beside
+  it**, per prompt 6's note. Own nick (a toggle, on), a keyword list matched on word
+  boundaries, and a regex list. `BufferActivity.caused(by:ownNick:isConversation:)` grows a
+  rules parameter and stays pure — it is a table, and it is the reason the four states can
+  be tested without a tree to look at.
+- **A bad regex costs you the pattern, never the launch.** These come from a text field and
+  from a hand-edited file. Compile once on load, report what would not compile where the
+  user can see it, and carry on with the rest.
+- **Storage is `highlight.<n> = <kind> <pattern>`**, the shape 13a settled, with one
+  deliberate difference: split on the *first* space only, because a keyword phrase may
+  contain spaces where a mask never can. Say that in the parser rather than leaving the
+  next reader to infer it from a `maxSplits`.
+- **Three filters stand between a match and a notification, and each is a real bug it
+  prevents.** Write them as three named conditions, not one boolean:
+  - **Not your own words.** Already handled for activity; a notification has the same rule.
+  - **Not something you are looking at.** App frontmost *and* that buffer on screen means
+    the line is already in front of you.
+  - **Not history.** This is the one that matters and the one that is easy to miss. A
+    bouncer reattach replays `CHATHISTORY` through `append(_:)` as ordinary messages — and
+    the ones you have not seen before survive prompt 12's de-duplication, correctly, because
+    they *are* new to this client. Fifty of them mentioning your nick is fifty notifications
+    on connect. The rule: **a line whose `server-time` is more than a few minutes old does
+    not alert.** Not a setting; a constant with the reasoning at it.
+- **`ChatSettings.logs(_:)`'s per-buffer-kind shape is the wrong fit here, and the note that
+  suggested it was written before §18 was reread.** "Highlights and private messages" is not
+  three toggles, it is one four-way choice — never / highlights / highlights and private
+  messages / every message — and its default *is* §18's sentence. One setting that says the
+  thing the design note says beats three that add up to it.
+- **Delivery is behind one swappable closure**, and the real one refuses to fire unless it
+  is running inside an `.app`. A test bundle must never be able to post a user notification,
+  and making that a property of the code rather than of test discipline is what stops it.
+- **The Dock badge is derived, never counted.** `AppModel.allBuffers` already knows which
+  buffers are at `.highlight`; a second counter incremented and decremented alongside is a
+  counter that will drift. Recompute on the two events that can change it — a raise, and a
+  selection that clears one.
+- **The menu-bar item is off by default.** It is the one surface that occupies space the
+  user did not ask for. On, it shows the count and lists the buffers wanting attention,
+  and clicking one focuses it.
+- **Sounds are system sounds, per event, previewable in the pane.** A picker that cannot be
+  auditioned is a picker nobody uses.
+- The highlight list UI goes **beside Ignored on the IRC tab**, per 13a's note; the Sounds
+  tab is what a trigger *does*.
+
+Acceptance: with a scripted second client, be mentioned by nick in a channel and get one
+notification, a sound and a Dock badge; add a keyword and a regex and get the same for each;
+watch the badge clear when you look at the buffer. Say your own nick and get nothing. Have
+the peer mention you while that buffer is on screen and the app frontmost, and get nothing.
+Turn the menu-bar item on, confirm the count and that clicking a row focuses the buffer.
+Give the pattern field something that cannot compile and confirm it says so and keeps
+working. **Then reattach with a backlog and confirm the replay is silent** — that is the
+acceptance that matters, and the one a scripted server can also be made to prove.
+
+Do not:
+  - **Per-window sound overrides.** `PLAN.md` says "per-window and per-event"; per-event
+    ships and per-window does not, because there is no per-buffer settings store and §15.5's
+    global-first convention says invent one only when asked. Record it on the item.
+  - **Custom sound files.** System sounds only. A user-chosen `.wav` means a stored path, a
+    missing-file story and a security-scoped bookmark, for a preference nobody has voiced.
+  - **Notification actions** — reply-from-notification, mute-this-channel buttons. A whole
+    interaction model, and §18 defers the dedicated interface anyway.
+  - **Speech, flashing the window, or bouncing the Dock icon.** mIRC had all three. Ask
+    before adding an interruption that cannot be ignored.
+  - **Touching the ignore filter.** It runs above this and must stay there; a line that was
+    ignored has already returned before any of this is reached.
+```
+
+**Status:** complete. All eight notes above were consumed and are deleted; what each turned
+into is in `BUILD-LOG.md`.
+
+**One note was consumed by disagreeing with it.** Prompt 12 suggested copying
+`ChatSettings.logs(_:)`'s per-buffer-kind split for the notification triggers. Rereading §18
+says otherwise: "highlights and private messages, not every message, not highlights alone" is
+one four-way choice, not three toggles that add up to one. `AlertTrigger` is that choice and
+its default is that sentence.
+
+**The prompt found a filter neither note mentioned, and it is the important one.** A bouncer
+reattach replays `CHATHISTORY` through the ordinary message path, and the lines this client
+has not seen survive prompt 12's de-duplication — correctly, because they are new to it.
+Fifty of them carrying your nick is fifty notifications on connect. Anything older than
+`Alerts.staleAfter` does not interrupt you; the buffer still goes pink, because the backlog
+genuinely is unread.
+
+**`BufferActivity.caused` is `@MainActor` now**, which is a real change in kind: the table
+used to be a pure function of the event and now reads the user's rules. Every caller was
+already on the main actor, and `BufferActivityTests` says why it is annotated.
+
+**Not verified live: the notification banner and the sound.** The permission prompt fired on
+launch and was left unanswered — granting a persistent system permission to a debug build is
+the user's call, not something to do to their machine mid-acceptance. Nor the Dock badge,
+because the Dock is set to auto-hide; `badgeCountsHighlights` drives the real
+`NSApplication.shared.dockTile` instead, and the menu-bar count seen live is the same
+computation. Everything else held: nick, keyword and pattern each reached `.highlight`, the
+menu-bar item read 2, and the broken pattern was listed in red with a warning.
 
 ---
 
@@ -934,6 +984,19 @@ hiding inside either half; that is what happened to 13.
   `NegotiatedCapabilities.isEnabled(.awayNotify)`.
 - From prompt 3: `/away` has to reach `CommandParser.knownCommands` as well as its switch —
   the same trap prompt 8 carries.
+- From prompt 13b: **reuse `Alerts`, do not grow a second notifier.** `Alerts.post(_:)` takes
+  an `Alert` — a title, a body and a sidebar item to focus — and everything behind it is
+  already solved: permission, the sound, the "not while you are looking at it" filter and the
+  refusal to fire outside an `.app`. A friend coming online is exactly that shape. What it is
+  *not* is a `BufferActivity`, so `AlertTrigger` does not describe it; decide whether a notify
+  event gets its own toggle rather than riding on one that means something else.
+- From prompt 13b: **`ChatSettings` has an `alert.` key family now** — `alert.trigger`,
+  `alert.sound`, `alert.menu-bar-item`. A notify-list sound belongs in it by name rather than
+  starting a `notify.` family for one key.
+- From prompt 13b: **the away system's idle timer is a setting where `Alerts.staleAfter` is
+  deliberately not one.** Worth noticing the difference rather than copying the pattern: a
+  user has no opinion about how old a line may be and still deserve a notification, and a
+  very firm one about how long they must be idle before the client speaks for them.
 
 ---
 

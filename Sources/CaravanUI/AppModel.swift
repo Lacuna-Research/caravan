@@ -1,3 +1,4 @@
+import AppKit
 import Diagnostics
 import Foundation
 import IRCProtocol
@@ -338,6 +339,16 @@ public final class AppModel {
     /// not per network. See ``IgnoreList``.
     public let ignores: IgnoreList
 
+    /// What counts as somebody talking to you. Global, like the ignore list and for the
+    /// same reason. See ``HighlightRules``.
+    public let highlights: HighlightRules
+
+    /// Where an interruption goes. See ``Alerts``.
+    public let alerts: Alerts
+
+    /// The menu-bar item, which is off unless asked for.
+    @ObservationIgnored public let menuBarItem = MenuBarItem()
+
     /// The log viewer, and which window it is a sheet on. Same reasoning as
     /// ``urlCatcherPresentation``: a plain flag would put the sheet on the main window even
     /// when a detached buffer asked for it.
@@ -467,6 +478,9 @@ public final class AppModel {
                 buffer(for: selection)?.activity = .none
                 noteVisited(selection)
             }
+            // The other half of what moves the badge: a raise puts one up, and looking at a
+            // buffer takes one down.
+            refreshAttentionSurfaces()
         }
     }
 
@@ -576,6 +590,8 @@ public final class AppModel {
         self.bindings = BufferBindings(config: config)
         self.bufferOrder = BufferOrder(config: config)
         self.ignores = IgnoreList(config: config)
+        self.highlights = HighlightRules(config: config)
+        self.alerts = Alerts(settings: settings)
         self.debug = DebugController(trace: trace, settings: settings)
         // **The Dashboard is what you land on** (§13). It is the splash screen and the
         // empty state, which is the whole reason the app has no onboarding flow: the thing
@@ -785,6 +801,46 @@ public final class AppModel {
         }
     }
 
+    /// Asks for notification permission and puts up whatever surfaces are switched on.
+    ///
+    /// Called once from `RootView`'s `.task` rather than from `init`: asking for permission
+    /// is a system dialog, and a model built by a test has no business raising one. The
+    /// authorisation call is itself a no-op outside an `.app`, which is belt and braces.
+    public func startAlerts() {
+        menuBarItem.onSelect = { [weak self] item in
+            self?.selection = item
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+        alerts.requestAuthorisation()
+        refreshAttentionSurfaces()
+    }
+
+    /// Recomputes the Dock badge and the menu-bar item from the buffers themselves.
+    ///
+    /// **Derived, never counted.** A second counter incremented on a highlight and
+    /// decremented on a read is a counter that drifts the first time a buffer is closed
+    /// while unread. `allBuffers` already knows, and this is cheap enough to run on the two
+    /// events that can change the answer.
+    public func refreshAttentionSurfaces() {
+        let waiting = allBuffers.filter { $0.activity > .none }
+        let highlighted = waiting.filter { $0.activity == .highlight }
+        // **The badge counts highlights only**, per §3: badges are additive for the
+        // highlight case and a badge for every kind of activity is a wall of numbers.
+        NSApplication.shared.dockTile.badgeLabel =
+            highlighted.isEmpty ? nil : String(highlighted.count)
+        menuBarItem.setVisible(settings.showsMenuBarItem)
+        menuBarItem.update(
+            count: highlighted.count,
+            rows: waiting.map {
+                MenuBarItem.Row(
+                    title: $0.qualifiedName,
+                    item: $0.item,
+                    isHighlight: $0.activity == .highlight
+                )
+            }
+        )
+    }
+
     /// `/ignore`, in all four of its moods, answering in the window it was typed in.
     ///
     /// **The answer is a sentence, not a confirmation.** `/ignore -pn bob` replying "ok"
@@ -952,6 +1008,12 @@ public final class AppModel {
         connection.urlCatcher = urlCatcher
         connection.chatLog = chatLog
         connection.ignores = ignores
+        connection.highlights = highlights
+        connection.alerts = alerts
+        connection.isBufferOnScreen = { [weak self] buffer in
+            self?.onScreenBuffers.contains { $0 === buffer } ?? false
+        }
+        connection.activityDidChange = { [weak self] in self?.refreshAttentionSurfaces() }
         // Only the unbound connection can enumerate, so only it needs the hook.
         if configuration.bouncerNetworkID == nil {
             connection.bouncerNetworksDidChange = { [weak self] control in

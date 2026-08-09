@@ -90,6 +90,9 @@ public struct RootView: View {
         // there. `.task` rather than `.onAppear` because connecting is `async`, and it runs
         // once for the main window's lifetime.
         .task { await model.connectStartupServers() }
+        // Asked once, on launch, and only in an app bundle. Also puts the menu-bar item up
+        // if the setting says so, which nothing else would do before the first highlight.
+        .task { model.startAlerts() }
         // Ctrl+Tab needs the modifier's *release*, which no SwiftUI shortcut can express.
         .modifier(CtrlTabModifier(model: model))
         .onChange(of: activeState, initial: true) { _, state in

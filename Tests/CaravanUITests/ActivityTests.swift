@@ -7,6 +7,11 @@ import Testing
 @testable import CaravanUI
 
 /// The four states, as a table. Pure, so being exhaustive costs nothing.
+/// **`@MainActor` since prompt 13b.** The table used to be a pure function and now reads
+/// the user's highlight rules, which are observable state — so it is main-actor bound and
+/// so is anything asserting on it. Worth noticing rather than papering over: it is the one
+/// property of this type that the prompt actually cost.
+@MainActor
 @Suite("Buffer activity")
 struct BufferActivityTests {
     private func message(
@@ -136,13 +141,16 @@ struct BufferActivityTests {
         ]
     )
     func mentions(text: String, expected: Bool) {
-        #expect(BufferActivity.mentions("bob", in: text) == expected)
+        // The rule moved to `HighlightRules` in prompt 13b — keywords and your own nick
+        // want exactly the same matching, and two implementations of "is this a word" is
+        // two answers to give somebody asking why `bobbins` highlighted. Same cases.
+        #expect(HighlightRules.containsWord("bob", in: text) == expected)
     }
 
     @Test("matching is case-insensitive both ways")
     func mentionCase() {
-        #expect(BufferActivity.mentions("Bob", in: "hey BOB"))
-        #expect(BufferActivity.mentions("bob", in: "hey Bob"))
+        #expect(HighlightRules.containsWord("Bob", in: "hey BOB"))
+        #expect(HighlightRules.containsWord("bob", in: "hey Bob"))
     }
 
     @Test("the states escalate, and only the top one badges")

@@ -374,6 +374,18 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     dedicated notifications interface deferred from GUI-DESIGN-NOTES.md §18; the
     out-of-the-box triggers are highlights and private messages — not every message,
     not highlights alone.
+
+    *Shipped in stage 2 prompt 13b. Three omissions, recorded rather than left implicit:*
+    **per-window sounds** — this row says "per-window and per-event" and only per-event
+    shipped, because there is no per-buffer settings store and §15.5's global-first
+    convention says invent one when somebody asks; **custom sound files**, since a
+    user-chosen `.wav` means a stored path, a missing-file story and a security-scoped
+    bookmark for a preference nobody has voiced; and **notification actions** —
+    reply-from-notification, mute-this-channel — which are a whole interaction model.
+    *Also worth knowing for anything that notifies later:* the filter that earns its keep is
+    the staleness one. A bouncer reattach replays `CHATHISTORY` as ordinary messages and
+    those lines are genuinely new to the client, so only their age tells them apart from
+    somebody talking to you now. `Alerts.staleAfter`.
 22. **Ignore list.** *(also owns `/ignore`, moved here from item 14 by stage 2 prompt 8:
     the command is a front for this matching machinery and was not worth half-building)* Wildcard `nick!user@host` masks with mIRC-style level flags
     (`-pcntikm`), temporary ignores with duration.

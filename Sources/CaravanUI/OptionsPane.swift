@@ -15,10 +15,9 @@ import SwiftUI
 ///   rewrote the file wholesale would be a regression, and `ConfigFileTests` has a test
 ///   that would notice.
 ///
-/// **A tab exists when it has something in it.** mIRC has eight; Sounds is prompt 13b's,
-/// and shipping it empty would teach the user the client is unfinished rather than that the
-/// feature is coming. Adding one is a case below plus a pane — the enum is `CaseIterable`
-/// and drives the picker.
+/// **A tab exists when it has something in it.** Seven of mIRC's eight are here; Mouse has
+/// one hard-coded behaviour and nothing to set. The picker stops scaling somewhere around
+/// seven, which is now — a further tab is the point to reconsider the shape, not before.
 struct OptionsPane: View {
     let model: AppModel
 
@@ -40,6 +39,7 @@ struct OptionsPane: View {
         case display = "Display"
         case colours = "Colours"
         case logging = "Logging"
+        case sounds = "Sounds"
         case other = "Other"
 
         var id: String { rawValue }
@@ -58,10 +58,12 @@ struct OptionsPane: View {
 
             switch tab {
             case .connect: ConnectOptions(model: model)
-            case .irc: IRCOptions(model: model, settings: settings)
+            case .irc:
+                IRCOptions(model: model, settings: settings, highlights: model.highlights)
             case .display: DisplayOptions(model: model, settings: settings)
             case .colours: ColourOptions(model: model, settings: settings)
             case .logging: LoggingOptions(model: model, settings: settings)
+            case .sounds: SoundOptions(model: model, settings: settings)
             case .other: OtherOptions(model: model)
             }
         }
@@ -149,6 +151,24 @@ private struct ConnectOptions: View {
 private struct IRCOptions: View {
     let model: AppModel
     @Bindable var settings: ChatSettings
+    @Bindable var highlights: HighlightRules
+
+    @State private var newPatternText = ""
+    @State private var newPatternKind: HighlightPattern.Kind = .word
+
+    private var draft: HighlightPattern {
+        HighlightPattern(kind: newPatternKind, text: newPatternText)
+    }
+
+    private func isBroken(_ pattern: HighlightPattern) -> Bool {
+        highlights.rejected.contains(pattern)
+    }
+
+    private func addPattern() {
+        guard draft.isValid else { return }
+        highlights.add(draft)
+        newPatternText = ""
+    }
 
     var body: some View {
         Form {
@@ -175,6 +195,46 @@ private struct IRCOptions: View {
                         + "An ignore hides what somebody says from this moment on — it does "
                         + "not remove them from the nickname list, and it does not go back "
                         + "and hide what is already on screen or already in a log file."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Highlights") {
+                Toggle("My nickname", isOn: $highlights.matchesOwnNick)
+                ForEach(highlights.patterns) { pattern in
+                    LabeledContent(pattern.kind.title) {
+                        HStack(spacing: 8) {
+                            Text(pattern.text)
+                                .monospaced()
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .foregroundStyle(isBroken(pattern) ? .red : .primary)
+                            if isBroken(pattern) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                    .help("This pattern does not compile, so it never matches")
+                            }
+                            Button("Remove") { highlights.remove(id: pattern.id) }
+                        }
+                    }
+                }
+                HStack(spacing: 8) {
+                    Picker("Kind", selection: $newPatternKind) {
+                        ForEach(HighlightPattern.Kind.allCases) { Text($0.title).tag($0) }
+                    }
+                    .labelsHidden()
+                    .frame(width: 110)
+                    TextField("word or pattern", text: $newPatternText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit(addPattern)
+                    Button("Add", action: addPattern)
+                        .disabled(!draft.isValid)
+                }
+                Text(
+                    "A word matches on its own, not inside a longer one — `bob` is not "
+                        + "`bobbins`. A pattern is a regular expression, and one that will "
+                        + "not compile is kept and marked rather than silently ignored."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -537,6 +597,71 @@ private struct LoggingOptions: View {
     private func reveal(_ url: URL) {
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+}
+
+// MARK: - Sounds
+
+/// What a highlight *does*, as against what the highlights are — those are on the IRC tab
+/// beside the ignore list, because to a user they read as the same kind of thing.
+private struct SoundOptions: View {
+    let model: AppModel
+    @Bindable var settings: ChatSettings
+
+    private static let none = "\u{2014}"
+
+    var body: some View {
+        Form {
+            Section("Interrupt me for") {
+                Picker("Alert on", selection: $settings.alertTrigger) {
+                    ForEach(AlertTrigger.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                Text(
+                    "A notification and a sound. Never while you are looking at the window "
+                        + "it arrived in, never for your own words, and never for history a "
+                        + "server replays when you reconnect — the last of those is what "
+                        + "stops a bouncer reattach becoming fifty notifications."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Section("Sound") {
+                LabeledContent("Play") {
+                    HStack(spacing: 8) {
+                        Picker("Sound", selection: $settings.alertSound) {
+                            Text(Self.none).tag("")
+                            ForEach(Alerts.availableSounds, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden()
+                        .frame(width: 170)
+                        // A picker you cannot audition is a picker nobody uses.
+                        Button("Try It") { Alerts.play(settings.alertSound) }
+                            .disabled(settings.alertSound.isEmpty)
+                    }
+                }
+                Text("The system sounds, plus anything in ~/Library/Sounds.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Menu bar") {
+                Toggle("Show a menu-bar item", isOn: $settings.showsMenuBarItem)
+                    .onChange(of: settings.showsMenuBarItem) {
+                        model.refreshAttentionSurfaces()
+                    }
+                Text(
+                    "How many windows want you, and which. Off by default because the Dock "
+                        + "badge already answers the first question; the item earns its "
+                        + "space by answering the second without bringing the app forward."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
