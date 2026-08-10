@@ -292,10 +292,21 @@ rejected — in IRC it already means *channel operator*, and this client renders
 characters throughout (§4, nick lists, `<@nick>` in message lines). Teaching two
 meanings for one glyph in the same window is not worth the familiarity.
 
-**The tree is set in a monospaced font.** Both sigils are one cell wide, so they form
-a clean column and names never shift. Consistent with §4's scrollback and with the
-density goal in §3. A deliberate deviation from macOS sidebars, which use the system
-font.
+**The tree is set in the system font** — *revised 2026-08-10, and the original is worth
+keeping in view.* It read: "the tree is set in a monospaced font; both sigils are one cell
+wide, so they form a clean column and names never shift ... a deliberate deviation from
+macOS sidebars".
+
+It never happened. `.listStyle(.sidebar)` overrides a `.font` applied to the list for the
+rows inside it, so the tree has rendered in the system font since the first build, and the
+note went four stages without anybody noticing it described something else. What made it
+visible was the one row *outside* the list — pinned "Settings & Debug" — which did obey the
+modifier and so sat there in a different typeface from everything above it.
+
+Given the choice between forcing monospace onto rows that have looked native all along and
+changing the note to say what the app does, the app won. The column-of-sigils argument was
+real but it was buying tidiness in a sidebar, not legibility in a transcript; §4's
+scrollback is still monospaced, which is where it earns its keep.
 
 ## 13. Dashboard — settled (role), deferred (contents)
 **A canvas, not a buffer** — the same kind of surface as Settings & Debug (§10), and

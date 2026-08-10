@@ -5612,3 +5612,38 @@ showing. The previous entry's description of *where* the banner sits was right; 
 mechanism it named was not.
 
 None of the three is visible in a test, and all three were obvious in a screenshot.
+
+---
+
+## Decision — the tree is set in the system font, and §12 was describing something that never happened
+
+**Date:** 2026-08-10  **Affects:** `SidebarTree`, GUI-DESIGN-NOTES §12
+
+Asked to change the font on the pinned "Settings & Debug" row. Looking at why it needed
+changing turned up something better than a font preference.
+
+**§12 has said since stage 1 that "the tree is set in a monospaced font", and it never
+rendered that way.** `SidebarTree` applies `.font(chatFont)` to its `List`, and
+`.listStyle(.sidebar)` overrides a font applied to the list for the rows *inside* it — so
+every row in the tree has been system-font since the first build. The note went four stages
+without anybody noticing it described a different app.
+
+What made it visible was the one row that is **not** inside the list: pinned "Settings &
+Debug" sits in a `safeAreaInset`, where the modifier does apply. So exactly one row in the
+sidebar honoured the design note, and it was the row that looked wrong.
+
+**The choice was put to the user, because it is a taste question with two defensible
+answers**: force monospace onto rows that have looked native all along, or change the note
+to say what the app does. The app won. The column-of-sigils argument in the original note
+was real, but it was buying tidiness in a sidebar rather than legibility in a transcript —
+and §4's scrollback, where that argument does earn its keep, is untouched.
+
+So: the `.font(chatFont)` on the list is gone (it did nothing), the one on the pinned row is
+gone (it did the wrong thing), the now-unused `@Environment(\.chatFont)` with it, and §12
+records what happened rather than being quietly overwritten — the original wording is still
+in the note, above the correction.
+
+**Worth keeping in mind generally:** a design note that has never been checked against a
+screenshot is a note that might be describing a different program. This one survived four
+stages, a hundred-odd prompts and a mechanical docs check, because nothing it claimed was
+ever mechanically true or false — only visible.
