@@ -168,6 +168,17 @@ private struct ServerRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
+            // **Said on the row, not only in the editor.** Two of the shipped defaults —
+            // Undernet and QuakeNet — offer no TLS at all, and a cleartext connection the
+            // user cannot see is the part actually worth avoiding. Marked for any entry
+            // without TLS, not just those two: a hand-written one deserves the same warning.
+            if !entry.useTLS && !entry.host.isEmpty {
+                Image(systemName: "lock.slash")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help("Not encrypted — this network offers no TLS")
+                    .accessibilityLabel("Not encrypted")
+            }
             if entry.isFavourite {
                 Image(systemName: "star.fill")
                     .font(.caption2)
