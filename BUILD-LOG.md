@@ -5194,3 +5194,111 @@ that network's list with the header naming it, and Get List still returns the fu
 **What would justify revisiting it:** nothing about frequency. Only a case where the list
 stops being about one network — a cross-network search, say — which would be a different
 surface rather than a moved row.
+
+---
+
+## Stage 2, prompt 16 — Flood protection
+
+Outbound pacing so a paste does not earn `Excess Flood`, inbound detection that ignores
+somebody flooding you for a minute, and an `ERROR` before 001 treated as the refusal it
+usually is. `SendPacer` is new in `IRCSession`, `FloodDetector` in `CaravanUI`.
+
+### The two halves are opposite policies, and that is the design
+
+Outbound is about lines *the user typed*: dropping one is unthinkable, so the answer is to
+**delay**. Inbound is about lines a stranger sent: a message shown thirty seconds late is
+worse than not shown, so the answer is to **drop**. Every decision below follows from which
+side of that line it sits on.
+
+### Decision — `CTCPThrottle` does not fold into the send queue
+
+The carry-forward asked for this explicitly, and the answer is that they compose. The CTCP
+bucket decides *whether to answer a stranger at all* and drops; the send queue decides *when
+a line leaves* and never drops. Folding them forces one policy on both, and whichever half
+lost would be wrong. The note's real worry — an auto-reply admitted by the bucket then
+sitting behind a paste — is bounded at five replies and now visible, because a backlog says
+so out loud.
+
+**What would justify revisiting:** a third thing wanting to jump the queue. Two exemptions
+with reasons are a rule; three are a priority system, and that is a different design.
+
+### Decision — a queue with one drain, not a sleep inside `send`
+
+`IRCSession` is an actor and actors are reentrant, so `await`ing a delay inside `send(_:)`
+lets the next caller overtake the one sleeping — which reorders the user's own sentences.
+Lines go into a FIFO and one task drains it. `PONG`/`PING`/`QUIT` bypass it always (a queued
+`PONG` is a ping timeout: the limiter would cause the disconnect it exists to prevent), and
+`NICK`/`USER`/`PASS`/`CAP`/`AUTHENTICATE` bypass it *only until registration* — `NICK` is a
+registration line for one second and an ordinary command forever after, and a `/nick` loop is
+a flood like any other.
+
+### The threshold came from the live run, and the first one was unreachable
+
+Twenty messages in ten seconds was the plan. Then the acceptance run measured what a real
+network actually permits: **Libera throttles the sender**, and a scripted client trying to
+push twenty-four lines as fast as it could got **fourteen through in five seconds** before
+the server silenced it — `*** Message to <target> throttled due to flooding`, for a private
+query *and* for a channel. A threshold no flood on the network can cross is a feature that
+cannot fire. It is now **twelve in five seconds**, which is inside what the server permits
+and is still nothing a person types.
+
+Worth keeping for whoever tunes this next: on a well-run network the server is the first
+line of defence and this is a backstop. It matters on networks without sender throttling,
+and it is why the numbers live in the source with their reasoning rather than in a settings
+pane — a slider would have been shipped at twenty and never questioned.
+
+### The prompt 15 note was answered by making it inapplicable
+
+That note asked the detector to consult `ChannelDirectory.isCollecting` so a `/list` of
+twenty-two thousand lines could not auto-ignore the server. It does not, because it counts
+messages **from people** — numerics are not messages, so a `LIST` reply, a large `NAMES` and
+every `MOTD` are outside the mechanism rather than special-cased inside it. Consumed, and the
+test asserts it directly.
+
+The same reasoning covers a bouncer's replay, via a second property: counting is against the
+line's **own timestamp**, the `server-time` that `Alerts.shouldAlert` already uses to tell
+history from news. A hundred lines delivered in one second, stamped minutes apart, is a
+hundred messages over an hour. No replay state was needed.
+
+### Auto-ignore is a temporary ignore, not a second mechanism
+
+Prompt 13a's `IgnoreEntry.expires` is exactly this feature, so a flood adds a timed entry to
+the list the user can already see and edit — undoing one is something they already know how
+to do. The mask is `nick!*@*` rather than the full source: somebody flooding and then cycling
+their host is the ordinary case, and an ignore a reconnect defeats is not an ignore. On by
+default under §19, because it is temporary, announced, visible and reversible.
+
+### Two defects, both found live, neither findable in a test
+
+**The zombie state.** Pointed at a server that refuses, the client showed the refusal
+correctly and then sat saying "Registering…" for ever. `beginRegistration` awaits four sends;
+the `ERROR` was handled *inside* those awaits, tore the attempt down and set `.disconnected`
+— and then the function resumed and announced `.registering` over the top of it. Guarded on
+the attempt still being live.
+
+**It has an invariant test, not a reproducing one, and that is stated at the test.** Refusing
+on connect, on `NICK` and on `CAP` were all tried against the scripted server and none
+reproduces the interleaving: over loopback the inbound line is never processed inside those
+awaits. `ScriptedIRCServer.greet(with:)` was added along the way — the only way to script a
+server that refuses before the client has said a word — and is worth keeping regardless.
+
+**The backlog notice lied by being accurate.** It said "Sending 6 lines a little at a time"
+while thirteen were on their way, because callers enqueue one line at a time and the notice
+fires the moment the queue passes the burst. The count is gone.
+
+### Measured, on Libera
+
+- **Outbound: the free burst, then one line every 2.00 s**, timed by a scripted witness in
+  the channel: gaps of 1.99, 2.01, 2.00, 1.98 s. Thirteen lines took about ten seconds
+  instead of arriving at once, and Libera sent us no throttle notice at all — which is the
+  whole point of the exercise.
+- **Inbound: twelve lines arrived and the thirteenth did not.** `*** caravan-fm16 is
+  flooding — ignored for 60 seconds. See Options ▸ Ignore to undo it.`
+- **`ERROR` before 001: one connection, no retry**, confirmed by the refusing server
+  counting its accepts for forty seconds.
+
+### Not verified live
+
+That a paste *typed by a person* is paced: synthetic keystrokes still do not land in the chat
+input (prompt 12's limitation, now three prompts old). The outbound burst was produced by a
+`perform` list instead, which reaches `submit` by the same path a typed line does.

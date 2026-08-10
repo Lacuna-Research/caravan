@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 16/18 complete. Next: prompt 16.
+**Status:** 17/18 complete. Next: prompt 17.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -1185,33 +1185,99 @@ design. Both in `BUILD-LOG.md`, which is where the reasoning for each lives.
 Outbound send-rate throttling to avoid `Excess Flood`, and inbound flood detection with
 auto-ignore.
 
-*To be written out before it starts.*
+```
+Do not get thrown off the server, and do not let one person fill the window.
 
-**Carry-forward** *(consumed when this prompt runs)*
+**The two halves are opposite policies, and saying so is most of the design.** Outbound is
+about lines *the user typed*: dropping one is unthinkable, so the answer is to **delay**.
+Inbound is about lines a stranger sent: delaying one is pointless, because a message shown
+thirty seconds late is worse than not shown, so the answer is to **drop**. Every decision
+below follows from which side of that line it is on.
 
-- From stage 1 prompt 5: a server `ERROR` currently schedules a reconnect like any other
-  failure, on the grounds that most are transient ("Closing link: ping timeout") and
-  staying dead after one is worse. But a K-line or a throttle also arrives as `ERROR`, and
-  reconnecting into one is exactly the antisocial behaviour this prompt exists to prevent.
-  The backoff ceiling bounds it; recognising the permanent cases would be better. The
-  signal is available: an `ERROR` arriving *before* 001 is far more likely to be a ban or
-  a throttle than a dropped link.
-- From prompt 5: **there is already one outbound rate limit, and it is not this one.**
-  `CTCPThrottle` in `IRCSession` bounds *auto-replies* — burst 5, one token back every 5s,
-  one bucket per connection — because a CTCP flood would otherwise make the client an
-  amplifier. It is a policy about answering strangers; this prompt's is a policy about not
-  tripping `Excess Flood` on what the user typed. **Decide explicitly whether they compose
-  or the CTCP bucket folds into the general limiter**, and say which in `BUILD-LOG.md`: two
-  limiters silently queueing behind each other is the kind of thing that shows up as
-  "replies stopped and nobody knows why". The live run measured the real constraint —
-  Libera throttles the *sender*, answering twenty rapid `PRIVMSG`s with `*** Message to
-  <nick> throttled due to flooding` — so the outbound limit has a number to aim at.
-- From prompt 15: **inbound flood detection must not trip on `/list`.** One outbound line
-  asks for twenty-two thousand inbound ones, and on Libera they arrive faster than anything
-  else the client will ever see. Whatever counts inbound rate has to know that a `LIST` is
-  outstanding — `ChannelDirectory.isCollecting` on the connection says so — or the first
-  thing auto-ignore does is fire on the server itself. The same holds, smaller, for `NAMES`
-  on a large channel and for a bouncer's replay at attach.
+- **Outbound is a queue with one drain, not a sleep inside `send`.** `IRCSession` is an
+  actor and actors are reentrant: `await`ing a delay inside `send(_:)` lets the next call
+  overtake the one sleeping, which reorders the user's own sentences. So lines go into a
+  FIFO and one task drains it.
+- **`PONG` and registration jump the queue, and nothing else does.** A queued `PONG` is a
+  ping timeout — the limiter would cause the disconnect it exists to prevent — and being
+  paced through `NICK`/`USER`/`CAP`/`AUTHENTICATE` delays the only part of a session the
+  server is already lenient about. Both are exemptions with a reason; there is no general
+  "priority" concept, because a third caller wanting one is a design conversation.
+- **Burst 5, then one line every two seconds**, which is irssi's `cmds_max_at_once` and
+  `cmd_queue_speed` and has been right on every network for twenty years. A human typing
+  never sees it; a paste of thirty lines does, and should.
+- **Say so when it bites.** A queue that silently holds lines is the thing the
+  carry-forward warns about. One client notice when the backlog first passes a handful,
+  and nothing more until it drains — the same "once per burst" shape `CTCPThrottle` uses.
+
+**Decision required by the carry-forward: the CTCP bucket does not fold in.** They compose,
+and it is deliberate. `CTCPThrottle` decides *whether to answer at all* and drops; the send
+queue decides *when a line leaves* and never drops. Folding them would force one policy on
+both, and the one it would force is wrong for whichever half lost. What the note is right
+about is the failure mode — an auto-reply admitted by the bucket then sitting in the queue —
+so the answer is that it is bounded (five replies) and visible (the notice above). Write
+this in `BUILD-LOG.md` with the reasoning, because "two limiters, on purpose" is exactly
+the sort of thing a later reader deletes.
+
+**Inbound counts *messages from people*, and that is what keeps `/list` out of it.**
+Numerics are not counted at all — not by an exception, but because they are not messages —
+so the twenty-two thousand of a `LIST`, a large `NAMES` and every `MOTD` are outside the
+mechanism rather than special-cased inside it. `ChannelDirectory.isCollecting` is therefore
+*not* consulted, and the prompt 15 note is answered by making it inapplicable. Say that
+explicitly when consuming it.
+
+- **Count against the line's own timestamp, not arrival.** `server-time` is what
+  `Alerts.shouldAlert` already uses to tell history from news. A bouncer replaying an hour
+  of a busy channel delivers a hundred lines in a second, and every one of them is stamped
+  minutes apart: measured properly that is not a flood, and no replay state is needed to
+  know it.
+- **Auto-ignore is a temporary ignore, not a second mechanism.** Prompt 13a's
+  `IgnoreEntry.expires` is exactly this feature, so a flood adds a timed entry to the list
+  the user can already see and edit — which also means undoing one is a thing they already
+  know how to do.
+- **On by default.** §19's rule is that defaults nobody would mind are taken without
+  asking, and this is one: it is temporary, it is announced in the status window, it
+  appears in a list the user can open, and the alternative is a client that does nothing
+  useful in the one situation where doing nothing is intolerable. **Never yourself**, and
+  never on a line you would not have been shown anyway.
+- **One toggle, not a control panel.** `flood.auto-ignore` in Options and nothing else.
+  Thresholds are a number to argue about in a settings pane nobody opens; put them in the
+  source with the reasoning. **Set the number from the live run, not from taste** — a
+  threshold no flood on the network can actually cross is a feature that cannot fire, and
+  the server's own sender throttle decides what is reachable.
+
+**Consume the `ERROR` note while here, because it is the same subject.** An `ERROR` before
+001 is a ban or a throttle far more often than a dropped link, and reconnecting into one is
+precisely the antisocial behaviour this prompt exists to prevent. So an `ERROR` that arrives
+*before registration completes* ends the attempt **without** a reconnect; after 001 it keeps
+today's behaviour, because most of those really are transient. The user is told which of the
+two happened.
+
+Acceptance: live. Paste enough lines at once to see the queue pace them and the notice
+appear, and confirm the connection survives what previously earned `Excess Flood`. Confirm a
+`/list` — twenty-two thousand inbound lines — auto-ignores nobody. Point the client at a
+port that closes with an `ERROR` before 001 and confirm it stays down and says why. Flood
+yourself from a scripted second client and watch the auto-ignore appear in the list, then
+expire.
+
+Do not:
+  - **Fold `CTCPThrottle` into the send queue.** Decided above; the reasoning is the point.
+  - **Per-sender outbound queues, or priorities beyond the two exemptions.**
+  - **Configurable thresholds.** One toggle.
+  - **Auto-ignoring on numerics, `JOIN`/`PART` storms, or netsplits.** A netsplit is not
+    somebody flooding you, and the client that ignores a hundred people at once during one
+    has made the situation worse.
+  - **A flood *window*.** The status window says it; the ignore list holds it.
+```
+
+**Status:** complete. All three carry-forward notes above were consumed and are deleted.
+The `ERROR` note became "before 001 means no reconnect"; the `CTCPThrottle` note got the
+explicit decision it asked for (they compose, and `BUILD-LOG.md` says why); the prompt 15
+note was answered by making it inapplicable — nothing a server sends is counted at all.
+
+**The live run moved the threshold.** Twenty messages in ten seconds turned out to be
+unreachable on Libera, which throttles the sender at about fourteen lines in five seconds.
+Twelve in five is what shipped, and the reasoning is on `FloodDetector`.
 
 ---
 

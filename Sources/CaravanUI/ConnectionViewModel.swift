@@ -127,6 +127,9 @@ public final class ConnectionViewModel: Identifiable {
     /// the rest, and `nil` in tests that only care about the activity state.
     @ObservationIgnored public var alerts: Alerts?
 
+    /// Who is talking faster than a person talks. Per connection, because rates are.
+    @ObservationIgnored private var floodDetector = FloodDetector()
+
     /// What this network last answered `LIST` with.
     ///
     /// Owned rather than injected, unlike its neighbours above: a channel list belongs to
@@ -802,6 +805,12 @@ public final class ConnectionViewModel: Identifiable {
             senderPrefix: senderPrefix(for: event),
             now: serverTime(of: event) ?? Date()
         )
+
+        // **Below the ignore filter, deliberately**, so somebody already ignored does not
+        // keep feeding the counter and re-trip it every minute for as long as they flood.
+        // Above the renderer, because a flood is a flood whether or not the line draws.
+        noteForFlood(event, at: context.now)
+
         guard let line = renderer.line(for: event, context: context) else { return }
 
         // Built once for the whole event rather than per destination: the key is a property
@@ -842,6 +851,36 @@ public final class ConnectionViewModel: Identifiable {
         }
         guard shown else { return }
         noteConversation(event, at: context.now)
+    }
+
+    /// Counts a message towards its sender's rate, and ignores them if they are flooding.
+    ///
+    /// Only ``IRCEvent/message(target:sender:text:kind:tags:isAction:)`` — a flood is
+    /// somebody *talking* at you. A netsplit's hundred `QUIT`s, a large `NAMES` and a
+    /// `/list` reply are not floods and are not counted; the client that ignores a hundred
+    /// people during a netsplit has made the situation considerably worse.
+    private func noteForFlood(_ event: IRCEvent, at when: Date) {
+        guard settings.autoIgnoresFloods, let ignores else { return }
+        guard case .message(_, let sender, _, _, _, _) = event else { return }
+        guard let nick = sender.nick, !isOwn(nick: nick) else { return }
+
+        let folded = IRCNick(nick, mapping: caseMapping)
+        guard floodDetector.record(nick: folded, at: when) else { return }
+
+        // A mask on the nick alone, not `nick!user@host`: somebody flooding you and then
+        // cycling their host is the ordinary case, and an ignore that a reconnect defeats is
+        // not an ignore. It lapses on its own, so the cost of being broad is a minute.
+        let entry = IgnoreEntry(
+            mask: "\(nick)!*@*",
+            levels: .all,
+            expires: Date().addingTimeInterval(floodDetector.duration)
+        )
+        ignores.add(entry)
+        showNotice(
+            "\(nick) is flooding — ignored for "
+                + "\(Int(floodDetector.duration)) seconds. See Options ▸ Ignore to undo it.",
+            in: nil
+        )
     }
 
     /// Interrupts the user, if this line is worth interrupting them for.

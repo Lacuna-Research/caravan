@@ -75,7 +75,25 @@ public actor IRCSession {
 
     /// The rate limit on CTCP auto-replies. Survives a reconnect: a flooder does not get
     /// a fresh bucket by knocking us off the network and waiting for the reconnect.
+    ///
+    /// **Not the same limiter as ``pacer``, deliberately.** This one drops, because a CTCP
+    /// answer given late is worth nothing; that one delays, because a sentence the user
+    /// typed must not be thrown away. `BUILD-LOG.md` has the reasoning.
     private var ctcpThrottle: CTCPThrottle
+
+    /// The rate limit on everything we send. Also survives a reconnect, and for the same
+    /// reason: a client that empties its bucket by reconnecting has no bucket.
+    private var pacer: SendPacer
+
+    /// Lines waiting their turn, oldest first, and the one task allowed to drain them.
+    ///
+    /// **A queue rather than a sleep inside `send(_:)`.** This is an actor, and actors are
+    /// reentrant: awaiting a delay inside `send` lets the next call overtake the one
+    /// sleeping, which reorders the user's own sentences.
+    private var sendQueue: [IRCMessage] = []
+    private var drainTask: Task<Void, Never>?
+    /// So the "your lines are being paced" notice is said once per backlog, not per line.
+    private var hasReportedBacklog = false
 
     /// Where `CAP` negotiation has got to on this attempt.
     ///
@@ -124,6 +142,7 @@ public actor IRCSession {
         self.currentNick = configuration.nick
         self.lastActivity = ContinuousClock().now
         self.ctcpThrottle = CTCPThrottle(now: ContinuousClock().now)
+        self.pacer = SendPacer(now: ContinuousClock().now)
         self.roster = ChannelRoster(ownNick: configuration.nick)
     }
 
@@ -144,6 +163,12 @@ public actor IRCSession {
     /// The current lifecycle state, for a caller that needs it without waiting for the
     /// next transition.
     public var state: SessionState { currentState }
+
+    /// Whether the server has welcomed us. The line between "registration" and "a session".
+    private var isRegistered: Bool {
+        if case .connected = currentState { return true }
+        return false
+    }
 
     // MARK: - Public control
 
@@ -171,6 +196,12 @@ public actor IRCSession {
     }
 
     /// Sends a message, if there is a connection to send it on.
+    ///
+    /// Returns as soon as the line is *accepted*, which is not always when it leaves: a
+    /// paste of thirty lines is paced out over the following minute by ``drainSendQueue()``.
+    /// The alternative — making every caller wait — would stall a `/me` behind somebody
+    /// else's paste and, worse, would have to happen inside this actor, where awaiting lets
+    /// the next caller overtake.
     public func send(_ message: IRCMessage) async {
         guard let connection else {
             Log.session.error("send with no connection; message dropped")
@@ -179,7 +210,63 @@ public actor IRCSession {
             emit(.clientError("not connected: \(message.command.wireForm) was not sent"))
             return
         }
-        await connection.send(message)
+        guard !message.bypassesPacing(isRegistered: isRegistered) else {
+            await connection.send(message)
+            return
+        }
+        sendQueue.append(message)
+        reportBacklogIfDeep()
+        startDrainingIfNeeded()
+    }
+
+    /// The one task allowed to take lines off the queue.
+    private func startDrainingIfNeeded() {
+        guard drainTask == nil else { return }
+        drainTask = Task { [weak self] in
+            await self?.drainSendQueue()
+        }
+    }
+
+    /// Sends what is queued, waiting between lines exactly as long as the pacer says.
+    ///
+    /// Re-reads `connection` every time round rather than capturing it: a disconnect
+    /// midway through a paste must stop the paste, not deliver the rest to a socket that
+    /// has gone.
+    private func drainSendQueue() async {
+        defer { drainTask = nil }
+        while !sendQueue.isEmpty {
+            if let delay = pacer.delayForNextSend(at: clock.now) {
+                try? await Task.sleep(for: delay, clock: clock)
+            }
+            guard !Task.isCancelled, let connection else {
+                sendQueue = []
+                hasReportedBacklog = false
+                return
+            }
+            let message = sendQueue.removeFirst()
+            await connection.send(message)
+        }
+        hasReportedBacklog = false
+    }
+
+    /// Says once, per backlog, that lines are being held back.
+    ///
+    /// A queue that silently holds what somebody typed is indistinguishable from a client
+    /// that has stopped working. Five is the pacer's burst, so passing it means the limit
+    /// is genuinely biting rather than that two lines arrived together.
+    ///
+    /// **No count in the text.** Callers enqueue one line at a time, so the depth at the
+    /// moment this fires is always six — the live run showed "Sending 6 lines" while
+    /// thirteen were on their way, which is a true sentence that misinforms.
+    private func reportBacklogIfDeep() {
+        guard sendQueue.count > pacer.burst, !hasReportedBacklog else { return }
+        hasReportedBacklog = true
+        emit(
+            .clientNotice(
+                "Sending your lines a little at a time, to avoid being disconnected "
+                    + "for flooding."
+            )
+        )
     }
 
     /// Closes a channel buffer, parting the channel if we are still in it.
@@ -298,6 +385,13 @@ public actor IRCSession {
         idleTask = nil
         for task in transportTasks { task.cancel() }
         transportTasks = []
+        // Whatever was still queued belongs to a connection that no longer exists. Sending
+        // it on the next one would deliver a paste minutes late, to a channel the user may
+        // not even be in any more.
+        drainTask?.cancel()
+        drainTask = nil
+        sendQueue = []
+        hasReportedBacklog = false
 
         let connection = self.connection
         self.connection = nil
@@ -364,6 +458,13 @@ public actor IRCSession {
                 parameters: [configuration.ident, "0", "*", configuration.realName]
             )
         )
+        // **The attempt may have died while those sends were awaited.** This is an actor and
+        // actors are reentrant: a server that answers the very first line with `ERROR` — a
+        // throttle, a ban, "too many connections" — is handled *inside* this function's
+        // awaits, tears the attempt down and sets `.disconnected`. Announcing `.registering`
+        // afterwards leaves the UI saying "Registering…" against a socket that is gone, with
+        // nothing left to move it. Found live, pointed at a server that refuses.
+        guard connection != nil else { return }
         setState(.registering)
         startIdleMonitor()
     }
@@ -487,7 +588,23 @@ public actor IRCSession {
         if message.command.isVerb("ERROR") {
             let reason = message.parameters.last ?? "no reason given"
             Log.session.error("server sent ERROR")
-            await endAttempt(reason: .serverError(reason), allowingReconnect: true)
+            // **An `ERROR` before 001 is a ban or a throttle far more often than a dropped
+            // link**, and reconnecting into one is the antisocial behaviour prompt 16 exists
+            // to prevent — the backoff ceiling bounds it but does not excuse it. After
+            // registration the opposite holds: most are "Closing link: ping timeout", and
+            // staying dead after one of those is worse. So the answer is which side of 001
+            // it arrived on, and the user is told which.
+            let wasRegistered = isRegistered
+            if !wasRegistered {
+                emit(
+                    .clientError(
+                        "The server refused the connection before we were logged in: "
+                            + "\(reason). Not reconnecting — that is usually a ban or a "
+                            + "rate limit, and retrying makes it worse."
+                    )
+                )
+            }
+            await endAttempt(reason: .serverError(reason), allowingReconnect: wasRegistered)
             return
         }
         if message.command.isVerb("CAP") {

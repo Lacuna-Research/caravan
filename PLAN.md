@@ -451,16 +451,17 @@ of the same list drift, and the copy nobody edits is the one that gets read.
 27. **Flood protection.** Outbound send-rate throttling to avoid `Excess Flood`, inbound
     flood detection with auto-ignore.
 
-    ### Carry-forward
-
-    - From prompt 5: a server `ERROR` currently schedules a reconnect like any other
-      failure, on the grounds that most of them are transient ("Closing link: ping
-      timeout") and staying dead after one is worse. But a `K-line` or a throttle also
-      arrives as `ERROR`, and reconnecting into one is exactly the antisocial behaviour
-      this item exists to prevent. The backoff ceiling bounds it; recognising the
-      permanent cases and stopping would be better. The signal is available: an `ERROR`
-      arriving *before* 001 is far more likely to be a ban or a throttle than a dropped
-      link.
+    *Done (stage 2 prompt 16). The two halves are opposite policies: outbound **delays**,
+    because a sentence the user typed must not be dropped, and inbound **drops**, because a
+    message shown thirty seconds late is worse than not shown. Outbound is a FIFO with one
+    drain — an actor is reentrant, so sleeping inside `send` would reorder the user's own
+    lines — bursting five then one every two seconds, with `PONG` and registration exempt.
+    Inbound counts messages **from people** against each line's own `server-time`, which is
+    what keeps a `/list`, a large `NAMES` and a bouncer's replay out of it without any of
+    them being a special case. The `ERROR` note below was consumed: before 001 there is no
+    reconnect. **The threshold was set by measurement** — Libera throttles the sender at
+    about fourteen lines in five seconds, so the planned twenty-in-ten could never fire; it
+    ships at twelve in five.*
 28. **Authentication.** SASL PLAIN, EXTERNAL (CertFP), SCRAM-SHA-256; NickServ
     auto-identify fallback; all secrets in Keychain. *Done in stage 2 prompt 3, along with
     trust-on-first-use for TLS. Two things it deliberately does not do: Caravan neither

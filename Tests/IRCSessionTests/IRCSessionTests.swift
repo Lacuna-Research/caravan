@@ -318,6 +318,124 @@ struct IRCSessionTests {
         await harness.shutDown()
     }
 
+    /// **An `ERROR` before 001 is a ban or a throttle far more often than a dropped link**,
+    /// and reconnecting into one is the antisocial behaviour prompt 16 exists to prevent.
+    @Test("an ERROR before registration stays down and says why")
+    func errorBeforeRegistrationDoesNotReconnect() async throws {
+        let server = try ScriptedIRCServer()
+        let port = try await server.start()
+        // No welcome: the server refuses the connection the way a throttle does.
+        await server.reply(to: "USER", with: ["ERROR :Closing Link: Too many connections"])
+
+        let harness = harness(port: port, server: server)
+        await harness.session.connect()
+        #expect(
+            await waitUntil {
+                await harness.states().contains {
+                    if case .disconnected(.serverError) = $0 { true } else { false }
+                }
+            }
+        )
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await !harness.states().contains(where: isReconnecting))
+        #expect(await harness.server.connectionCount() == 1, "and no second attempt")
+
+        // Said out loud, not merely logged: "nothing happened" is the one answer a user
+        // cannot act on.
+        let errors = await harness.events.snapshot().compactMap { event -> String? in
+            if case .clientError(let text) = event { return text }
+            return nil
+        }
+        #expect(errors.contains { $0.contains("Not reconnecting") })
+
+        await harness.shutDown()
+    }
+
+    /// **The zombie the live run found.** A server that refuses immediately is handled
+    /// *inside* `beginRegistration`'s awaits — this is an actor, and actors are reentrant —
+    /// so the attempt was already torn down when that function resumed and announced
+    /// `.registering`. The window sat saying "Registering…" against a socket that had gone.
+    ///
+    /// **This asserts the invariant; it does not reproduce the interleaving.** It passes
+    /// with the guard removed: over loopback the inbound line is never processed inside
+    /// those awaits, and refusing on connect, on `NICK` and on `CAP` were all tried. The
+    /// evidence for the bug is the live run against a server that refuses; what is kept
+    /// here is the rule — nothing may follow a `.disconnected` — so a future change that
+    /// breaks it *away* from that timing is still caught.
+    @Test("a refusal on the first line does not leave the session registering forever")
+    func refusalDoesNotStrandTheState() async throws {
+        let server = try ScriptedIRCServer()
+        let port = try await server.start()
+        // **Timed to land mid-registration**, which is where the bug lives: the reply to
+        // `NICK` arrives while `beginRegistration` is still awaiting the `USER` send, so the
+        // attempt is torn down inside that function and it then resumes to announce
+        // `.registering`. Greeting on connect is too early to reproduce it over loopback —
+        // the inbound loop has not started — which is why this is keyed on a line instead.
+        await server.reply(to: "NICK", with: ["ERROR :Closing Link: Too many connections"])
+
+        let harness = harness(port: port, server: server)
+        await harness.session.connect()
+        #expect(
+            await waitUntil {
+                await harness.states().contains {
+                    if case .disconnected(.serverError) = $0 { true } else { false }
+                }
+            }
+        )
+        // Nothing may follow it: `.registering` arriving late is the bug.
+        try await Task.sleep(for: .milliseconds(300))
+        let final = await harness.states().last
+        #expect(final != .registering)
+        if case .disconnected = final {
+        } else {
+            Issue.record("ended at \(String(describing: final))")
+        }
+
+        await harness.shutDown()
+    }
+
+    /// After 001 the opposite holds: most really are "Closing link: ping timeout", and
+    /// staying dead after one of those is worse.
+    @Test("an ERROR after registration still reconnects")
+    func errorAfterRegistrationReconnects() async throws {
+        let harness = try await registeredHarness()
+
+        await harness.server.send("ERROR :Closing Link: ping timeout")
+        #expect(await waitUntil { await harness.states().contains(where: isReconnecting) })
+
+        await harness.shutDown()
+    }
+
+    // MARK: - Pacing
+
+    /// The queue must not reorder what somebody typed. This is why the delay is not an
+    /// `await` inside `send(_:)`: an actor is reentrant, so the next caller would overtake
+    /// the one sleeping.
+    @Test("a paste goes out in the order it was typed")
+    func pacingPreservesOrder() async throws {
+        let harness = try await registeredHarness()
+
+        for index in 0..<8 {
+            await harness.session.send(
+                IRCMessage(verb: "PRIVMSG", parameters: ["#swift", "line \(index)"])
+            )
+        }
+        // The burst is five, so the rest are paced at one every two seconds; five is enough
+        // to prove the ordering without the suite waiting for the tail.
+        #expect(
+            await waitUntil {
+                await harness.server.receivedLines()
+                    .filter { $0.hasPrefix("PRIVMSG") }
+                    .count >= 5
+            }
+        )
+        let sent = await harness.server.receivedLines().filter { $0.hasPrefix("PRIVMSG") }
+        let numbers = sent.compactMap { $0.split(separator: " ").last.map(String.init) }
+        #expect(numbers == numbers.sorted { Int($0)! < Int($1)! })
+
+        await harness.shutDown()
+    }
+
     @Test("a deliberate disconnect does not reconnect")
     func deliberateDisconnectStaysDown() async throws {
         let harness = try await registeredHarness()
