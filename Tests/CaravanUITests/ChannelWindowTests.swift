@@ -128,7 +128,12 @@ struct ChannelWindowTests {
         await harness.server.send(":bob!u@h QUIT :Ping timeout")
         for (buffer, reader) in zip(buffers, readers) {
             #expect(await waitUntil { reader.text.contains("Quits: bob") })
-            #expect(buffer.memberCount == 1)
+            // **Waited for, not asserted outright.** `.channelChanged` is emitted *after*
+            // the event that caused it — deliberately, so a consumer draws the quit line
+            // and then updates its nick list — so the line appearing does not mean the
+            // roster snapshot has landed. Asserting it directly passes locally and failed
+            // in CI, which is the whole signature of this kind of race.
+            #expect(await waitUntil { buffer.memberCount == 1 })
         }
         #expect(!harness.status.text.contains("Quits: bob"))
 
