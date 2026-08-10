@@ -204,6 +204,19 @@ private struct IRCOptions: View {
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+                Toggle(
+                    "Ignore somebody who floods me, for a minute",
+                    isOn: $settings.autoIgnoresFloods
+                )
+                Text(
+                    "Twelve messages from one person in five seconds is not somebody "
+                        + "talking. The ignore is temporary, it appears in the list above, "
+                        + "and it can be removed there. Nothing a server sends counts — a "
+                        + "channel list of twenty thousand lines is not a flood."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section("Notify") {

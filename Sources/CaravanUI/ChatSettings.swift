@@ -87,6 +87,9 @@ public final class ChatSettings {
         /// activity and does not describe this.
         public static let alertsOnNotify = true
 
+        /// On. See ``ChatSettings/autoIgnoresFloods``.
+        public static let autoIgnoresFloods = true
+
         /// **Zero, meaning off.** Auto-away speaks on the user's behalf, which §19's
         /// "defaults taken without asking" does not cover. Fifteen minutes is what the form
         /// offers when it is switched on.
@@ -175,6 +178,7 @@ public final class ChatSettings {
         public static let alertSound = "alert.sound"
         public static let showsMenuBarItem = "alert.menu-bar-item"
         public static let alertsOnNotify = "alert.notify"
+        public static let autoIgnoresFloods = "flood.auto-ignore"
         public static let autoAwayMinutes = "away.auto-minutes"
         public static let awayMessage = "away.message"
 
@@ -398,6 +402,16 @@ public final class ChatSettings {
         didSet { config.set(alertsOnNotify, forKey: Key.alertsOnNotify) }
     }
 
+    /// Whether somebody flooding you is ignored for a minute, automatically.
+    ///
+    /// On by default, which §19 allows for defaults nobody would mind: it is temporary, it
+    /// is announced, and it lands in a list the user can already open and edit. The
+    /// alternative is a client that does nothing in the one situation where doing nothing is
+    /// intolerable. The thresholds are `FloodDetector`'s and are not settings.
+    public var autoIgnoresFloods: Bool {
+        didSet { config.set(autoIgnoresFloods, forKey: Key.autoIgnoresFloods) }
+    }
+
     /// Minutes of system idle before the client says you are away. Zero is off.
     public var autoAwayMinutes: Int {
         didSet {
@@ -471,6 +485,8 @@ public final class ChatSettings {
         self.alertSound = config.string(Key.alertSound) ?? Default.alertSound
         self.showsMenuBarItem = config.bool(Key.showsMenuBarItem) ?? Default.showsMenuBarItem
         self.alertsOnNotify = config.bool(Key.alertsOnNotify) ?? Default.alertsOnNotify
+        self.autoIgnoresFloods =
+            config.bool(Key.autoIgnoresFloods) ?? Default.autoIgnoresFloods
         self.autoAwayMinutes = Self.autoAwayRange.clamping(
             config.int(Key.autoAwayMinutes) ?? Default.autoAwayMinutes
         )

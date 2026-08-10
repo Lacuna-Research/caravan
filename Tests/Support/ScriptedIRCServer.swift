@@ -35,6 +35,12 @@ public actor ScriptedIRCServer {
     private var received: [String] = []
     private var acceptedConnections = 0
     private var isReady = false
+    /// Lines written the instant a client is accepted, before it has said anything.
+    ///
+    /// The only way to script a server that *refuses*: a throttle, a K-line or "too many
+    /// connections" arrives before the client has sent its first byte, which no rule keyed
+    /// on a received line can reproduce.
+    private var greeting: [String] = []
 
     public init() throws {
         let tcp = NWProtocolTCP.Options()
@@ -62,6 +68,11 @@ public actor ScriptedIRCServer {
     }
 
     // MARK: - Scripting
+
+    /// Sends `lines` to every client the moment it connects, before it has said anything.
+    public func greet(with lines: [String]) {
+        greeting = lines
+    }
 
     /// Sends `lines` whenever a received line's command matches `verb`.
     public func reply(to verb: String, with lines: [String], repeats: Bool = true) {
@@ -238,6 +249,7 @@ public actor ScriptedIRCServer {
         // again — otherwise a reconnect test could never re-run registration.
         for index in rules.indices { rules[index].hasFired = false }
         connection.start(queue: queue)
+        for line in greeting { send(line, to: connection) }
         Task { await self.receiveLoop(connection) }
     }
 
