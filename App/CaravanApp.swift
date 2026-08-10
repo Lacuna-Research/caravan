@@ -20,6 +20,9 @@ struct CaravanApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(model: model)
+                // Started here rather than in `AppModel.init`, so a test that builds a
+                // model does not also start a timer looking at the test runner's binary.
+                .task { model.buildWatcher.start() }
         }
         .defaultSize(width: 900, height: 600)
         .commands {

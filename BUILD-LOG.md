@@ -5518,3 +5518,68 @@ Verified by installing and launching the installed copy under a throwaway `XDG_C
 it opens, seeds the ten default networks and marks the two cleartext ones. Running it against
 the developer's own profile is deliberately *not* part of the check — that would connect as
 them, to their networks, without being asked.
+
+---
+
+## Decision — the running app notices when it has been replaced
+
+**Date:** 2026-08-10  **Affects:** `BuildWatcher`, `UpgradeBanner`, `RootView`, `CaravanApp`
+
+`make install` replaces `/Applications/Caravan.app` underneath a running copy, which keeps
+executing the code it started with. That is a confusing way to discover a fix did not land —
+the app looks current and is not — so it now says so: a one-line bar above the chat area,
+with **Later** and **Restart**.
+
+### Decision — a bar, not an alert
+
+News rather than a question. The running copy is still perfectly usable, and interrupting
+somebody mid-sentence to announce a build they did not ask for would be worse than the
+confusion it prevents. It takes one line, it is dismissible, and dismissing is remembered
+**per build identity** rather than as a flag — otherwise waving one away would silence every
+future build for the life of the process.
+
+### Decision — polled, not watched with a `DispatchSource`
+
+The bundle is *replaced* rather than written to, so a descriptor held on the old executable
+is a descriptor on a file that has been moved aside and deleted; re-arming means re-opening
+the path anyway. A loop that sleeps to a deadline is the shape `IRCSession.idleMonitor()` and
+`ChannelDirectory` already use, costs one `stat` a minute, and cannot get stuck watching a
+path nothing will touch again. `check()` also runs when the window becomes active, which is
+when somebody who has just run `make install` in a terminal is most likely to be looking.
+
+### Three details that came out of watching it actually run
+
+**The identity is size + mtime + inode, and the inode is the one that earned its place.** The
+live run replaced the bundle with a build xcodebuild had not relinked: same size, same
+modification date to the second, different inode. Size and mtime alone would have seen
+nothing. `stat` on the running process's own binary confirmed the split — the process was
+executing inode 91862675 while the path held 91862992.
+
+**An absent file is "ask again later", never "it changed".** `install-app.sh` moves the old
+bundle aside and then moves the new one in, so a poll landing between those two sees no file
+at all — and a watcher treating that as a new build would announce one a fraction of a second
+before it was true. There is a test for exactly that sequence.
+
+**The replacement is launched after this process is gone, not before.** Two copies running
+share one `$XDG_CONFIG_HOME`, and two processes writing one `caravan.conf` is a way to lose
+settings that is much harder to explain than the second of delay a `sleep 1; open` costs.
+
+### Verified live, and one thing that was not
+
+Installed over a running copy: the poll logged the differing inode and the bar appeared with
+both buttons. The relaunch command the button runs was verified on its own — process count 0
+then 1 — but **the Restart button was never clicked**, because `osascript` lost assistive
+access at the moment the bundle was swapped and never got it back in this session. Whether
+replacing the bundle caused that is not proven, only observed; it is worth knowing that a
+`make install` can cost the machine's automation grants until they are re-approved.
+
+**Diagnosing this needed instrumentation, and the first two attempts at it were wasted.**
+`Log.ui.info` produced nothing in `log show` even with `--info` and `--debug`, for reasons not
+chased down. Writing to `stderr` worked immediately, because the acceptance launcher already
+captures it — worth remembering before spending another round on the unified log.
+
+### Not fixed here, and now recorded
+
+Quitting Caravan — by ⌘Q or by this button — drops connections without sending `QUIT`, so
+servers report a dropped link rather than a departure. That is pre-existing behaviour rather
+than something Restart introduced, and it is now in `PLAN.md`'s **Still open**.
