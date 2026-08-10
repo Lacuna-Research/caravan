@@ -485,6 +485,14 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     formatting. (Scroll-lock and jump-to-latest shipped in prompt 7; the unread
     marker moved to prompt 10.)
 
+    *Built in stage 2 prompt 17, **live acceptance outstanding** — the display was locked
+    for the attempt, and every item in it is a keystroke or a pasteboard. ⌘F is AppKit's
+    find bar over the scrollback, with `ScrollbackTextView` owning the `NSTextFinder` so it
+    can be told when the buffer is trimmed under an open search. ⌘F never widens to the log;
+    `Find in Log…` beside it opens the log viewer seeded from the find pasteboard. ⌘C gives
+    plain text and ⇧⌘C keeps the colours — the reverse of the platform default, because a
+    dark palette pasted into a light document is half invisible.*
+
 **Done when:** you'd use this instead of your current client.
 
 ---

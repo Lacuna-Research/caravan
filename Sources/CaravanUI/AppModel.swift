@@ -366,11 +366,17 @@ public final class AppModel {
         public let window: KeyWindow
         public let network: String?
         public let buffer: String?
+        /// What to put in the viewer's filter field when it opens.
+        ///
+        /// Carries ⌘F's search across to `Find in Log…`, so the second scope starts where
+        /// the first one gave up rather than making the user type it twice.
+        public let query: String?
 
-        public init(window: KeyWindow, network: String?, buffer: String?) {
+        public init(window: KeyWindow, network: String?, buffer: String?, query: String? = nil) {
             self.window = window
             self.network = network
             self.buffer = buffer
+            self.query = query
         }
     }
 
@@ -563,6 +569,45 @@ public final class AppModel {
     public func channelListConnection(of item: SidebarItem) -> ConnectionViewModel? {
         guard case .channelList(let id) = item else { return nil }
         return connection(id: id)
+    }
+
+    /// Whether `Find in Log…` has a buffer to search the log of.
+    ///
+    /// Disabled rather than absent when there is no buffer selected: a menu item that
+    /// vanishes teaches nothing, and one that is greyed out says the feature exists.
+    public var canSearchLog: Bool {
+        guard activeConnection != nil else { return false }
+        return selectedTarget != nil || selection.map(isStatusRow) == true
+    }
+
+    /// Opens the log viewer on the selected buffer, seeded with ⌘F's search string.
+    ///
+    /// **The string comes from the find pasteboard**, which is where macOS keeps it and
+    /// where ⌘E writes it — `NSTextFinder` does not hand out its query, and reaching into
+    /// the find bar's views for it would be reading somebody else's UI.
+    public func showLogSearch() {
+        guard let connection = activeConnection else { return }
+        let buffer: String? =
+            switch selectedTarget {
+            case .channel(let name)?: name.raw
+            case .nick(let nick)?: nick.raw
+            case nil: connection.status.displayName
+            }
+        logViewerPresentation = LogViewerPresentation(
+            window: .main,
+            network: connection.networkKey,
+            buffer: buffer,
+            query: Self.findPasteboardString()
+        )
+    }
+
+    static func findPasteboardString() -> String? {
+        NSPasteboard(name: .find).string(forType: .string)
+    }
+
+    private func isStatusRow(_ item: SidebarItem) -> Bool {
+        if case .status = item { return true }
+        return false
     }
 
     /// Joins channels picked out of the channel list, and lands in the last one.

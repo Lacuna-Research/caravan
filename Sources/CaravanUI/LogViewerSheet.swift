@@ -187,6 +187,9 @@ struct LogViewerSheet: View {
 
     private func load() {
         networks = log.networks()
+        // Opened by `Find in Log…`, it starts on what ⌘F was looking for — the second scope
+        // picks up where the first one gave up rather than asking for it again.
+        if let query = presentation.query, !query.isEmpty { filter = query }
         // Opened from a buffer's own menu, it starts on that buffer's log — which is the
         // whole reason the presentation carries where it came from.
         if let wanted = presentation.network, networks.contains(wanted) {
