@@ -361,6 +361,12 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     (`ConnectSheet` in `CaravanUI`), not a paper plan. No reserved shortcut; it is
     reachable from the tree. Its statistics — message counts, ping times, netsplit
     log, activity graph — stay deferred; see stage 4.
+
+    *The list shipped in stage 2 prompt 11; the **pre-populated entries** §13 also asked
+    for came later, as `DefaultServers` — the ten largest networks by measured users,
+    written into `servers.conf` on a first run and the user's from that moment. Seeded only
+    when the file does not exist, so deleting them all sticks. Two of the ten offer no TLS
+    at all and ship in the clear, marked in the list; the reasoning is in `BUILD-LOG.md`.*
 20. **Logging.** Per-network/per-channel plain-text logs in mIRC's layout, log viewer,
     "reload last N lines on join" so windows aren't empty after reconnect. Must
     reconcile with `chathistory`: against a bouncer the server backfills the same

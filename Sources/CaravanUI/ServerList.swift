@@ -100,7 +100,7 @@ public struct ServerEntry: Sendable, Hashable, Identifiable {
 @MainActor
 @Observable
 public final class ServerList {
-    public static let shared = ServerList()
+    public static let shared = ServerList(seedingDefaults: true)
 
     /// Sorted for display: ungrouped first, then by group, then by name. Derived rather
     /// than stored, so a hand-edited file needs no ordering key to look tidy.
@@ -121,9 +121,33 @@ public final class ServerList {
         ConfigFile.directory.appending(path: "servers.conf")
     }
 
-    public init(config: ConfigFile = ConfigFile(url: ServerList.defaultURL)) {
+    /// - Parameter seedingDefaults: whether a **first run** should be given
+    ///   ``DefaultServers``. Off by default so a test gets the empty list it asked for, and
+    ///   on for ``shared``, which is the only one a person ever sees.
+    public init(
+        config: ConfigFile = ConfigFile(url: ServerList.defaultURL),
+        seedingDefaults: Bool = false
+    ) {
         self.config = config
         self.storage = Self.read(config)
+        if seedingDefaults { seedDefaultsOnFirstRun() }
+    }
+
+    /// Writes ``DefaultServers`` into the file, but only when there is no file at all.
+    ///
+    /// **"First run" means the file does not exist, not that it holds nothing.** A user who
+    /// deletes every entry has said something, and a client that answers by putting ten
+    /// networks back is a client arguing with them. The distinction costs one `fileExists`
+    /// and is the difference between a starting point and a nag.
+    ///
+    /// Written through rather than held in memory, because the file is the truth here:
+    /// `servers.conf` is documented, hand-editable and a public path, and defaults that
+    /// existed only in the binary would be defaults the user cannot see, diff or delete.
+    private func seedDefaultsOnFirstRun() {
+        guard !FileManager.default.fileExists(atPath: config.url.path) else { return }
+        for entry in DefaultServers.entries {
+            save(entry)
+        }
     }
 
     public func entry(named name: String) -> ServerEntry? { storage[name] }

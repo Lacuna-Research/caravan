@@ -5413,3 +5413,74 @@ row's context menu, and `System Events` cannot right-click — the limitation pr
 recorded — and `AXShowMenu` on the row returns `missing value`. The code path is not
 separate: `scrollbackInKeyWindow()` reads `NSApp.keyWindow`, and a detached buffer is simply
 that window instead. Worth a human's thirty seconds the next time one is open.
+
+---
+
+## Decision — a fresh install starts with the ten largest networks
+
+**Date:** 2026-08-10  **Affects:** `DefaultServers`, `ServerList`, `DashboardCanvas`
+
+GUI-DESIGN-NOTES §13 has always said the Dashboard holds "pre-populated entries to connect
+to, plus Add Server". Prompt 11 shipped the list and the editor; the entries never arrived,
+so a first run showed "No servers yet" and a user who did not already know a hostname had
+nowhere to go. `DefaultServers` is that missing half: the ten largest IRC networks by
+measured concurrent users, from netsplit.de's mid-2026 figures.
+
+### Every endpoint was connected to before it was written down, and that mattered
+
+Of the ten hostnames the public rankings give, **five did not work as published**:
+`irc.ircnet.net` and `open.ircnet.net` do not resolve at all; `irc.efnet.org` presents a
+self-signed certificate; and Undernet and QuakeNet *refuse* 6697 — connection refused, not a
+timeout, and plain 6667 answers immediately on the same hosts, which is what proves it is
+policy rather than a firewall. Shipping the published list unchecked would have given a new
+user a list where half the entries fail in a different way each.
+
+What ships is what answered a TLS handshake, with IRCnet pointed at `ircnet.hostsailor.com`
+— a real IRCnet server with a certificate that verifies — and EFnet left on its self-signed
+certificate, which trust-on-first-use already handles by asking once.
+
+### Decision — two of them ship in cleartext, and the app says so
+
+Undernet and QuakeNet have no TLS to offer. The choice was between omitting two of the
+largest networks on the internet and shipping two entries that are not encrypted. **The
+user's call, and they took the literal top ten**, so both ship on 6667 with `tls = false`.
+
+The mitigation is that it is *visible*: `ServerRow` marks any entry without TLS with a
+`lock.slash` and the tooltip "Not encrypted — this network offers no TLS". Not special-cased
+to those two — a hand-written cleartext entry deserves the same warning. A default the user
+cannot see the shape of is the part actually worth avoiding.
+
+freenode ships too, on the same principle: it is measurably tenth by users, its TLS works,
+and a pre-populated list is a convenience rather than an endorsement. Also the user's call,
+asked because inclusion in a shipped list is a recommendation whether or not it is meant as
+one.
+
+### Decision — written into the file, and only when there is no file
+
+Seeding writes real entries to `servers.conf` rather than holding defaults in the binary,
+because the file is the truth: it is documented, hand-editable and a public path, and
+defaults that existed only in code would be defaults nobody could diff, comment out or
+delete. The seeded file is ordinary and readable — ten three-line stanzas under the standard
+header.
+
+**"First run" means the file does not exist, not that it holds nothing.** Somebody who
+deletes every entry has said something, and a client that answers by putting ten networks
+back is arguing with them. That distinction costs one `fileExists` and is the whole
+difference between a starting point and a nag. Seeding is also opt-in at the call site —
+`ServerList(seedingDefaults:)`, true only for `shared` — so every test still gets the empty
+list it asked for rather than ten surprise networks.
+
+Nothing connects on startup and nothing is a favourite. A client that dialled ten networks
+the first time it opened would announce a stranger's arrival on ten networks.
+
+### Verified live
+
+A genuinely empty profile showed all ten on the Dashboard with the lock-slash on exactly
+Undernet and QuakeNet. Two shipped entries were then dialled unmodified through the real
+client: **OFTC over TLS** (registered, 12,906 global users, MOTD art intact) and **Undernet
+over cleartext 6667** (registered, `NETWORK=UnderNet`, 4,805 users). The other eight are
+verified only as far as a TLS handshake and a first line from the server, which is what the
+probe script checked.
+
+**This list will rot.** It is a starting point with a date on it, not a maintained registry;
+the entries are editable and deletable, and nothing in the app depends on them.
