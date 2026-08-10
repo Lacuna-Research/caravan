@@ -12,15 +12,17 @@ import SwiftUI
 /// - **The network row *is* the status buffer's entry.** mIRC carried a separate status
 ///   node beneath the network; folding them together removes a row and a concept.
 ///
-/// The tree is monospaced, unlike every other macOS sidebar. Both sigils are one cell
-/// wide, so `#` forms a clean column and names never shift.
+/// **The tree is set in the system font, not the chat font.** §12 asked for a monospaced
+/// sidebar so the sigils would form a column — and it never actually rendered that way:
+/// `.listStyle(.sidebar)` overrides a `.font` on the list for the rows inside it, so every
+/// row has always been system-font while the one pinned row *outside* the list obeyed the
+/// modifier and stood out. Rather than force monospace onto rows that have looked native
+/// since the first build, the notes were changed to match the app.
 struct SidebarTree: View {
     /// The sigil a query row wears, where a channel wears its own `#`.
     static let querySigil = "•"
 
     @Bindable var model: AppModel
-
-    @Environment(\.chatFont) private var chatFont
 
     var body: some View {
         List(selection: $model.selection) {
@@ -42,7 +44,6 @@ struct SidebarTree: View {
             }
         }
         .listStyle(.sidebar)
-        .font(chatFont)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             pinnedCanvases
         }
@@ -89,7 +90,6 @@ struct SidebarTree: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .font(chatFont)
         // **Leading is wider than trailing on purpose.** The sidebar's own rounded corner
         // cuts in at the bottom-left, and 10pt put the icon visibly tight against it; the
         // rows in the list above sit further in than that, so this was also out of line
