@@ -5484,3 +5484,37 @@ probe script checked.
 
 **This list will rot.** It is a starting point with a date on it, not a maintained registry;
 the entries are editable and deletable, and nothing in the app depends on them.
+
+---
+
+## Decision — `make install` puts a Release build in /Applications
+
+**Date:** 2026-08-10  **Affects:** `Makefile`, `Scripts/install-app.sh`, README
+
+Asked for directly: the latest build should be in `/Applications`, so it can be used rather
+than launched out of `DerivedData` by a script. Three things had to be decided.
+
+**Release, not Debug.** `make app` builds Debug and stays that way — an acceptance run wants
+assertions live. What somebody uses all day should be optimised, so `install` is a different
+configuration on purpose rather than by accident. Release was checked to build clean under
+the same warnings-as-errors settings before this was written.
+
+**The product path is asked for, never written down.** `DerivedData` is keyed on the
+project's path, so every worktree has its own folder and a hard-coded path installs whichever
+checkout built there last. This log records that mistake four times, twice as a "defect" in
+code that had already been fixed. `install-app.sh` reads `BUILT_PRODUCTS_DIR` and
+`FULL_PRODUCT_NAME` from `xcodebuild -showBuildSettings`, exactly as `run-app.sh` does, and
+prints the source path and the commit — with `(dirty)` when the tree has uncommitted changes,
+because "why is my fix not in there" is usually answered by that word.
+
+**The swap cannot leave a half-written bundle, and cannot delete anything it was handed.**
+`ditto` into a staging path beside the target, move the previous bundle aside, move the new
+one in, and let a trap clean both up. `shellcheck` caught the first draft doing
+`rm -rf "$destination/$name"` on values that could in principle be empty — the `rm -rf /`
+case — so both removals now name only paths the script itself created, under its own prefix,
+guarded by `${var:?}`.
+
+Verified by installing and launching the installed copy under a throwaway `XDG_CONFIG_HOME`:
+it opens, seeds the ten default networks and marks the two cleartext ones. Running it against
+the developer's own profile is deliberately *not* part of the check — that would connect as
+them, to their networks, without being asked.

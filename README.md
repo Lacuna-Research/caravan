@@ -284,11 +284,16 @@ make all            # build, test, lint, docs check, app
 |---|---|
 | `make build` | Compile the package |
 | `make test` | Run the test suite |
-| `make app` | Build the macOS app with `xcodebuild` |
+| `make app` | Build the macOS app with `xcodebuild` (Debug) |
+| `make install` | Build Release and put it in `/Applications` |
 | `make fmt` | Format with the toolchain's `swift format` |
 | `make lint` | Format check, strict |
 | `make check` | Documentation discipline |
 | `make hooks` | Install the pre-commit hook |
+
+`make install` is the one to use if you actually want to *run* Caravan: it builds Release,
+where `make app` builds Debug for acceptance runs, and it derives the built product's path
+rather than assuming one, so it installs the checkout you ran it from.
 
 `swift-testing` ships with Xcode rather than Command Line Tools, so `make test` and
 `make app` need full Xcode. `make build`, `make lint` and `make check` work with CLT
