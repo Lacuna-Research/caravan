@@ -42,29 +42,34 @@ public struct FindCommands: Commands {
                 // Plain text is what ⌘C gives — see `ScrollbackTextView.copy(_:)` for why —
                 // so the styled version needs a name and a key of its own.
                 Button("Copy with Colours") {
-                    NSApp.sendAction(
-                        #selector(ScrollbackTextView.copyWithFormatting(_:)),
-                        to: nil,
-                        from: nil
-                    )
+                    Self.scrollbackInKeyWindow()?.copyWithFormatting(nil)
                 }
                 .keyboardShortcut("c", modifiers: [.command, .shift])
             }
         }
     }
 
-    /// Sends a finder action down the responder chain.
-    ///
-    /// `performTextFinderAction(_:)` reads the *sender's* tag, which is why this builds a
-    /// menu item to carry it rather than passing the action along. Sending to `nil` is what
-    /// makes it reach the key window's text view without this knowing which one that is.
     private static func perform(_ action: NSTextFinder.Action) {
-        let carrier = NSMenuItem()
-        carrier.tag = action.rawValue
-        NSApp.sendAction(
-            #selector(NSTextView.performTextFinderAction(_:)),
-            to: nil,
-            from: carrier
-        )
+        scrollbackInKeyWindow()?.perform(finderAction: action)
+    }
+
+    /// The scrollback of whichever window is in front.
+    ///
+    /// **Not `NSApp.sendAction(to: nil)`.** A responder-chain send reaches "whatever has
+    /// focus", and what has focus when somebody reaches for ⌘F is the input box they were
+    /// typing in, or the window itself after they clicked a row in the tree — never the
+    /// transcript, unless they happened to click it. The live run pressed ⌘F on a freshly
+    /// opened channel and got nothing at all. Asking the key window for its scrollback makes
+    /// the shortcut work from wherever the user actually is, including in a detached window,
+    /// which is simply the key window instead — and it settles what ⌘F searches: the
+    /// transcript, never the input box.
+    static func scrollbackInKeyWindow() -> ScrollbackTextView? {
+        guard let root = NSApp.keyWindow?.contentView else { return nil }
+        var stack = [root]
+        while let view = stack.popLast() {
+            if let scrollback = view as? ScrollbackTextView { return scrollback }
+            stack.append(contentsOf: view.subviews)
+        }
+        return nil
     }
 }

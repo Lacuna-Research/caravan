@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 17/18 complete. Next: prompt 17.
+**Status:** 18/18 complete. Stage 2 is done.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -1354,18 +1354,20 @@ Do not:
     search". Activity means somebody said something.
 ```
 
-**Status:** built, tested and documented; **the live acceptance has not run.** Both
-carry-forward notes above were consumed and are deleted: ⌘F is the window and `Find in Log…`
-is the way across, and the copy note's answer is that the plain form comes from the selected
-range rather than from `plainLine`, because a selection may be half a line.
+**Status:** complete. Both carry-forward notes above were consumed and are deleted: ⌘F is
+the window and `Find in Log…` is the way across, and the copy note's answer is that the plain
+form comes from the selected range rather than from `plainLine`, because a selection may be
+half a line.
 
-**Why the acceptance is outstanding:** the display was locked for the whole of the attempt —
-`System Events` reports zero windows for a running app and `screencapture` refuses the rect,
-which is the signature already recorded in `PLAN.md`'s **Still open**. Every item in this
-prompt is a keystroke and a pasteboard, so there is nothing in it a headless run can check.
-It needs one pass: ⌘F in a busy channel while traffic arrives, ⌘G and ⇧⌘G, the same in a
-detached window, ⌘C then ⇧⌘C pasted into TextEdit, and `Find in Log…` finding something that
-has scrolled out of the buffer.
+**The acceptance ran a day late — the display was locked on the first attempt — and it
+earned its place twice.** ⌘F was present, enabled and inert, for two independent reasons:
+`NSTextView` validates finder actions against `usesFindBar`, which this view deliberately
+does not use; and the responder chain reaches whatever has focus, which is never the
+transcript when somebody reaches for ⌘F. Both in `BUILD-LOG.md`.
+
+**Not verified live: ⌘F in a detached window**, because detaching is only on a context menu
+and `System Events` cannot right-click. Same code path — `scrollbackInKeyWindow()` reads
+`NSApp.keyWindow` either way.
 
 ---
 

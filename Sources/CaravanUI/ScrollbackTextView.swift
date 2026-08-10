@@ -45,7 +45,25 @@ final class ScrollbackTextView: NSTextView {
         guard let tag = (sender as? NSValidatedUserInterfaceItem)?.tag,
             let action = NSTextFinder.Action(rawValue: tag)
         else { return }
+        perform(finderAction: action)
+    }
+
+    /// Runs a finder action against this scrollback.
+    ///
+    /// **Called directly, not down the responder chain.** Clicking the transcript does make
+    /// it first responder — but that is not where anybody is when they reach for ⌘F. Focus
+    /// belongs to the input box while you type and to the window itself after you click a
+    /// row in the tree, and from either of those a chain send walks past the only view that
+    /// could answer. The live run pressed ⌘F on a channel it had just opened and got
+    /// nothing: the menu item present, enabled, and inert.
+    ///
+    /// Targeting the scrollback also settles a question the chain would answer wrongly:
+    /// ⌘F searches the transcript, never the input box.
+    func perform(finderAction action: NSTextFinder.Action) {
         if finder.findBarContainer == nil { finder.findBarContainer = enclosingScrollView }
+        // The bar's own field takes the keystrokes once it is up, and ⌘G needs the finder
+        // to still be the thing being talked to.
+        window?.makeFirstResponder(self)
         finder.performAction(action)
     }
 
@@ -102,6 +120,11 @@ final class ScrollbackTextView: NSTextView {
 
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(copyWithFormatting(_:)) { return selectedRange().length > 0 }
+        // **`NSTextView` validates finder actions against `usesFindBar`**, which is off here
+        // because this view owns its finder instead — so its answer is "no" and the
+        // responder chain drops ⌘F before it ever reaches `performTextFinderAction(_:)`.
+        // The menu item was there, enabled, and did nothing. Found in the live run.
+        if item.action == #selector(performTextFinderAction(_:)) { return !string.isEmpty }
         return super.validateUserInterfaceItem(item)
     }
 
