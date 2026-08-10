@@ -5147,3 +5147,50 @@ opened the window with its 652 members. The sort binding is `Table`'s own, exerc
 
 Multi-select join above five, which asks first, has no live evidence either — selecting six
 rows needs a drag, and `System Events` cannot synthesise one.
+
+---
+
+## Decision — the channel list is a row under its network, not a pinned canvas
+
+**Date:** 2026-08-09  **Affects:** `AppModel.SidebarItem`, `SidebarTree`, `ChannelListCanvas`,
+GUI-DESIGN-NOTES §12
+
+Prompt 15 shipped the channel list as a *third* pinned canvas at the bottom of the tree,
+beside Settings & Debug, with a network picker inside it. The reasoning is in that prompt's
+entry: a channel list is consulted rather than kept, so giving every network a permanent row
+for something opened twice a month looked like the wrong trade against §12's tree.
+
+**The user reversed it the moment they saw it: it should be the top item under the network.**
+That is the better call, and the argument it beats is worth writing down rather than quietly
+deleting, because it was wrong in an instructive way.
+
+The mistake was treating "how often is it opened" as the question. The real one is **what is
+it about**. A channel list is a property *of a network*, exactly as that network's channels
+are — and everything else in the app that is about one network lives under it in the tree.
+The bottom of the sidebar is for surfaces that belong to the *app*: the Dashboard above the
+networks, Settings & Debug below them. A per-network object pinned among the app-wide ones
+had to reintroduce the network as a picker inside the canvas, which is a control that exists
+only to undo a placement mistake. Frequency of use argues about how much a row *costs*; it
+cannot make a row belong somewhere it does not.
+
+`SidebarItem.channelList` now carries a `UUID` like `.status` does, which is what makes two
+networks two rows that select and highlight independently, and it encodes for window
+restoration on the same path as a status row. The picker is gone; the canvas takes its
+connection as a parameter and can no longer be constructed without one.
+
+**A bug the earlier shape needed a fix for simply stopped existing.** Prompt 15's live run
+found the canvas opening with "connect to a network" from a connected client, because
+`showChannelList()` resolved the network *after* setting the selection and `activeConnection`
+reads the selection — which had just become a canvas, and canvases had no network. The fix
+was to capture the network first. With the row carrying its own network the question cannot
+be asked at all: `activeConnection` now answers for a channel-list row, because it is a
+canvas that genuinely is about a network. `selectedTarget` still returns `nil` for it —
+there is nowhere to type — so "which network am I looking at" and "where would a line go"
+have come apart, which they always should have.
+
+Verified live on Libera: the row sits under `libera` above its channels, selecting it opens
+that network's list with the header naming it, and Get List still returns the full list.
+
+**What would justify revisiting it:** nothing about frequency. Only a case where the list
+stops being about one network — a cross-network search, say — which would be a different
+surface rather than a moved row.

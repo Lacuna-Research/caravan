@@ -183,8 +183,10 @@ extension AppModel.SidebarItem {
     /// The network a row belongs to, or `nil` for the canvas.
     var connectionID: UUID? {
         switch self {
-        case .status(let id), .channel(let id, _), .query(let id, _): id
-        case .settingsAndDebug, .dashboard, .channelList: nil
+        case .status(let id), .channel(let id, _), .query(let id, _),
+            .channelList(let id):
+            id
+        case .settingsAndDebug, .dashboard: nil
         }
     }
 }

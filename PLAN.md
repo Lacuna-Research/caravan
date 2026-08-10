@@ -422,8 +422,10 @@ of the same list drift, and the copy nobody edits is the one that gets read.
     already cost a fallback story.*
 24. **Channel list window.** `/list` with min/max user filters, name and topic search,
     sortable columns, join-on-double-click.
-    *Done (stage 2 prompt 15), as a canvas rather than a window and as **one** canvas with a
-    network picker rather than one per network — a channel list is consulted, not kept. 322
+    *Done (stage 2 prompt 15), as a canvas rather than a window, reached from **a row at the
+    top of each network's group** — a channel list is a property of a network the way its
+    channels are. (It shipped as one pinned canvas with a network picker; the user reversed
+    that placement immediately, and the reasoning is in `BUILD-LOG.md`.) 322
     and 323 became typed events chiefly so they are **not** drawn: as plain numerics a
     `/list` appended thousands of lines to the status window. Rows accumulate unobserved and
     publish on a 250 ms deadline, so arrival costs a handful of view updates rather than one

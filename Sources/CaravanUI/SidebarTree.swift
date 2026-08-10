@@ -48,25 +48,18 @@ struct SidebarTree: View {
         }
     }
 
-    /// The canvases' rows, pinned to the bottom of the tree.
+    /// The canvas's row, pinned to the bottom of the tree.
     ///
-    /// In the tree without being buffers: the tree is a navigation list rather than
-    /// strictly a list of buffers (§10). Pinned rather than listed, because they must not
-    /// drift below thirty channels — and they carry no activity dot, because activity is
+    /// In the tree without being a buffer: the tree is a navigation list rather than
+    /// strictly a list of buffers (§10). Pinned rather than listed, because it must not
+    /// drift below thirty channels — and it carries no activity dot, because activity is
     /// a concept belonging to buffers only.
     ///
-    /// The channel list is here rather than under each network because it is one canvas for
-    /// all of them, with the network chosen inside it: a row per network would grow the tree
-    /// permanently for something consulted twice a month.
+    /// The channel list is *not* here. It belongs to one network rather than to the app, so
+    /// it sits at the top of that network's group instead.
     private var pinnedCanvases: some View {
         VStack(spacing: 0) {
             Divider()
-            canvasRow(
-                "Channel List",
-                icon: "list.bullet.rectangle",
-                item: .channelList,
-                isCurrent: model.selection == .channelList
-            ) { model.showChannelList() }
             canvasRow(
                 "Settings & Debug",
                 icon: "gearshape",
@@ -123,6 +116,26 @@ private struct DashboardRow: View {
     }
 }
 
+/// A network's channel-list row, at the top of its group.
+///
+/// Same text size as every other row, per §12's rule that a row which looks like a header
+/// but behaves as an item is a contradiction — this one behaves as an item.
+private struct ChannelListRow: View {
+    let isDetached: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "list.bullet.rectangle")
+                .frame(width: 7)
+            Text("Channel List")
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            DetachedMarker(isDetached: isDetached)
+        }
+        .help("Every channel on this network, searchable")
+    }
+}
+
 /// One network and its channels.
 ///
 /// Its own view so the expansion binding can hang off the *connection* rather than off a
@@ -133,6 +146,15 @@ private struct NetworkGroup: View {
 
     var body: some View {
         DisclosureGroup(isExpanded: $connection.isExpanded) {
+            // **Above the channels, which is the point of it being here.** The channel list
+            // is where the channels below it come from, so it reads as the top of the group
+            // rather than as another buffer in the middle. A canvas, so no activity dot and
+            // no binding digit — those belong to buffers (§10).
+            let listItem = AppModel.SidebarItem.channelList(connection: connection.id)
+            ChannelListRow(isDetached: model.isDetached(listItem))
+                .tag(listItem)
+                .contextMenu { DetachMenuItem(model: model, item: listItem) }
+
             ForEach(connection.channels) { buffer in
                 let item = AppModel.SidebarItem.channel(
                     connection: connection.id,

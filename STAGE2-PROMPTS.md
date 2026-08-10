@@ -1166,6 +1166,16 @@ Do not:
   - **A "join everything matching" button.**
 ```
 
+**Status:** complete. There were no carry-forward notes on this prompt; one was raised on
+prompt 16, that inbound flood detection must not trip on a `/list`.
+
+**Two things above are no longer true of the shipped app, and are left as written.** The
+prompt's premise — "about 22,000 channels" — is the MOTD's *channels formed*; `LIST` returns
+about 3,900, and fewer on each repeat. And **the placement was reversed by the user after
+it shipped**: the channel list is a row at the top of each network's group, not one pinned
+canvas with a picker, so "a channel-list row per network" moved from the Do-not list to the
+design. Both in `BUILD-LOG.md`, which is where the reasoning for each lives.
+
 ---
 
 ## Prompt 16 — Flood protection

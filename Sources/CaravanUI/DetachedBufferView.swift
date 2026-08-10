@@ -93,7 +93,11 @@ public struct DetachedBufferView: View {
         case .dashboard:
             DashboardCanvas(model: model)
         case .channelList:
-            ChannelListCanvas(model: model)
+            if let connection {
+                ChannelListCanvas(model: model, connection: connection)
+            } else {
+                closedPlaceholder
+            }
         case .status:
             if let connection {
                 StatusBufferView(model: model, connection: connection, window: .detached(item))
@@ -156,13 +160,11 @@ extension AppModel {
         switch item {
         case .settingsAndDebug, .dashboard:
             ""
-        case .channelList:
-            // The one canvas that *is* about a network, so it says which — the same rule
-            // every buffer row follows, and the reason a detached one is not ambiguous.
-            channelListConnection?.treeName ?? ""
         case .status(let id):
             connection(id: id)?.statusSummary ?? ""
-        case .channel(let id, _), .query(let id, _):
+        // The one canvas that *is* about a network, so it says which — the same rule every
+        // buffer row follows, and the reason a detached one is not ambiguous.
+        case .channelList(let id), .channel(let id, _), .query(let id, _):
             connection(id: id)?.treeName ?? ""
         }
     }
