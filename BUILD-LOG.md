@@ -5583,3 +5583,32 @@ captures it — worth remembering before spending another round on the unified l
 Quitting Caravan — by ⌘Q or by this button — drops connections without sending `QUIT`, so
 servers report a dropped link rather than a departure. That is pre-existing behaviour rather
 than something Restart introduced, and it is now in `PLAN.md`'s **Still open**.
+
+---
+
+## Three visual corrections, all from someone looking at it
+
+**Date:** 2026-08-10  **Affects:** `RootView`, `SidebarTree`
+
+**The connection dot spilled out of its toolbar item.** It was a `Label` with
+`systemImage: "circle.fill"`, which lays the symbol out on the text baseline at full body
+size — and macOS gives a toolbar item a rounded background of its own, so the symbol sat
+hard against the left corner and read as escaping it. It is now a drawn 7pt `Circle`, the
+same dot the tree and the server list use, inset from the corner deliberately. Worth
+remembering: an SF Symbol sized by the font is the wrong tool for a fixed-size indicator
+inside somebody else's rounded rectangle.
+
+**"Settings & Debug" was tight against the sidebar's rounded corner.** 10pt of horizontal
+padding put it visibly closer to the edge than the rows above it, which the sidebar's own
+corner radius cuts into at the bottom. Leading is now 13pt and trailing stays 10pt —
+deliberately asymmetric, because the thing being cleared is only on one side.
+
+**The new-build banner covered the top of the content instead of moving it.** It was a
+`safeAreaInset(edge: .top)`, which reserves space only for content that honours the safe
+area — the Dashboard's first rows were simply hidden behind it. It is a `VStack` now, so the
+banner takes real layout space and the content starts below it. It still takes none when
+there is nothing to say, because `UpgradeBanner` resolves to nothing when the notice is not
+showing. The previous entry's description of *where* the banner sits was right; the
+mechanism it named was not.
+
+None of the three is visible in a test, and all three were obvious in a screenshot.

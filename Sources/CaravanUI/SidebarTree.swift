@@ -90,7 +90,12 @@ struct SidebarTree: View {
         }
         .buttonStyle(.plain)
         .font(chatFont)
-        .padding(.horizontal, 10)
+        // **Leading is wider than trailing on purpose.** The sidebar's own rounded corner
+        // cuts in at the bottom-left, and 10pt put the icon visibly tight against it; the
+        // rows in the list above sit further in than that, so this was also out of line
+        // with them.
+        .padding(.leading, 13)
+        .padding(.trailing, 10)
         .padding(.vertical, 6)
         .background(isCurrent ? Color.accentColor.opacity(0.2) : Color.clear)
         // The one eject affordance, on the canvases' rows as on every other row (§10).
