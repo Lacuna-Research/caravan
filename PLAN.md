@@ -141,6 +141,15 @@ decision entry.
   shipped a form row that every test passed and no eye had seen. Either the runs have to be
   scheduled when someone is at the machine, or something has to render the views offscreen
   and diff the image.
+- **How do the default networks reach a profile that already exists?** *(not blocking)*
+  `DefaultServers` seeds only when `servers.conf` is absent, so that deleting every entry
+  sticks rather than being undone on the next launch. The consequence, under-weighted when
+  that rule was written: the ten networks reach a *fresh install only*, which means they are
+  invisible to everyone who used Caravan before they existed. Asked, and the answer for now
+  was to top up one profile by hand rather than build anything. The shape a real fix would
+  take is an "Add Default Networks" button on the Dashboard, merging by name so an existing
+  entry keeps its nick, autojoin and perform list — a deliberate act, which is what keeps it
+  from becoming the nag the seeding rule exists to avoid. `DefaultServers`, `ServerList`.
 - **Quitting does not say goodbye.** *(not blocking)* ⌘Q, and the Restart button on the
   new-build bar, both terminate without sending `QUIT`, so every server reports a dropped
   link rather than a departure and the user's other clients see a ping timeout. Nothing in
