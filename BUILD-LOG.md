@@ -5647,3 +5647,41 @@ in the note, above the correction.
 screenshot is a note that might be describing a different program. This one survived four
 stages, a hundred-odd prompts and a mechanical docs check, because nothing it claimed was
 ever mechanically true or false — only visible.
+
+---
+
+## Decision — the toolbar is removed, and §8 says why
+
+**Date:** 2026-08-10  **Affects:** `RootView`, `NavigationCommands`, `ChannelBufferView`,
+GUI-DESIGN-NOTES §8
+
+Asked what the pill at the top of the window was for. Answering it honestly made the case
+for deleting it: three items, each overtaken by something already on screen.
+
+- **Connection state** was not interactive at all. It duplicated the window subtitle
+  directly beneath it *and* the state dot on every network row — and unlike either of those
+  it could only ever describe the *active* connection, so with two networks open it was the
+  least informative of the three.
+- **`+` / Servers…** duplicated the Dashboard row pinned at the top of the tree. It only
+  survived this long because prompt 4's live run found that hiding Connect made
+  multi-network unreachable — an argument that expired the day the Dashboard got a row.
+- **The nick-list toggle** wore `sidebar.right`, inches from the real sidebar toggle, so it
+  read as a second one. It never appeared in a detached window, so ⌃⌘L was already the route
+  that always worked.
+
+**Losing nothing was easy, and the original note is why.** §8's strongest argument was to
+use `NSToolbar` so macOS gives customization away — which forced the rule that every toolbar
+item must also be a menu item, since the user can drag any button off. Four stages later
+that rule is what made this a deletion rather than a redesign: all three were already menu
+items with shortcuts.
+
+**Kept: the detached window's Reattach button.** That window has no tree to close it from,
+so it is the affordance rather than a duplicate of one.
+
+The window now shows its title, its subtitle and the system's own sidebar control, which is
+what a document window looks like on this OS.
+
+**Worth noticing about the shape of this.** Nothing here was a bug and no test could have
+failed. Three separate prompts each added a correct item to a toolbar, and the tree grew
+past all three one row at a time — so the toolbar decayed by accretion elsewhere. That is
+the kind of rot only somebody looking at the window finds.

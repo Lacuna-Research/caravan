@@ -79,9 +79,9 @@ struct ChannelBufferView: View {
                 : "You are not in \(buffer.name.raw)",
             isExpanded: $isTopicExpanded
         ) {
-            // The nick-list toggle used to live here. §8 puts it in the toolbar, where it
-            // is one of the three items the minimal default set names — and the View menu
-            // carries it too, so a detached channel window can still reach it.
+            // The nick-list toggle used to live here, then moved to the toolbar, and now
+            // that there is no toolbar it is the Navigate menu's alone — ⌃⌘L, which is the
+            // one route that always worked from a detached window anyway.
             EmptyView()
         }
         .font(chatFont)
