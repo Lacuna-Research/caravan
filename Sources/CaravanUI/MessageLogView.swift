@@ -105,6 +105,11 @@ public struct MessageLogView: NSViewRepresentable {
         textView.importsGraphics = false
         textView.isAutomaticLinkDetectionEnabled = true
         textView.displaysLinkToolTips = true
+        // **AppKit's find bar, not one of ours.** Incremental highlighting of every match,
+        // "3 of 47", ⌘G, ⇧⌘G and ⌘E all come with it, and they behave exactly as they do in
+        // every other window on the machine. `ScrollbackTextView` owns the `NSTextFinder`
+        // itself rather than setting `usesFindBar`, so that it can tell the finder when the
+        // scrollback is appended to or trimmed under an open search.
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]

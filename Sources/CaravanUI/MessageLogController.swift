@@ -185,6 +185,13 @@ public final class MessageLogController {
         pending.removeAll(keepingCapacity: true)
         applyChatAttributes(to: batch)
 
+        // **Tell the find bar the ground is moving.** An open `NSTextFinder` holds ranges
+        // into the string it last searched; appending to it, and trimming the top out from
+        // under it, leaves those ranges pointing at the wrong words — or past the end. This
+        // is the one place the storage changes while a search can be open, which is why it
+        // is the only place that has to say so.
+        noteContentWillChange()
+
         // One editing transaction for the append *and* the trim, so layout and the
         // typesetter run once however many lines arrived.
         textStorage.beginEditing()
@@ -494,6 +501,15 @@ public final class MessageLogController {
 
     private func applyContextMenu() {
         (textView as? ScrollbackTextView)?.contextMenu = contextMenu
+    }
+
+    /// Warns an open find bar that the text is about to change.
+    ///
+    /// `NSTextView` builds its own `NSTextFinder` for `usesFindBar`, and the documented way
+    /// to keep it honest across a mutation is this call — without it a match found before a
+    /// trim is a highlight over whatever slid into its place.
+    private func noteContentWillChange() {
+        (textView as? ScrollbackTextView)?.noteTextWillChange()
     }
 
     /// The scroll view this buffer is drawn in, built once and reused for the life of the

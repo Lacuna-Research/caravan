@@ -1,6 +1,6 @@
 # Stage 2 — The Prompts
 
-**Status:** 17/18 complete. Next: prompt 17.
+**Status:** 18/18 complete. Stage 2 is done.
 
 Stage 2's work queue. Every numbered item in `PLAN.md`'s stage 2 is attached to exactly
 one prompt here; a few prompts carry two or three items, and the largest item is split
@@ -1289,23 +1289,85 @@ Twelve in five is what shipped, and the reasoning is on `FloodDetector`.
 "copy without formatting" is not answerable until there is formatting to strip, and
 find-in-buffer wants the scrollback to have stopped changing shape.
 
-*To be written out before it starts.*
+```
+Find it in this window, and take it somewhere else intact.
 
-**Carry-forward** *(consumed when this prompt runs)*
+**Use `NSTextFinder`; do not build a find bar.** The scrollback is an `NSTextView`, and
+AppKit's finder is what every native app's ⌘F is: incremental highlighting of every match,
+"3 of 47", ⌘G and ⇧⌘G, ⌘E for Use Selection, and a bar that appears above the scroller and
+gets out of the way. A hand-rolled one would be worse in a dozen small ways nobody would
+list in advance, and it would be *differently* wrong from every other window on the machine.
+The work is wiring, not searching: `usesFindBar`, `isIncrementalSearchingEnabled`, and a
+Find menu whose items send `performTextFinderAction:`.
 
-- From prompt 12: **⌘F searches the buffer; the log holds what the buffer has dropped**, and
-  the two answers will differ the moment a channel passes `chat.scrollback-lines`. Somebody
-  who searched a window and found nothing has not been told the line might be on disk.
-  `LogViewerSheet` has a filter field over one file already, so the cheap version is a way
-  across — "not in this window; search the log?" — rather than a second search engine.
-  Whatever it does, decide it rather than shipping two searches that disagree about what
-  "everything" means. A real index over the log directory is not this prompt's and is
-  recorded on `PLAN.md` item 20.
-- From prompt 12: **`copy without formatting` has a worked example to copy.**
-  `LineRenderer.plainLine(kind:fields:at:)` already turns a line into plain text through the
-  same `LineFormatTable` the buffer draws with, which is exactly what "copy the sentence
-  without the styling" means. The difference is the stamp — the log's is canonical, and a
-  copy wants whatever the buffer is showing — so it is a parameter, not a second function.
+- **It has to survive the buffer changing underneath it.** Lines arrive while the bar is
+  open and old ones are trimmed at `chat.scrollback-lines`; the finder must be told the
+  string is about to change rather than left holding stale ranges. `MessageLogController`
+  already owns every mutation of the text storage, so there is exactly one place to say so.
+- **Every buffer window has one, including detached ones and the canvases' scrollbacks.**
+  ⌘F belongs to the window you are looking at, and a shortcut that works in the main window
+  and dies in a detached one is worse than one that does not exist.
+
+**Consuming the prompt 12 note: ⌘F searches the window, and it says so by naming the other
+place.** The buffer holds `chat.scrollback-lines`; the log holds everything. Two searches
+that quietly disagree about what "everything" means is the failure the note names, so:
+
+- **⌘F is the window. Always. It never silently widens to the log**, because a find that
+  sometimes returns lines you cannot see is a find you cannot trust.
+- **Next to it in the same menu, `Find in Log…` (⌥⌘F), seeded with whatever ⌘F has.** It
+  opens `LogViewerSheet` — which already has a filter field over the file — on this
+  buffer's log. One menu, two clearly-named scopes, and the second is one keystroke from
+  the first. That is the "way across" the note asked for, and it is deliberately not a
+  second search engine: a real index over the log directory is `PLAN.md` item 20.
+- Disabled, with the reason visible, when this buffer is not logged.
+
+**Copy: plain by default, formatted on purpose.** ⌘C on a scrollback selection puts **only
+plain text** on the pasteboard, and `⇧⌘C` — "Copy with Colours" — puts the styled version
+there as well.
+
+- **This is the way round it is for a concrete reason.** The palette is built for a dark
+  window; rich text carried out of it lands as pale grey on white in every document the
+  user pastes into, and half of it is invisible. Plain text is what somebody pasting into a
+  bug report, a terminal or a message wants nearly every time, and it is the one that
+  cannot arrive unreadable.
+- **A departure from the platform default**, where `NSTextView` writes RTF and plain
+  together and lets the destination choose. Worth it here, and worth writing down.
+- `LineRenderer.plainLine(kind:fields:at:)` is the worked example the prompt 12 note names,
+  but the selection is what is being copied — it may be half a line — so the plain form is
+  taken from the selected range's `string`, not re-rendered. The note's real content is the
+  *stamp*: the log's is canonical and a copy wants what the buffer is showing, which the
+  selection already carries.
+
+Acceptance: live. Open ⌘F in a busy channel, type something said a hundred lines back, and
+watch the matches highlight and the count fill in while more traffic arrives. Confirm the
+bar survives the buffer trimming under it. ⌘G and ⇧⌘G walk the matches. Do the same in a
+detached window. Select a coloured line, ⌘C, and paste into TextEdit — it must arrive as
+plain text; then ⇧⌘C and paste again, and the colours must be there. Search for something
+that has scrolled out of the buffer, find nothing, and use `Find in Log…` to find it.
+
+Do not:
+  - **A find bar of our own.**
+  - **Regex, or search across every buffer at once.** The quick switcher is how you get to
+    another buffer; a cross-buffer search is `PLAN.md` item 20's index and not this.
+  - **Find and replace.** There is nothing to replace: the scrollback is a transcript.
+  - **Highlighting matches in the tree**, or an activity state for "a buffer contains your
+    search". Activity means somebody said something.
+```
+
+**Status:** complete. Both carry-forward notes above were consumed and are deleted: ⌘F is
+the window and `Find in Log…` is the way across, and the copy note's answer is that the plain
+form comes from the selected range rather than from `plainLine`, because a selection may be
+half a line.
+
+**The acceptance ran a day late — the display was locked on the first attempt — and it
+earned its place twice.** ⌘F was present, enabled and inert, for two independent reasons:
+`NSTextView` validates finder actions against `usesFindBar`, which this view deliberately
+does not use; and the responder chain reaches whatever has focus, which is never the
+transcript when somebody reaches for ⌘F. Both in `BUILD-LOG.md`.
+
+**Not verified live: ⌘F in a detached window**, because detaching is only on a context menu
+and `System Events` cannot right-click. Same code path — `scrollbackInKeyWindow()` reads
+`NSApp.keyWindow` either way.
 
 ---
 

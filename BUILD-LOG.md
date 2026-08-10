@@ -5313,3 +5313,103 @@ function with a shadowing `guard let`.
 Also fixed in passing: `CapabilityBehaviourTests.withoutTheTag` asserted that a freshly
 stamped line was *not* `:51`, which fails once a minute — during the fifty-first second. It
 now asserts the stamp is the current second, plus a second either side.
+
+---
+
+## Stage 2, prompt 17 — Buffer utilities
+
+⌘F over the scrollback with AppKit's find bar, `Find in Log…` beside it, and a copy that
+gives plain text unless asked otherwise. `FindCommands` is new in `CaravanUI`; the rest is
+`ScrollbackTextView` and one call in `MessageLogController`.
+
+### Decision — `NSTextFinder`, and therefore an undeclared conformance
+
+The scrollback is an `NSTextView`, so ⌘F is wiring rather than searching: incremental
+highlighting of every match, "3 of 47", ⌘G, ⇧⌘G and ⌘E all come with the platform's find
+bar, and they behave as they do in every other window on the machine. A hand-rolled bar
+would be worse in a dozen small ways nobody lists in advance.
+
+The interesting part is *which* finder. `usesFindBar = true` is one line and gives
+`NSTextView` a private one — which cannot be told anything. This view is appended to and
+trimmed from underneath an open search constantly, and the documented way to keep a finder
+honest across that is `noteClientStringWillChange()`. So `ScrollbackTextView` owns its
+`NSTextFinder` and forwards `performTextFinderAction(_:)` to it.
+
+That costs a **retroactive conformance**: `NSTextView` has implemented `NSTextFinderClient`
+since 10.7 — it is exactly what `usesFindBar` relies on — but does not declare it in a
+header, so Swift will not let you assign one as a client without
+`extension ScrollbackTextView: @MainActor NSTextFinderClient {}`. Worth the trade: the
+alternative is a find bar that highlights whatever slid into the range it remembered.
+
+### Decision — ⌘F is the window, and says so by naming the other place
+
+Prompt 12's note asked for this to be decided rather than left as two searches that disagree
+about what "everything" means. It is: **⌘F never widens to the log**, because a find that
+sometimes returns lines you cannot see is a find you cannot trust. Next to it in the same
+menu is `Find in Log…` (⌥⌘F), which opens the existing log viewer on this buffer, seeded
+with the search string.
+
+The string comes from **the find pasteboard**, which is where macOS keeps it and where ⌘E
+writes it. `NSTextFinder` does not hand out its query, and reaching into the bar's views for
+it would be reading somebody else's UI.
+
+### Decision — ⌘C is plain; ⇧⌘C keeps the colours
+
+A departure from the platform default, where `NSTextView` writes RTF and plain together and
+lets the destination choose. The reason is concrete: the palette is built for a dark window,
+so rich text carried out of one arrives as pale grey on white in most documents and half of
+it is unreadable. Plain is what somebody pasting into a bug report, a terminal or a message
+wants nearly every time, and it is the one that cannot arrive invisible.
+
+The styled form is built here rather than by `writeSelection(to:types:)`, which asks the
+view for its writable types — and this view is deliberately `isRichText = false`, which is
+what stops styled text being *pasted in*, so it offers no RTF to write. The styling is in the
+storage either way. The plain form is the selected range's own characters rather than a
+re-render through `LineRenderer.plainLine`: a selection may be half a line, and what the
+buffer is showing is what somebody dragged over.
+
+### What the tests assert, and what they do not
+
+`NSTextFinder` owns the matching, the highlighting and the counter; testing those would be
+testing AppKit. What is asserted here is this client's share: that a finder exists on every
+scrollback, that the buffer stays coherent while it is appended to and trimmed under an open
+search, that an unrecognised sender is ignored rather than guessed at, and — with a
+pasteboard of the test's own rather than the one belonging to whoever is at the machine —
+exactly what each copy command puts on it.
+
+### The live run, and the two defects it found
+
+Both were the same shape: the feature was **present, enabled and inert**, which is the
+failure mode no unit test catches because every part of it works in isolation.
+
+**`NSTextView` validates finder actions against `usesFindBar`.** That flag is off here —
+this view owns its finder instead — so `validateUserInterfaceItem` answered "no" and the
+responder chain dropped ⌘F before it could reach `performTextFinderAction(_:)`. The menu
+item was there and did nothing. Overridden to answer for itself.
+
+**And the responder chain was the wrong mechanism anyway.** With the validation fixed, ⌘F
+still did nothing, because a chain send goes to whatever has focus — and what has focus when
+somebody reaches for ⌘F is the input box they were typing in, or the window itself after
+they clicked a row in the tree. Clicking the transcript *does* make it first responder, so
+this looks correct in a test and fails for every real user. `FindCommands` now asks the key
+window for its scrollback and calls it directly, which also settles a question the chain
+would have answered wrongly: ⌘F searches the transcript, never the input box.
+
+### What the run confirmed, in `#linux` with 2451 members and traffic arriving
+
+- ⌘F opens the bar; typing `initramfs` incrementally highlighted the matches and showed
+  **3**; ⌘G walked forward and ⇧⌘G back, moving the current match each time.
+- The bar stayed open and correct through half a minute of a busy channel appending under
+  it, which is the case `noteClientStringWillChange()` exists for.
+- **⌘C put 5,509 bytes of plain text on the pasteboard and no `«class RTF »` at all.**
+  ⇧⌘C put 7,965 bytes of RTF there alongside it. Pasted into TextEdit, the first arrives as
+  unstyled Helvetica and the second keeps the nick colours, the links and the monospace.
+- `Find in Log…` opened the viewer already scoped to `libera` / `#linux` with **`initramfs`
+  in its filter field**, carried across on the find pasteboard, showing the three matching
+  lines. That is prompt 12's "way across", working.
+
+**Not verified live: ⌘F in a *detached* window.** Detaching is only offered on the tree
+row's context menu, and `System Events` cannot right-click — the limitation prompt 9
+recorded — and `AXShowMenu` on the row returns `missing value`. The code path is not
+separate: `scrollbackInKeyWindow()` reads `NSApp.keyWindow`, and a detached buffer is simply
+that window instead. Worth a human's thirty seconds the next time one is open.
