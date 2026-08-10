@@ -141,6 +141,13 @@ decision entry.
   shipped a form row that every test passed and no eye had seen. Either the runs have to be
   scheduled when someone is at the machine, or something has to render the views offscreen
   and diff the image.
+- **Quitting does not say goodbye.** *(not blocking)* ⌘Q, and the Restart button on the
+  new-build bar, both terminate without sending `QUIT`, so every server reports a dropped
+  link rather than a departure and the user's other clients see a ping timeout. Nothing in
+  the app handles `applicationShouldTerminate`; the fix is to part cleanly with a short
+  deadline, because a quit that hangs waiting on a dead socket is worse than an abrupt one.
+  Found while building the restart-to-upgrade bar, which makes the case ordinary rather
+  than rare. `BuildWatcher.restart()`.
 - **What does a `Table` row cost, and does the channel list need an AppKit one?**
   *(not blocking)* Prompt 15's live run measured resident memory going from ~143 MB idle to
   ~231 MB with 3,902 rows on screen — about 23 KB a row, against roughly 400 bytes of actual

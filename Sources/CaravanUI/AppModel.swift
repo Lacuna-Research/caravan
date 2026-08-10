@@ -445,6 +445,12 @@ public final class AppModel {
     /// The servers the user keeps, in `servers.conf`. The app's front door (§13).
     public let servers: ServerList
 
+    /// Notices when `make install` has replaced the app underneath this process.
+    ///
+    /// Owned here rather than by the view, because the view is rebuilt constantly and the
+    /// identity it compares against has to be the one read at launch.
+    @ObservationIgnored public let buildWatcher = BuildWatcher()
+
     /// Where passwords are kept. The Keychain in the app, something ephemeral in a test.
     @ObservationIgnored public let credentials: any CredentialStore
 

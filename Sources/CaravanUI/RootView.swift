@@ -21,6 +21,18 @@ public struct RootView: View {
             detail
                 .navigationTitle(title)
                 .navigationSubtitle(subtitle)
+                // Above the chat area rather than in a sheet or an alert: being told a
+                // newer build exists is news, not a question, and it must not stop somebody
+                // finishing the sentence they were typing.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    UpgradeBanner(watcher: model.buildWatcher)
+                }
+        }
+        // **Asked on activation as well as on the timer.** Somebody who has just run
+        // `make install` in a terminal switches straight back to the app, which is exactly
+        // when a minute of polling delay feels like the feature not working.
+        .onChange(of: activeState) { _, state in
+            if state != .inactive { model.buildWatcher.check() }
         }
         // Set once, read by every buffer, the tree, the nick list and the input box —
         // one chat font, which is the requirement rather than a convenience.
