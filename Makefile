@@ -1,4 +1,4 @@
-.PHONY: all hooks check build test fmt lint app worktrees worktrees-prune
+.PHONY: all hooks check build test fmt lint app install worktrees worktrees-prune
 
 # Zero-warnings is a rule, so the compiler enforces it. Set here rather than in
 # Package.swift: as a package setting it conflicts with the -suppress-warnings
@@ -44,3 +44,9 @@ lint:
 # Command Line Tools.
 app:
 	xcodebuild -project Caravan.xcodeproj -scheme Caravan -configuration Debug build
+
+# Build Release and put it in /Applications, so the thing you double-click is the thing
+# this checkout builds. Deliberately a different configuration from `app` above: that one
+# is for acceptance runs, this one is for using.
+install:
+	@./Scripts/install-app.sh
