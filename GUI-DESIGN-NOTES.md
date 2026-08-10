@@ -277,6 +277,12 @@ labelled section, not intermixed. One flat list per network, channels first, the
 DMs — which keeps channel positions stable as transient PMs come and go, without
 spending a row of chrome on a section header.
 
+**Above them both, one canvas row: the network's channel list** (stage 2 prompt 15).
+The only non-buffer row inside a group, and it is first because it is where the
+channels below it come from. It carries no activity dot and no binding digit, those
+being concepts belonging to buffers (§10) — but it is a row like any other, and it
+ejects into its own window through the same affordance.
+
 **Ordering within a network — provisional: join order, with manual drag-to-reorder,
 persisted.** Neither network in the sketch is alphabetical, which rules out sorting as
 the only rule.

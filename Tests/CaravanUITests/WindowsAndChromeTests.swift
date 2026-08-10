@@ -246,6 +246,8 @@ struct DetachedWindowTests {
                 connection: UUID(uuidString: "0DEEA1FA-1111-4444-8888-99999999AAAA")!,
                 channel: IRCChannelName("#a,b/c", mapping: .ascii)
             ),
+            // A canvas that carries a network, which the other two do not.
+            .channelList(connection: UUID(uuidString: "0DEEA1FA-1111-4444-8888-99999999AAAA")!),
         ]
     )
     func windowValueRoundTrip(item: AppModel.SidebarItem) throws {

@@ -113,18 +113,16 @@ extension AppModel.SidebarItem: Codable {
             self = .settingsAndDebug
         case .dashboard:
             self = .dashboard
-        case .channelList:
-            // Which network it was showing is not encoded: the list itself does not survive
-            // a restart, so restoring the window pointed at a network with nothing in it
-            // would restore a promise the app cannot keep.
-            self = .channelList
-        case .status:
+        case .status, .channelList:
+            // Both are a connection and nothing else. The id is a fresh `UUID` each launch,
+            // so a restored window finds no connection and says so — the same answer a
+            // restored status window has always given, rather than a new kind of empty.
             guard parts.count == 2, let id = UUID(uuidString: String(parts[1])) else {
                 throw DecodingError.dataCorrupted(
-                    .init(codingPath: [], debugDescription: "bad status row: \(raw)")
+                    .init(codingPath: [], debugDescription: "bad network row: \(raw)")
                 )
             }
-            self = .status(id)
+            self = kind == .status ? .status(id) : .channelList(connection: id)
         case .channel, .query:
             guard parts.count == 4, let id = UUID(uuidString: String(parts[1])),
                 let mapping = IRCCaseMapping(rawValue: String(parts[2]))
@@ -155,8 +153,8 @@ extension AppModel.SidebarItem: Codable {
             return Kind.canvas.rawValue
         case .dashboard:
             return Kind.dashboard.rawValue
-        case .channelList:
-            return Kind.channelList.rawValue
+        case .channelList(let id):
+            return [Kind.channelList.rawValue, id.uuidString].joined(separator: separator)
         case .status(let id):
             return [Kind.status.rawValue, id.uuidString].joined(separator: separator)
         case .channel(let id, let channel):

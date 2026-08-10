@@ -517,12 +517,13 @@ public final class AppModel {
         /// and a *peer row above* the networks rather than the root of the tree — the two
         /// canvases bracket the buffer list, which keeps the tree's root level meaningful.
         case dashboard
-        /// What `/list` answers with, for whichever network you ask about.
+        /// What `/list` answers with, for one network.
         ///
-        /// **One row, not one per network.** A channel list is consulted rather than kept,
-        /// and a permanent tree row per network for an object opened twice a month is the
-        /// wrong trade against §12's tree — so the network is a picker inside the canvas.
-        case channelList
+        /// **A row per network, at the top of its group**, rather than the single pinned
+        /// canvas this shipped as. The list is a property *of a network* — the same way its
+        /// channels are — so the tree is where it belongs, and one row at the top of a group
+        /// costs a great deal less than a picker the user has to find inside the canvas.
+        case channelList(connection: UUID)
     }
 
     /// Whether the canvas is what the detail area is showing.
@@ -541,37 +542,27 @@ public final class AppModel {
         selection = .dashboard
     }
 
-    /// Which network the channel-list canvas is showing. `nil` follows the selection.
+    /// Opens a network's channel list, or focuses its window when it has been ejected.
     ///
-    /// Set by `/list` and by the canvas's own picker, and it outlives the selection moving
-    /// on: the point of the canvas is to be somewhere you can sit and read.
-    public var channelListNetwork: UUID?
-
-    /// Opens the channel list, or focuses its window when it has been ejected.
-    ///
-    /// **The network is captured before the selection moves, and that is not incidental.**
-    /// `activeConnection` reads the selection, and the selection is about to become a canvas
-    /// — which has no network. Deciding afterwards gets `nil` every time, which is a list
-    /// that opens saying "connect to a network" from a connected client. Found live.
+    /// **The network is decided before the selection moves.** `activeConnection` reads the
+    /// selection, so asking it afterwards asks about the row we are on our way to — which is
+    /// how this shipped opening a list that said "connect to a network" from a connected
+    /// client. The row now carries its own network, which removes the question rather than
+    /// answering it more carefully.
     public func showChannelList(on connection: ConnectionViewModel? = nil) {
-        channelListNetwork =
-            connection?.id ?? channelListNetwork ?? activeConnection?.id ?? connections.first?.id
-        if isDetached(.channelList) {
-            windowToFocus = .channelList
+        guard let id = (connection ?? activeConnection ?? connections.first)?.id else { return }
+        let item = SidebarItem.channelList(connection: id)
+        if isDetached(item) {
+            windowToFocus = item
             return
         }
-        selection = .channelList
+        selection = item
     }
 
-    /// The connection the channel-list canvas is about.
-    ///
-    /// The remembered network, then whatever the tree has selected, then any connection at
-    /// all — the last because a canvas opened by a route that never set one should still
-    /// show the network you have, rather than nothing.
-    public var channelListConnection: ConnectionViewModel? {
-        channelListNetwork.flatMap { id in connections.first { $0.id == id } }
-            ?? activeConnection
-            ?? connections.first
+    /// The connection a channel-list row is about.
+    public func channelListConnection(of item: SidebarItem) -> ConnectionViewModel? {
+        guard case .channelList(let id) = item else { return nil }
+        return connection(id: id)
     }
 
     /// Joins channels picked out of the channel list, and lands in the last one.
@@ -713,13 +704,19 @@ public final class AppModel {
     ///
     /// Everything that used to reach for "the connection" now asks this, because with two
     /// networks open the question "which one" has an answer only the selection knows. The
-    /// canvas has no network, and neither does an empty selection.
+    /// app-wide canvases have no network, and neither does an empty selection.
+    ///
+    /// **A channel-list row does**, unlike the other two canvases: it sits under a network in
+    /// the tree and is about that network. It still has no ``selectedTarget`` — there is
+    /// nothing to type into it — so this answers "which network am I looking at", not
+    /// "where would a line go".
     public var activeConnection: ConnectionViewModel? {
         switch selection {
         case .status(let id): connection(id: id)
         case .channel(let id, _): connection(id: id)
         case .query(let id, _): connection(id: id)
-        case .settingsAndDebug, .dashboard, .channelList, nil: nil
+        case .channelList(let id): connection(id: id)
+        case .settingsAndDebug, .dashboard, nil: nil
         }
     }
 

@@ -5,16 +5,16 @@ import SwiftUI
 /// were looking for.
 ///
 /// **A canvas, not a buffer** (§10) — no header band, no input box, no activity state — and
-/// **one canvas rather than one per network**, with the network as a picker in its own
-/// header. A channel list is consulted rather than kept, and a permanent tree row per
-/// network for something opened twice a month is the wrong trade against §12's tree.
+/// **one per network**, reached from the row at the top of that network's group in the tree.
+/// A channel list is a property of a network the same way its channels are, so the network
+/// is the row you clicked rather than a picker to find inside the canvas.
 ///
-/// The whole surface is built around one number: Libera answers `LIST` with about
-/// twenty-two thousand channels. Rows arrive coalesced (``ChannelDirectory``), the filter is
-/// recomputed once per arrival rather than once per row, and the search is plain substring
-/// matching over a corpus folded on the way in.
+/// Rows arrive coalesced (``ChannelDirectory``), the filter is recomputed once per arrival
+/// rather than once per row, and the search is plain substring matching over a corpus folded
+/// on the way in — because the list can be thousands of channels arriving in a few seconds.
 struct ChannelListCanvas: View {
     let model: AppModel
+    let connection: ConnectionViewModel
 
     @State private var query = ChannelListQuery()
     /// What the user has typed, before the debounce hands it to ``query``.
@@ -29,8 +29,7 @@ struct ChannelListCanvas: View {
     @State private var rows: [ChannelListing] = []
     @State private var isConfirmingBulkJoin = false
 
-    private var connection: ConnectionViewModel? { model.channelListConnection }
-    private var directory: ChannelDirectory? { connection?.channelDirectory }
+    private var directory: ChannelDirectory { connection.channelDirectory }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -42,7 +41,7 @@ struct ChannelListCanvas: View {
             Divider()
             footer
         }
-        .onChange(of: directory?.listings ?? [], initial: true) { _, _ in recompute() }
+        .onChange(of: directory.listings, initial: true) { _, _ in recompute() }
         .onChange(of: query) { _, _ in recompute() }
         .onChange(of: sortOrder) { _, _ in recompute() }
         // **The debounce.** A keystroke must not cost a pass over the whole list; a pause
@@ -57,43 +56,28 @@ struct ChannelListCanvas: View {
 
     // MARK: - Header
 
+    /// The network is named here as well as in the tree, because the canvas detaches into a
+    /// window of its own — where the tree is not there to say which one this is.
     private var header: some View {
         HStack(spacing: 12) {
-            if model.connections.count > 1 {
-                Picker("Network", selection: networkBinding) {
-                    ForEach(model.connections) { connection in
-                        Text(connection.networkName).tag(connection.id as UUID?)
-                    }
-                }
-                .pickerStyle(.menu)
-                .fixedSize()
-            } else if let connection {
-                Text(connection.networkName).font(.headline)
-            }
+            Text(connection.networkName).font(.headline)
 
             Spacer()
 
-            if directory?.isCollecting == true {
+            if directory.isCollecting {
                 ProgressView().controlSize(.small)
                 // Honest about what the button does: `LIST` has no cancel in the protocol,
                 // and the rest of the reply is coming whatever is clicked here.
-                Button("Stop Collecting") { directory?.stopCollecting() }
+                Button("Stop Collecting") { directory.stopCollecting() }
                     .help("Stops filling this list. The server sends the rest regardless.")
             } else {
-                Button(directory?.listings.isEmpty == false ? "Refresh" : "Get List") {
+                Button(directory.listings.isEmpty ? "Get List" : "Refresh") {
                     Task { await requestList() }
                 }
-                .disabled(connection?.isConnected != true)
+                .disabled(!connection.isConnected)
             }
         }
         .padding(10)
-    }
-
-    private var networkBinding: Binding<UUID?> {
-        Binding(
-            get: { model.channelListConnection?.id },
-            set: { model.channelListNetwork = $0 }
-        )
     }
 
     // MARK: - Filters
@@ -188,16 +172,13 @@ struct ChannelListCanvas: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        if connection == nil {
-            Text("Connect to a network to browse its channels.")
-                .foregroundStyle(.secondary)
-        } else if directory?.isCollecting == true {
+        if directory.isCollecting {
             ProgressView("Asking the server…")
-        } else if directory?.listings.isEmpty != false {
+        } else if directory.listings.isEmpty {
             VStack(spacing: 10) {
                 Text("No channel list yet.").foregroundStyle(.secondary)
                 Button("Get List") { Task { await requestList() } }
-                    .disabled(connection?.isConnected != true)
+                    .disabled(!connection.isConnected)
             }
         } else {
             Text("No channel matches these filters.").foregroundStyle(.secondary)
@@ -210,7 +191,7 @@ struct ChannelListCanvas: View {
         HStack {
             Text(summary).font(.caption).foregroundStyle(.secondary)
             Spacer()
-            if connection?.isConnected == false {
+            if !connection.isConnected {
                 Label("Not connected — joining is unavailable", systemImage: "bolt.slash")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -221,10 +202,10 @@ struct ChannelListCanvas: View {
     }
 
     private var summary: String {
-        let total = directory?.listings.count ?? 0
+        let total = directory.listings.count
         guard total > 0 else { return "" }
         let shown = rows.count
-        let suffix = directory?.isCollecting == true ? ", still arriving" : ""
+        let suffix = directory.isCollecting ? ", still arriving" : ""
         return shown == total
             ? "\(total.formatted()) channels\(suffix)"
             : "\(shown.formatted()) of \(total.formatted()) channels\(suffix)"
@@ -233,12 +214,10 @@ struct ChannelListCanvas: View {
     // MARK: - Actions
 
     private func recompute() {
-        let listings = directory?.listings ?? []
-        rows = query.apply(to: listings).sorted(using: sortOrder)
+        rows = query.apply(to: directory.listings).sorted(using: sortOrder)
     }
 
     private func requestList() async {
-        guard let connection else { return }
         await model.submit("/list", from: nil, on: connection)
     }
 
@@ -255,7 +234,6 @@ struct ChannelListCanvas: View {
     }
 
     private func performJoin(_ names: Set<IRCChannelName>) {
-        guard let connection else { return }
         Task { await model.join(channels: Array(names), on: connection) }
     }
 }

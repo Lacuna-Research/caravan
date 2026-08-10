@@ -201,10 +201,11 @@ struct ChannelListBehaviourTests {
     }
 
     /// **Found in the live run, and invisible to every other kind of test.** Opening the
-    /// canvas makes the selection a canvas, and `activeConnection` reads the selection — so
-    /// a network decided *after* the move is always `nil`, and a connected client opened a
-    /// list that said "connect to a network" with Get List greyed out.
-    @Test("opening the canvas keeps the network the tree was on")
+    /// canvas made the selection a canvas, and `activeConnection` reads the selection — so a
+    /// network decided *after* the move was always `nil`, and a connected client opened a
+    /// list that said "connect to a network" with Get List greyed out. The row now carries
+    /// its network, which is what makes the question unaskable rather than merely answered.
+    @Test("the row carries its network, and the canvas resolves it")
     func openingKeepsItsNetwork() async throws {
         let server = try ScriptedIRCServer()
         let port = try await server.start()
@@ -223,10 +224,31 @@ struct ChannelListBehaviourTests {
         )
         #expect(await waitUntil { connection?.isConnected == true })
 
+        let connectionID = try #require(connection?.id)
         model.showChannelList()
-        #expect(model.selection == .channelList)
-        #expect(model.activeConnection == nil, "a canvas has no network of its own")
-        #expect(model.channelListConnection === connection, "but the list remembers one")
+        #expect(model.selection == .channelList(connection: connectionID))
+        // It is a canvas with a network, which the other two are not — so it answers
+        // "which network am I looking at" while still having nowhere to type.
+        #expect(model.activeConnection === connection)
+        #expect(model.selectedTarget == nil)
+        let resolved = try #require(model.selection.map { model.channelListConnection(of: $0) })
+        #expect(resolved === connection)
+    }
+
+    /// Two networks are two lists, and selecting one must not answer for the other.
+    @Test("each network's row resolves to its own list")
+    func rowsArePerNetwork() async throws {
+        let model = temporaryModel()
+        let first = UUID()
+        let second = UUID()
+        #expect(
+            AppModel.SidebarItem.channelList(connection: first)
+                != AppModel.SidebarItem.channelList(connection: second)
+        )
+        // Nothing is connected, so neither resolves — the point is that they are asked
+        // separately rather than through one shared "which network is the list showing".
+        #expect(model.channelListConnection(of: .channelList(connection: first)) == nil)
+        #expect(model.channelListConnection(of: .settingsAndDebug) == nil)
     }
 
     /// **The bug this prompt starts from.** Before 322 was typed, every row of a `LIST`
