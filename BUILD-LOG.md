@@ -5302,3 +5302,14 @@ fires the moment the queue passes the burst. The count is gone.
 That a paste *typed by a person* is paced: synthetic keystrokes still do not land in the chat
 input (prompt 12's limitation, now three prompts old). The outbound burst was produced by a
 `perform` list instead, which reaches `submit` by the same path a typed line does.
+
+**Two things CI caught that a local `swift build` cannot.** The guard above read
+`guard connection != nil` — but `beginRegistration` opens with `guard let connection`, which
+shadows the property with a non-optional local, so it asked whether a value already in hand
+was nil. It compiled, it did nothing, and only `-Xswiftc -warnings-as-errors` said so. `self.`
+is load-bearing there. **Run the CI build, not the convenient one**, when a change is inside a
+function with a shadowing `guard let`.
+
+Also fixed in passing: `CapabilityBehaviourTests.withoutTheTag` asserted that a freshly
+stamped line was *not* `:51`, which fails once a minute — during the fifty-first second. It
+now asserts the stamp is the current second, plus a second either side.

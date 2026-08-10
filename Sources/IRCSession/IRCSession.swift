@@ -464,7 +464,11 @@ public actor IRCSession {
         // awaits, tears the attempt down and sets `.disconnected`. Announcing `.registering`
         // afterwards leaves the UI saying "Registering…" against a socket that is gone, with
         // nothing left to move it. Found live, pointed at a server that refuses.
-        guard connection != nil else { return }
+        // `self.` is load-bearing: the `guard let connection` at the top of this function
+        // shadows the property with a non-optional local, so testing *that* asks whether a
+        // value we already have is nil. Caught by warnings-as-errors in CI, which is a
+        // stricter build than a bare `swift build`.
+        guard self.connection != nil else { return }
         setState(.registering)
         startIdleMonitor()
     }

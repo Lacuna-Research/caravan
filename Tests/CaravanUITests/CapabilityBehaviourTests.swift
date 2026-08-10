@@ -147,13 +147,22 @@ struct CapabilityBehaviourTests {
         await harness.shutDown()
     }
 
+    /// **Asserts the stamp is now, rather than that it is not `:51`.** The old form failed
+    /// once a minute — whenever the suite happened to run during the fifty-first second —
+    /// which is a flake that looks like a real failure and was hit during prompt 16.
     @Test("a line without the tag is stamped with now")
     func withoutTheTag() async throws {
         let harness = try await harness(offering: ["server-time"])
         let buffer = try await joinChannel(harness)
+
+        let before = Calendar.current.component(.second, from: Date())
         await harness.server.send(":bob!u@h PRIVMSG #swift :right now")
         #expect(await waitUntil { harness.text(of: buffer.log).contains("right now") })
-        #expect(!harness.text(of: buffer.log).contains(":51] <bob> right now"))
+
+        // A second either side, because the line is rendered a moment after it is sent.
+        let plausible = (0...2).map { String(format: ":%02d]", (before + $0) % 60) }
+        let text = harness.text(of: buffer.log)
+        #expect(plausible.contains { text.contains("\($0) <bob> right now") })
         await harness.shutDown()
     }
 
