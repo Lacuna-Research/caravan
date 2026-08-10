@@ -72,8 +72,9 @@ public struct NavigationCommands: Commands {
             .keyboardShortcut("o", modifiers: [.command, .control])
             .disabled(model.selection == nil)
 
-            // Also a toolbar item, and therefore droppable from the toolbar — so it lives
-            // here as well. A detached channel window has no toolbar item for it at all.
+            // **The only way to the nick list now**, since the toolbar it used to share
+            // this with is gone. It was always the more reliable of the two: a detached
+            // channel window never had the toolbar item at all.
             Button(
                 model.settings.isNickListVisible ? "Hide Nick List" : "Show Nick List"
             ) {

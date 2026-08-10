@@ -46,46 +46,12 @@ public struct RootView: View {
             \.chatFont,
             model.settings.chatFont
         )
-        // **An identified toolbar, so macOS gives customization for free** (§8): a
-        // drag-and-drop palette sheet, with the layout persisted by the system. mIRC's
-        // toolbar editor becomes mostly not-work-we-do.
-        //
-        // Everything here is also in the menu bar, which is §8's other half and is
-        // load-bearing precisely *because* this is customizable: prompt 4's live run found
-        // that hiding Connect left multi-network unreachable, and a user who drags it out
-        // of the toolbar must not be able to reproduce that.
-        // **An identified toolbar, so macOS gives customization for free** (§8): a
-        // drag-and-drop palette sheet, with the layout persisted by the system. mIRC's
-        // toolbar editor becomes mostly not-work-we-do.
-        //
-        // Placed `.secondaryAction`, which is the customizable body of the toolbar;
-        // `.primaryAction` pins an item to the trailing edge and takes it out of the
-        // palette entirely, which is the whole feature §8 asks for.
-        //
-        // **Exactly §8's minimal set, and no more.** `defaultCustomization(.hidden)` is
-        // the API for shipping an item available-but-not-shown, and the live run found
-        // macOS 26.5 ignores it — every item declared here appears whatever it says. So
-        // the set is kept minimal by *declaring* it minimal, and everything else lives in
-        // the menu bar, which is §8's other half and never customizable away.
-        //
-        // Connect is here although §8's list does not name it: §8 was written when there
-        // could be one connection and "connect" meant "connect *this*"; it now means "open
-        // another network", and prompt 4 already found once that hiding it makes
-        // multi-network unreachable.
-        .toolbar(id: "main") {
-            ToolbarItem(id: "connection", placement: .secondaryAction) {
-                ConnectionIndicator(model: model)
-            }
-            ToolbarItem(id: "nicklist", placement: .secondaryAction) {
-                nickListToggle
-            }
-            ToolbarItem(id: "connect", placement: .secondaryAction) {
-                Button("Servers\u{2026}", systemImage: "plus") {
-                    model.showDashboard()
-                }
-                .help("Your servers, and where to connect")
-            }
-        }
+        // **No toolbar at all** (§8, revised). Its three items were each overtaken by
+        // something already on screen: the connection state duplicated the window
+        // subtitle *and* the dot on every network row, the `+` duplicated the Dashboard
+        // row pinned at the top of the tree, and the nick-list toggle wore
+        // `sidebar.right` inches from the real sidebar toggle. Every one of them is a
+        // menu item with a keyboard shortcut, which is where they now live alone.
         // The TLS handshake is genuinely paused behind this one, so it takes precedence
         // over whatever else is on screen.
         .sheet(item: $model.pendingTrust) { request in
@@ -174,20 +140,6 @@ public struct RootView: View {
         return model.selectedTarget == nil ? connection.statusSummary : connection.displayName
     }
 
-    /// The nick list's toggle, moved out of the channel header band and into the toolbar
-    /// where §8's minimal set puts it.
-    private var nickListToggle: some View {
-        Button {
-            model.settings.isNickListVisible.toggle()
-        } label: {
-            Label(
-                "Nick List",
-                systemImage: model.settings.isNickListVisible ? "sidebar.right" : "sidebar.trailing"
-            )
-        }
-        .disabled(model.selectedChannel == nil)
-        .help(model.settings.isNickListVisible ? "Hide the nick list" : "Show the nick list")
-    }
 }
 
 /// The chat area for a buffer that is in a window of its own.
@@ -207,41 +159,6 @@ private struct DetachedElsewhere: View {
         } actions: {
             Button("Bring to Front") { model.windowToFocus = item }
             Button("Bring Back Into Main Window") { model.reattach(item) }
-        }
-    }
-}
-
-/// The connection state, as a toolbar item (§8's minimal set).
-private struct ConnectionIndicator: View {
-    let model: AppModel
-
-    var body: some View {
-        HStack(spacing: 6) {
-            // **A drawn circle rather than `circle.fill`.** The SF Symbol is laid out on
-            // the text baseline at the full body size, so in a toolbar item — which macOS
-            // gives a rounded background of its own — it sat hard against the left corner
-            // and read as spilling out of it. A 7pt circle is the same dot the tree and the
-            // server list draw, and it can be inset from the corner deliberately.
-            Circle()
-                .fill(colour)
-                .frame(width: 7, height: 7)
-            Text(summary)
-        }
-        .padding(.leading, 3)
-        .help(summary)
-    }
-
-    private var summary: String {
-        model.activeConnection?.statusSummary ?? "Not connected"
-    }
-
-    /// Three states, not two: connecting is worth distinguishing from connected, because
-    /// it is the one where waiting is the right thing to do.
-    private var colour: Color {
-        switch model.activeConnection?.state {
-        case .connected: .green
-        case .connecting, .registering, .reconnecting: .orange
-        case .disconnected, nil: .secondary
         }
     }
 }

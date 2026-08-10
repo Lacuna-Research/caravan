@@ -120,15 +120,30 @@ rewrite.
 **Enter sends, Shift+Enter inserts a newline. The box stops growing at six lines and
 scrolls beyond that.** Offered as defaults and unchallenged.
 
-## 8. Toolbar — settled
-**Menu bar always. Icon toolbar optional.**
+## 8. Toolbar — settled: there is no toolbar
+*Revised 2026-08-10. The original said: "menu bar always, icon toolbar optional ... visible
+on first launch with a minimal set — connection state, sidebar toggle, nick-list toggle",
+built on `NSToolbar` so macOS gives customization for free.*
 
-**Provisional — use `NSToolbar` rather than a hand-rolled SwiftUI bar.** macOS gives
-toolbar customization for free: a drag-and-drop palette sheet, with layout persisted
-by the system. mIRC's toolbar editor then becomes mostly not-work-we-do.
+**The menu bar half stands and is now the whole of it.** The three items shipped, and the
+app then grew past every one of them:
 
-**Visible on first launch** with a minimal set — connection state, sidebar toggle,
-nick-list toggle. Offered as a default and unchallenged.
+- **Connection state** duplicated the window subtitle immediately below it, and the state
+  dot on every network row in the tree (§12) — which is also the only one of the three that
+  can answer "which network" when more than one is open.
+- **Servers / `+`** — added later than this note, because §8 was written when there could be
+  one connection — duplicated the Dashboard row pinned at the top of the tree (§13).
+- **The nick-list toggle** wore `sidebar.right` a few inches from the real sidebar toggle,
+  and read as a second one. It never existed in a detached window, so ⌃⌘L was already the
+  route that always worked.
+
+So the toolbar is gone, and the window keeps its title, its subtitle and the system's own
+sidebar control. **The customization argument was the strongest part of the original note
+and it is what makes losing nothing easy**: everything a toolbar item can do had to be a
+menu item anyway, precisely because the user could drag the button away.
+
+A detached buffer window keeps its one toolbar item, **Reattach** — that window has no tree
+to close it from, so the button is the affordance rather than a duplicate of one.
 
 ## 9. Navigation at scale — settled
 The requirement, in the user's words: not having to Ctrl-Tab ten times to reach the
