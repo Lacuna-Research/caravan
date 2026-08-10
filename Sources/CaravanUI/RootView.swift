@@ -18,15 +18,21 @@ public struct RootView: View {
             SidebarTree(model: model)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 400)
         } detail: {
-            detail
-                .navigationTitle(title)
-                .navigationSubtitle(subtitle)
-                // Above the chat area rather than in a sheet or an alert: being told a
-                // newer build exists is news, not a question, and it must not stop somebody
-                // finishing the sentence they were typing.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    UpgradeBanner(watcher: model.buildWatcher)
-                }
+            // **A `VStack`, not `safeAreaInset`.** The banner has to *move* the content, not
+            // float over it: as a safe-area inset it drew across the top of whatever was
+            // below — the Dashboard's first rows were simply hidden behind it. Stacked, it
+            // takes real layout space, and takes none at all when there is nothing to say,
+            // because `UpgradeBanner` resolves to nothing when the notice is not showing.
+            //
+            // Above the chat area rather than in a sheet or an alert: being told a newer
+            // build exists is news, not a question, and it must not stop somebody finishing
+            // the sentence they were typing.
+            VStack(spacing: 0) {
+                UpgradeBanner(watcher: model.buildWatcher)
+                detail
+            }
+            .navigationTitle(title)
+            .navigationSubtitle(subtitle)
         }
         // **Asked on activation as well as on the timer.** Somebody who has just run
         // `make install` in a terminal switches straight back to the app, which is exactly
@@ -210,10 +216,19 @@ private struct ConnectionIndicator: View {
     let model: AppModel
 
     var body: some View {
-        Label(summary, systemImage: "circle.fill")
-            .labelStyle(.titleAndIcon)
-            .foregroundStyle(colour)
-            .help(summary)
+        HStack(spacing: 6) {
+            // **A drawn circle rather than `circle.fill`.** The SF Symbol is laid out on
+            // the text baseline at the full body size, so in a toolbar item — which macOS
+            // gives a rounded background of its own — it sat hard against the left corner
+            // and read as spilling out of it. A 7pt circle is the same dot the tree and the
+            // server list draw, and it can be inset from the corner deliberately.
+            Circle()
+                .fill(colour)
+                .frame(width: 7, height: 7)
+            Text(summary)
+        }
+        .padding(.leading, 3)
+        .help(summary)
     }
 
     private var summary: String {
