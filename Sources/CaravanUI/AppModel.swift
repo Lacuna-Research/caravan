@@ -492,6 +492,9 @@ public final class AppModel {
     public var selection: SidebarItem? {
         didSet {
             guard selection != oldValue else { return }
+            TimingLog.note(
+                "selection changed to \(selection.map(String.init(describing:)) ?? "none")"
+            )
             markUnread(leaving: oldValue)
             if let selection {
                 buffer(for: selection)?.activity = .none
