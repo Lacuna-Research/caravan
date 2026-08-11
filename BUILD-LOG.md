@@ -5873,3 +5873,15 @@ four questions without owning a filesystem.
 drives accessibility rather than posting a mouse event, so a scripted click produces no
 `NSEvent` for a local monitor to see. Said at the function, so nobody spends an afternoon
 concluding the monitor is broken.
+
+**And the test suite's `waitUntil` ceiling went from five seconds to twenty.** CI failed
+three times in one afternoon with a dozen unrelated suites all giving up on
+`waitUntil { connection.isConnected }` — twice on changes that touched no Swift at all, once
+on a documentation-only PR. Every one passed on a re-run. That is a loaded runner running
+tests in parallel, each with its own loopback server and registration handshake, not a bug
+in any of the code being changed.
+
+The ceiling is not a delay: a passing test returns the moment its condition holds. What a
+longer one costs is slower *failures*, which is much the cheaper mistake — and re-running CI
+to see whether it meant it is the expensive one, since it teaches everyone to ignore a red
+build.
