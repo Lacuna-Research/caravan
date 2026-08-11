@@ -3,12 +3,20 @@
 /// Work lands through dispatch queues and detached tasks, so tests wait on observable
 /// outcomes rather than on a fixed sleep. Polling keeps a passing test fast — the
 /// timeout only matters when something is already broken.
+///
+/// **Twenty seconds, raised from five, because the ceiling is not a delay.** CI failed three
+/// times in one afternoon with a dozen unrelated suites all giving up on
+/// `waitUntil { connection.isConnected }`, on changes that touched no Swift at all — a
+/// loaded runner, running tests in parallel, each with its own loopback server and
+/// registration handshake. Every one passed on a re-run. A passing test returns the moment
+/// its condition holds and pays none of this; what a longer ceiling costs is slower
+/// *failures*, which is the cheaper of the two mistakes by a wide margin.
 /// Runs in the caller's isolation — `#isolation` rather than a `@Sendable` closure — so a
 /// `@MainActor` test can poll main-actor state without the condition having to cross an
 /// isolation boundary to get here.
 public func waitUntil(
     isolation: isolated (any Actor)? = #isolation,
-    timeout: Duration = .seconds(5),
+    timeout: Duration = .seconds(20),
     _ condition: () async -> Bool
 ) async -> Bool {
     let deadline = ContinuousClock.now + timeout
