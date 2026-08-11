@@ -5780,3 +5780,35 @@ scrollback and has been fine for four stages; the input, built two prompts later
 neither. The same two lines, missing in one of two nearly identical views, and no test could
 see it because both views report perfectly sensible sizes to everything except the
 typesetter.
+
+---
+
+## Decision — an app icon, drawn by a script
+
+**Date:** 2026-08-10  **Affects:** `Scripts/render-icon.py`, `App/Assets.xcassets`,
+`Caravan.xcodeproj`
+
+Asked for a generic globe, on the darker side. The app had no icon at all until now — the
+bundle carried no asset catalog, so it wore the system default.
+
+**Not an SF Symbol.** Apple's SF Symbols licence forbids using them in app icons, which
+rules out the obvious `globe`. The one here is drawn from a circle, two ellipses and three
+straight lines, which is also a more generic idea of "globe" than any particular coastline.
+
+**Generated rather than committed as art**, for the same reason the README's ASCII art is: a
+PNG in a repository is a thing nobody can review or adjust, and every future change to it is
+a binary diff nobody can read. `Scripts/render-icon.py` is the drawing; the PNGs are output.
+No mechanical check ties them together, deliberately — the README art check can compare text
+across machines, and comparing PNG bytes would fail the moment CI's Pillow differed from a
+developer's by a rounding decision. The script is the source and says so.
+
+**One size needed its own drawing.** Downsampling the 1024pt master gave a 16pt icon — which
+is what Finder's list view and every menu use — that was a green smudge: seven curves cannot
+survive sixteen pixels. Below 40 pixels it now draws the outline, one meridian and one
+parallel, with a heavier stroke and slightly more of the plate. That is a globe at that size;
+the full wireframe returns when there is room. Checked by rendering 16, 32 and 128 side by
+side at actual size and at 4×, which is the only way to see it.
+
+The plate is Apple's macOS grid — an 824pt square inside 1024, corner radius 185 — because
+macOS applies no mask of its own. The green is the one the client already uses for a live
+connection.
