@@ -67,6 +67,60 @@ struct StatusWindowTests {
         return harness
     }
 
+    // MARK: - Where a numeric lands
+
+    /// **The one that made a refused message look like nothing happening.** Speaking in a
+    /// `+m` or `+r` channel is answered with 404, and 404 used to go to the status window —
+    /// so the channel showed no echo and no error, and the message was simply gone. Proved
+    /// against Libera with a moderated channel before it was fixed here.
+    @Test("an error naming an open channel lands in that channel")
+    func channelErrorReachesItsChannel() async throws {
+        let harness = try await harness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        #expect(await waitUntil { harness.connection.channels.count == 1 })
+        let buffer = try #require(harness.connection.channels.first)
+
+        await harness.server.send(
+            ":irc.example.org 404 alice #swift :Cannot send to nick/channel"
+        )
+        #expect(await waitUntil { harness.text(of: buffer.log).contains("Cannot send") })
+        #expect(!harness.text(of: harness.connection.log).contains("Cannot send"))
+
+        await harness.shutDown()
+    }
+
+    /// A numeric about a channel we are *not* in has nowhere better to go.
+    @Test("an error naming an unopened channel still lands in the status window")
+    func unknownChannelStaysInStatus() async throws {
+        let harness = try await harness()
+
+        await harness.server.send(
+            ":irc.example.org 404 alice #elsewhere :Cannot send to nick/channel"
+        )
+        #expect(
+            await waitUntil { harness.text(of: harness.connection.log).contains("Cannot send") }
+        )
+
+        await harness.shutDown()
+    }
+
+    /// **Prose is not an argument.** Numerics routinely mention a channel in their trailing
+    /// text, and routing on that would put a line in a window because of a sentence.
+    @Test("a channel named only in the trailing text does not steal the line")
+    func trailingTextIsNotRouting() async throws {
+        let harness = try await harness()
+        await harness.server.send(":alice!u@h JOIN #swift")
+        #expect(await waitUntil { harness.connection.channels.count == 1 })
+        let buffer = try #require(harness.connection.channels.first)
+
+        // The channel appears only as the human-readable tail.
+        await harness.server.send(":irc.example.org 461 alice :You are not on #swift")
+        #expect(await waitUntil { harness.text(of: harness.connection.log).contains("not on") })
+        #expect(!harness.text(of: buffer.log).contains("not on"))
+
+        await harness.shutDown()
+    }
+
     // MARK: - Local echo
 
     /// Without `echo-message` the server does not send our own messages back, so a client

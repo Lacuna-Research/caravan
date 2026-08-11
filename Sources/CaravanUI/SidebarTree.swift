@@ -172,6 +172,15 @@ private struct NetworkGroup: View {
                 )
                 .tag(item)
                 .contextMenu {
+                    // **A query row has always had this and a channel row never did**,
+                    // which made closing a channel the one buffer operation you could not
+                    // reach from the buffer. ⌘W and the Network menu did it; the row you
+                    // were right-clicking did not. Named "Close" rather than "Part"
+                    // because §16 is that membership never outlives its buffer — closing
+                    // *is* parting, and saying so twice invites the question of which.
+                    Button("Close Channel") {
+                        Task { await connection.closeChannel(buffer.name) }
+                    }
                     DetachMenuItem(model: model, item: item)
                     Divider()
                     BindToMenu(model: model, item: item)

@@ -5685,3 +5685,48 @@ what a document window looks like on this OS.
 failed. Three separate prompts each added a correct item to a toolbar, and the tree grew
 past all three one row at a time — so the toolbar decayed by accretion elsewhere. That is
 the kind of rot only somebody looking at the window finds.
+
+---
+
+## Two defects found by somebody using the client
+
+**Date:** 2026-08-10  **Affects:** `ConnectionViewModel.destinations(for:)`, `SidebarTree`
+
+### A refused message looked like nothing happening
+
+Reported as "do I need some sort of permission to send?", which is precisely the question
+the failure provokes. Speaking in a `+m` or `+r` channel is refused by the server with 404,
+and **every numeric went to the status window** — so the channel showed no echo, no error,
+and the message simply vanished. Two windows away, in a buffer the user had no reason to be
+looking at, sat `##caravan-perm Cannot send to nick/channel`.
+
+Reproduced against Libera rather than argued about: a scripted client held a channel of its
+own, joined first so it was opped, and set `+m`; the app then joined and sent one line
+through the ordinary `submit` path. The channel showed the join and nothing else. That
+screenshot is the bug.
+
+**A numeric that names an open channel now lands in that channel.** The rule skips the first
+parameter (always our own nick) and the last (the human-readable text): everything between
+them is the numeric's actual arguments, which is where a channel name *is* a channel name.
+Routing on the trailing text would put a line in a window because of a sentence — "You are
+not on #swift" would jump into `#swift` — so there is a test for that case specifically.
+
+### A channel could not be closed from its own row
+
+Query rows have carried "Close Conversation" in their context menu since prompt 5; channel
+rows never had an equivalent. Closing a channel was ⌘W or the Network menu — everywhere
+except the row you were right-clicking. Now "Close Channel", named for what it does rather
+than for `PART`, because §16's rule is that membership never outlives its buffer: closing
+*is* parting, and offering both words invites the question of which one you meant.
+
+**Not verified by automation:** the context menu itself. `System Events` cannot right-click
+and `AXShowMenu` returns `missing value` on these rows — the limitation prompt 9 recorded.
+The item is a one-line mirror of the query row's, which does work.
+
+### Worth keeping
+
+Both of these are *older* than any of today's work — the numeric routing has behaved this
+way since prompt 5, and the missing menu item since the tree was built. Neither is visible
+in a test suite that asserts what a function returns, and neither showed up in a hundred
+prompts of acceptance runs, because every acceptance run was driven by somebody who knew
+where the status window was. The first hour of somebody actually *using* it found both.
