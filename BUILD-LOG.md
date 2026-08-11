@@ -5730,3 +5730,53 @@ way since prompt 5, and the missing menu item since the tree was built. Neither 
 in a test suite that asserts what a function returns, and neither showed up in a hundred
 prompts of acceptance runs, because every acceptance run was driven by somebody who knew
 where the status window was. The first hour of somebody actually *using* it found both.
+
+---
+
+## Defect — the input box wrapped after about one word
+
+**Date:** 2026-08-10  **Affects:** `InputField`
+
+Reported as "the input window at the bottom line wraps automatically when typing in it".
+Measured: the field was **1676 points wide** and wrapped after `the`. Everything past the
+first word wrapped below a one-line clip, out of sight — so text went in and appeared to
+vanish, which is almost certainly what the earlier "I can't type anything in" report was.
+
+### The numbers, because guessing cost two attempts
+
+Instrumented and read off a running client:
+
+```
+content=1676.0  frame=1676.0  container=49.0  tracks=true
+```
+
+The clip view and the text view were the right width; the **text container** was 49. Two
+independent faults produced that, and the first fix only addressed one:
+
+1. `autoresizingMask` resizes a document view when its clip view *changes* size. A view
+   installed into a clip view that is already correct is never resized, so it kept the
+   nothing-sized frame it was born with. Fixed by stating the width in `updateNSView`, which
+   is the one place that knows it.
+2. **`sizeThatFits` moved the container to measure and left it moved.** SwiftUI probes with
+   several proposals, some very narrow, and the last one stayed. Measuring is now bracketed
+   by a `defer` that puts it back.
+
+### What the test caught that the app did not
+
+The first version of the restore assigned `containerSize` directly. A test measuring the
+same text at 900 points and at 200 got *the same height*, which is how it came out that with
+`widthTracksTextView` the container is **derived** from the text view's width on every
+layout — so assigning it is quietly discarded. Measurement now moves the frame and restores
+it, which is the thing the view actually respects.
+
+That is the argument for extracting `InputField.size(of:fittingWidth:maximumLines:)` out of
+the representable: the defect is a *side effect* of measuring, so the assertion has to be
+about the text view afterwards, and a `Context` cannot be built in a test.
+
+### Worth keeping
+
+`MessageLogView.makeTextView` sets `minSize`/`maxSize` and an explicit frame on the
+scrollback and has been fine for four stages; the input, built two prompts later, set
+neither. The same two lines, missing in one of two nearly identical views, and no test could
+see it because both views report perfectly sensible sizes to everything except the
+typesetter.
