@@ -65,6 +65,30 @@ struct InputField: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.field = self
         guard let textView = scrollView.documentView as? InputTextView else { return }
+        // **The width has to be handed over, not inherited.** `autoresizingMask` only
+        // resizes a view when its superview's size *changes*; a document view installed into
+        // a clip view that is already the right size is never resized at all, and keeps the
+        // nothing-sized frame it was born with. The container tracks that width, so the text
+        // wraps at it. Setting it here catches both the first layout and every later resize.
+        // **The width is stated here, every update, rather than inherited.** Two things
+        // otherwise leave it wrong: `autoresizingMask` only resizes a document view when its
+        // clip view *changes* size, so a view installed into a clip view that is already
+        // correct keeps the nothing-sized frame it was born with; and `sizeThatFits` has to
+        // move the container to measure. This is the one place that knows the real width, so
+        // it is the one place that sets it.
+        let width = scrollView.contentSize.width
+        if width > 0 {
+            if textView.frame.width != width {
+                textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+            }
+            let usable = max(width - textView.textContainerInset.width * 2, 1)
+            if textView.textContainer?.containerSize.width != usable {
+                textView.textContainer?.containerSize = NSSize(
+                    width: usable,
+                    height: .greatestFiniteMagnitude
+                )
+            }
+        }
         // Only when it actually differs: assigning `string` resets the selection, so an
         // unconditional write would drag the caret to the front on every keystroke.
         if textView.string != text {
@@ -83,20 +107,48 @@ struct InputField: NSViewRepresentable {
         nsView: NSScrollView,
         context: Context
     ) -> CGSize? {
-        guard let textView = nsView.documentView as? NSTextView,
-            let container = textView.textContainer,
+        guard let textView = nsView.documentView as? NSTextView else { return nil }
+        let width = proposal.width ?? nsView.bounds.width
+        return Self.size(of: textView, fittingWidth: width, maximumLines: maximumLines)
+    }
+
+    /// The height `text` needs at `width`, clamped to `maximumLines`.
+    ///
+    /// Free of the representable so a test can call it: the bug it exists to prevent is a
+    /// *side effect* of measuring, which needs an assertion about the text view afterwards
+    /// rather than about the number returned.
+    ///
+    /// **Measuring must not leave the container resized, and this is why.** SwiftUI probes
+    /// with several proposals — including very narrow ones — and whichever came last used to
+    /// be left in `containerSize` for good. The live symptom was a box 1676 points wide
+    /// wrapping every line after about one word, because the container had been abandoned at
+    /// 49. `widthTracksTextView` does not rescue it: the container follows the text view only
+    /// when the text view *resizes*, and it was already the right size.
+    static func size(
+        of textView: NSTextView,
+        fittingWidth width: CGFloat,
+        maximumLines: Int
+    ) -> CGSize? {
+        guard let container = textView.textContainer,
             let layoutManager = textView.layoutManager,
-            let font = textView.font
+            let font = textView.font,
+            width > 0
         else { return nil }
 
-        let width = proposal.width ?? nsView.bounds.width
-        guard width > 0 else { return nil }
-
         let inset = textView.textContainerInset
-        container.containerSize = NSSize(
-            width: max(width - inset.width * 2, 1),
-            height: .greatestFiniteMagnitude
-        )
+
+        // **The frame is what gets moved, not the container.** With `widthTracksTextView`
+        // the container is *derived* from the text view's width on every layout, so
+        // assigning `containerSize` here is quietly discarded — a test measuring the same
+        // text at 900 and at 200 points got the same answer until this was the frame.
+        // Restoring it puts the container back with it.
+        let previous = textView.frame.size
+        defer {
+            textView.setFrameSize(previous)
+            layoutManager.ensureLayout(for: container)
+        }
+
+        textView.setFrameSize(NSSize(width: width, height: previous.height))
         layoutManager.ensureLayout(for: container)
 
         let lineHeight = layoutManager.defaultLineHeight(for: font)
@@ -180,6 +232,18 @@ final class InputTextView: NSTextView {
         isVerticallyResizable = true
         isHorizontallyResizable = false
         autoresizingMask = [.width]
+        // **Without these the box wraps after about one word.** The text container tracks
+        // the text view's width (`widthTracksTextView`), the text view grows only as far as
+        // `maxSize` allows, and `NSTextView`'s default `maxSize` is its own initial frame —
+        // which, for a view built with no frame at all, is nothing. So the container was a
+        // few points wide in a field sixteen hundred points wide, and everything past the
+        // first word wrapped out of sight below a one-line clip. `MessageLogView` sets the
+        // same two on the scrollback and has always been fine; this view never did.
+        minSize = NSSize(width: 0, height: 0)
+        maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textContainerInset = NSSize(width: 4, height: 4)
         textContainer?.widthTracksTextView = true
         font = ChatFont.nsFont()
