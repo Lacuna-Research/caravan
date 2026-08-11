@@ -141,6 +141,29 @@ decision entry.
   shipped a form row that every test passed and no eye had seen. Either the runs have to be
   scheduled when someone is at the machine, or something has to render the views offscreen
   and diff the image.
+- **Clicks are reported as ignored for about five seconds after the window first appears.**
+  *(not blocking, not reproduced)* Reported from real use: selecting a different server on
+  the Dashboard right after launch either lags or does nothing for several seconds. Not
+  reproduced, and what was measured argues against the obvious causes — `sample` on a cold
+  launch shows the main thread parked in `mach_msg` the whole time (no startup work at all),
+  the two `SecItemCopyMatching` calls `ServerEditor.loadSecrets()` makes on selection cost
+  about a millisecond cold, and driving the selection through accessibility completes in
+  0.18 s. Accessibility bypasses hit-testing, though, which is exactly the path a click uses,
+  so none of that clears the real mechanism.
+
+  Worth knowing for whoever picks it up: `ServerRow` carries `.onTapGesture(count: 2)` for
+  connect-on-double-click, which makes a *single* click wait out the double-click interval;
+  that is a quarter of a second rather than five, but it is the only deliberate delay on the
+  path. Catching this needs timestamps from the machine it happens on — window shown, mouse
+  down received, selection changed — rather than more guessing from a machine where it does
+  not happen.
+- **`ServerEditor` reads the Keychain twice on the main thread, per selection.**
+  *(not blocking)* `loadSecrets()` runs from `onAppear`, so changing the selected server
+  makes two synchronous `SecItemCopyMatching` calls on the main thread. Measured at about a
+  millisecond here, but `SecItemCopyMatching` is entitled to block — a locked keychain, a
+  busy `securityd` — and the main thread is the wrong place to find out. Not fixed on
+  suspicion: `CredentialStore` is `@MainActor` throughout, so moving it off is a refactor of
+  the most security-sensitive code in the app and wants a reason better than a hunch.
 - **How do the default networks reach a profile that already exists?** *(not blocking)*
   `DefaultServers` seeds only when `servers.conf` is absent, so that deleting every entry
   sticks rather than being undone on the next launch. The consequence, under-weighted when
