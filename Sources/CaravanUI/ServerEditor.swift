@@ -253,8 +253,12 @@ struct ServerEditor: View {
     }
 
     private func loadSecrets() {
-        serverPassword = model.credentials.password(.serverPassword, host: entry.host) ?? ""
-        accountPassword = model.credentials.password(.account, host: entry.host) ?? ""
+        // Timed because it is two synchronous Keychain calls on the main thread, and
+        // `SecItemCopyMatching` is entitled to block — see `PLAN.md`'s **Still open**.
+        TimingLog.measure("editor: read \(entry.name) secrets from the keychain") {
+            serverPassword = model.credentials.password(.serverPassword, host: entry.host) ?? ""
+            accountPassword = model.credentials.password(.account, host: entry.host) ?? ""
+        }
     }
 
     private func store(_ kind: CredentialKind, _ value: String) {

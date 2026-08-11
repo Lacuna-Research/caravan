@@ -5812,3 +5812,41 @@ side at actual size and at 4×, which is the only way to see it.
 The plate is Apple's macOS grid — an 824pt square inside 1024, corner radius 185 — because
 macOS applies no mask of its own. The green is the one the client already uses for a live
 connection.
+
+---
+
+## A timing log, for a report that would not reproduce
+
+**Date:** 2026-08-10  **Affects:** `TimingLog`, `AppDirectories`, `RootView`, `AppModel`,
+`ServerEditor`
+
+Clicks reported as ignored for about five seconds after the window first appears, and not
+reproducible here — `sample` on a cold launch shows the main thread parked in `mach_msg` for
+the whole window, the Keychain reads on selection cost about a millisecond, and an
+accessibility-driven selection completes in 0.18 s. Accessibility bypasses hit-testing, which
+is the path a click uses, so the measurements exonerate everything except the thing that
+matters. The next step is timestamps from the machine where it happens.
+
+**Switched on by a file, not an environment variable.** The app is launched by
+double-clicking it, and a double-clicked app never sees a shell's environment — an
+`EnvVar=1` diagnostic is one that can only be used from a terminal, which is not where the
+problem is being reported from. `~/.cache/caravan/timing.on` turns it on and deleting it
+turns it off; `CARAVAN_TIMING_LOG` is honoured too, because scripts have an environment.
+
+Four moments, which together answer the question the report poses — *did the click arrive,
+and what happened when it did*:
+
+- the window being there to click at all
+- every mouse-down the app receives, via a **local monitor that returns the event
+  untouched**: a diagnostic that changed how clicking behaved would be worse than none
+- the selection actually changing
+- how long `ServerEditor`'s two Keychain reads took, since that is the one call on the path
+  entitled to block
+
+**It records when things happened, never what anybody said.** The reports it exists to
+settle are about lag, so there is nothing in it that would be awkward to paste into an
+issue — which is the same rule the wire trace follows, arrived at from the other direction.
+
+Off costs one `fileExists` at launch and a `Bool` test per call. `AppDirectories` gained
+`cache` for it, alongside `config` and `data`; the cache is the right home for something it
+would be no loss to delete.

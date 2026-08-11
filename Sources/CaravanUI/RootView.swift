@@ -38,7 +38,15 @@ public struct RootView: View {
         // `make install` in a terminal switches straight back to the app, which is exactly
         // when a minute of polling delay feels like the feature not working.
         .onChange(of: activeState) { _, state in
+            TimingLog.note("window active state: \(state)")
             if state != .inactive { model.buildWatcher.check() }
+        }
+        // The three moments a "clicks are being ignored" report is about: when the window
+        // was there to click, when the click arrived, and when anything happened as a
+        // result. All three are off unless `~/.cache/caravan/timing.on` exists.
+        .task {
+            TimingLog.note("window shown")
+            TimingLog.watchMouseDowns()
         }
         // Set once, read by every buffer, the tree, the nick list and the input box —
         // one chat font, which is the requirement rather than a convenience.

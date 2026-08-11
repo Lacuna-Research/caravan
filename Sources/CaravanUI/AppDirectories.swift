@@ -16,6 +16,10 @@ public enum AppDirectories {
     /// `$XDG_DATA_HOME/caravan`, defaulting to `~/.local/share/caravan`.
     public static var data: URL { caravan(under: "XDG_DATA_HOME", fallback: ".local/share") }
 
+    /// `$XDG_CACHE_HOME/caravan`, defaulting to `~/.cache/caravan`. For things it would be
+    /// no loss to delete — which is the test for whether something belongs here.
+    public static var cache: URL { caravan(under: "XDG_CACHE_HOME", fallback: ".cache") }
+
     /// An empty variable is treated as unset, which is what the specification says and what
     /// a shell that exports `XDG_DATA_HOME=` accidentally produces.
     private static func caravan(under variable: String, fallback: String) -> URL {
