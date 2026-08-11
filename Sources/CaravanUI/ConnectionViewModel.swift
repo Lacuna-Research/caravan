@@ -1256,7 +1256,17 @@ public final class ConnectionViewModel: Identifiable {
             // and `handle(_:)` returns before this for the same reason.
             return []
 
-        case .stateChanged, .registered, .numeric, .clientError, .clientNotice, .raw,
+        case .numeric(_, let parameters):
+            // **A numeric that names a channel you have open belongs in that channel.**
+            // Before this, every numeric went to the status window — so typing into a `+m`
+            // or `+r` channel produced `Cannot send to nick/channel` two windows away, and
+            // the channel itself showed nothing at all: no echo, no error, the message
+            // simply gone. Found by somebody asking whether they needed permission to
+            // speak, which is exactly the question that failure provokes.
+            if let channel = channelNamed(in: parameters) { return [channel] }
+            return [status]
+
+        case .stateChanged, .registered, .clientError, .clientNotice, .raw,
             .namesReply, .endOfNames, .channelChanged, .channelClosed,
             .capabilitiesChanged, .authenticated, .standardReply,
             .batchStarted, .batchEnded, .bouncerNetworks,
@@ -1323,6 +1333,24 @@ public final class ConnectionViewModel: Identifiable {
 
     private func existing(_ name: IRCChannelName) -> ChannelBuffer? {
         buffersByName[name]
+    }
+
+    /// The open channel a numeric is about, if it names one.
+    ///
+    /// **The first and last parameters are skipped deliberately.** The first is always our
+    /// own nick, and the last is the human-readable text — which routinely mentions a
+    /// channel (`"You are not on #swift"`), and routing on prose would put a line in a
+    /// window because of a sentence rather than because of a field. Everything between the
+    /// two is the numeric's actual arguments, which is where a channel name is a channel
+    /// name; a numeric with nothing between them has no argument to match on.
+    private func channelNamed(in parameters: [String]) -> ChannelBuffer? {
+        guard parameters.count > 2 else { return nil }
+        for parameter in parameters[1..<(parameters.count - 1)] {
+            if let buffer = existing(IRCChannelName(parameter, mapping: caseMapping)) {
+                return buffer
+            }
+        }
+        return nil
     }
 
     private func buffer(creating name: IRCChannelName) -> ChannelBuffer {
