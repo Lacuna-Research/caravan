@@ -22,10 +22,20 @@ public enum TimingLog {
     /// `~/.cache/caravan/timing.log` — where the lines go.
     public static var logURL: URL { AppDirectories.cache.appending(path: "timing.log") }
 
-    public static let isEnabled: Bool = {
-        if ProcessInfo.processInfo.environment["CARAVAN_TIMING_LOG"] != nil { return true }
-        return FileManager.default.fileExists(atPath: switchURL.path)
-    }()
+    public static let isEnabled: Bool = shouldEnable(
+        environment: ProcessInfo.processInfo.environment,
+        switchExists: FileManager.default.fileExists(atPath: switchURL.path)
+    )
+
+    /// The decision, separated from the world it asks about.
+    ///
+    /// **Because the obvious test is a trap.** Asserting `isEnabled == false` reads the
+    /// developer's own home directory, so the suite passed until somebody switched the log
+    /// on to use it — and then failed on a machine where nothing was wrong. A pure function
+    /// can be asked all four questions without owning a filesystem.
+    static func shouldEnable(environment: [String: String], switchExists: Bool) -> Bool {
+        environment["CARAVAN_TIMING_LOG"] != nil || switchExists
+    }
 
     /// Wall clock for the reader, and monotonic for the arithmetic — a log meant for
     /// measuring gaps should not be one where somebody has to subtract clock times by hand,
@@ -43,8 +53,11 @@ public enum TimingLog {
     /// diagnostic that corrupts its own file under concurrency is worse than none.
     public static func note(_ what: String) {
         guard isEnabled else { return }
-        let elapsed = Double(ContinuousClock.now.duration(to: started).components.attoseconds)
-        let seconds = -elapsed / 1e18
+        // **Both components, which the first version got wrong.** `Duration.components` is
+        // (seconds, attoseconds), and reading only the attoseconds gives the *fractional*
+        // part — so a line twenty-nine seconds in was logged as 0.030, and the column that
+        // exists to measure gaps could not measure anything past a second.
+        let seconds = Self.seconds(of: started.duration(to: ContinuousClock.now).components)
         let line = String(
             format: "%@  %8.3f  %@\n",
             stamp.string(from: Date()),
@@ -54,6 +67,16 @@ public enum TimingLog {
         lock.lock()
         defer { lock.unlock() }
         write(line)
+    }
+
+    /// A `Duration` as a number of seconds.
+    ///
+    /// **Both components, which the first version got wrong.** `Duration.components` is
+    /// (seconds, attoseconds), and reading only the attoseconds gives the *fractional* part
+    /// — so a line twenty-nine seconds in was logged as 0.030, and the column that exists to
+    /// measure gaps could not measure one longer than a second.
+    static func seconds(of components: (seconds: Int64, attoseconds: Int64)) -> Double {
+        Double(components.seconds) + Double(components.attoseconds) / 1e18
     }
 
     /// Runs `body`, records how long it took, and hands back what it returned.
@@ -74,6 +97,12 @@ public enum TimingLog {
     /// untouched, so nothing about clicking changes when this is on — a diagnostic that
     /// altered the thing being diagnosed would be worse than no diagnostic. It answers the
     /// question the report actually poses: did the click reach the app at all, and when?
+    /// **Says so when it starts watching**, which is the difference between a useful log and
+    /// an ambiguous one. If the file shows "watching mouse events" and then no mouse-downs
+    /// while somebody is clicking, that is itself the finding — clicks are not reaching the
+    /// app — rather than leaving a reader wondering whether the monitor was ever installed.
+    /// It cannot be checked by automation: `System Events`' `click at` drives accessibility
+    /// rather than posting a mouse event, so a scripted click produces no `NSEvent` at all.
     @MainActor
     public static func watchMouseDowns() {
         guard isEnabled, monitor == nil else { return }
@@ -81,6 +110,7 @@ public enum TimingLog {
             note("mouse down in \(event.window?.title ?? "no window")")
             return event
         }
+        note("watching mouse events")
     }
 
     @MainActor private static var monitor: Any?

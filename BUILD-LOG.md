@@ -5850,3 +5850,26 @@ issue — which is the same rule the wire trace follows, arrived at from the oth
 Off costs one `fileExists` at launch and a `Bool` test per call. `AppDirectories` gained
 `cache` for it, alongside `config` and `data`; the cache is the right home for something it
 would be no loss to delete.
+
+**Three corrections to the timing log, found by using it before handing it over.**
+
+**The elapsed column could not measure a gap longer than a second.** `Duration.components`
+is (seconds, attoseconds), and the first version read only the attoseconds — the *fractional*
+part — so a line twenty-nine seconds into the run was logged as `0.030`. In a file whose
+entire purpose is measuring gaps. The arithmetic is now a named function with a test, rather
+than an expression inside a formatter call.
+
+**The monitor now says when it starts watching.** A log that shows mouse-downs is useful; a
+log that shows none is ambiguous between "clicks are not arriving" — the finding — and "the
+monitor was never installed". One line at startup separates them.
+
+**And the obvious test for "off by default" was a trap.** It asserted `isEnabled == false`,
+which reads the developer's own home directory: it passed until the log was switched on to
+use it, and then failed on a machine where nothing was wrong. The decision is now a pure
+function taking the environment and whether the switch file exists, which can be asked all
+four questions without owning a filesystem.
+
+**Not verifiable by automation: the mouse-down line itself.** `System Events`' `click at`
+drives accessibility rather than posting a mouse event, so a scripted click produces no
+`NSEvent` for a local monitor to see. Said at the function, so nobody spends an afternoon
+concluding the monitor is broken.
