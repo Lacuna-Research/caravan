@@ -5885,3 +5885,36 @@ The ceiling is not a delay: a passing test returns the moment its condition hold
 longer one costs is slower *failures*, which is much the cheaper mistake — and re-running CI
 to see whether it meant it is the expensive one, since it teaches everyone to ignore a red
 build.
+
+---
+
+## Decision — the project instructions are `AGENTS.md`, not `CLAUDE.md`
+
+**Date:** 2026-10-23  **Affects:** `AGENTS.md`, `Scripts/check-docs.sh`, README.md,
+PLAN.md, STAGE1-PROMPTS.md, STAGE2-PROMPTS.md, comments that cite the file
+
+The project is now worked on from more than one coding-agent harness — Claude Code and pi.
+`AGENTS.md` is the name they share; `CLAUDE.md` is read by one of them. The file is renamed
+with its history, and its content is unchanged: it never named itself, and what is specific
+to Claude Code in it (`ExitWorktree`, the Stop hook) is still true of Claude Code.
+
+**No `CLAUDE.md` is kept beside it — not a stub, not a symlink.** Claude Code reads a
+project `AGENTS.md` natively from 2.1.277, but ignores it when any `CLAUDE.md` exists in
+the same directory or a parent. A one-line bridge pointing at `AGENTS.md` would therefore
+switch off the native read it was meant to complement, and a symlink is the same file
+under both names, so the same thing. Rejected for that reason, not for tidiness.
+
+**The 100-line cap moves with the file, unchanged.** `check-docs.sh` now measures
+`AGENTS.md`; the variable is `AGENTS_MAX_LINES`. The reasoning in the entries above about
+`CLAUDE.md`'s length is the reasoning for `AGENTS.md`'s — it is the same file.
+
+**Left as written:** every earlier entry in this log, and stage 1's prompt 11 body, which
+records an instruction that was carried out against the file under its old name.
+
+**Worth knowing:** a worktree nested inside a checkout still on the old name sees that
+checkout's `CLAUDE.md` as a parent, and Claude Code will then ignore the worktree's
+`AGENTS.md`. Pulling `main` in the outer checkout ends it.
+
+Revisit if Claude Code stops honouring `AGENTS.md`, or one of the harnesses in use needs a
+file under another name — at which point the answer is a check that the two agree, not a
+second copy maintained by hand.

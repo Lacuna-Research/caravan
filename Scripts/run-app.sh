@@ -8,7 +8,7 @@
 #    build there last. `BUILD-LOG.md` records this four times now, twice with a "defect"
 #    that had already been fixed in the source being read. So the path is asked for rather
 #    than written down.
-# 2. **Writing into the developer's own settings.** `CLAUDE.md` requires a live run under
+# 2. **Writing into the developer's own settings.** `AGENTS.md` requires a live run under
 #    its own `XDG_CONFIG_HOME`, and an inline environment assignment is not enough — the
 #    app has to be launched from a script that exports them first.
 #

@@ -168,7 +168,7 @@ struct InputFieldTests {
     @Test("a paste with a trailing newline sends nothing and loses the newline")
     func pasteWithTrailingNewline() {
         let harness = Harness()
-        // Obviously fake, per CLAUDE.md: a fixture shaped like a real credential is one
+        // Obviously fake, per AGENTS.md: a fixture shaped like a real credential is one
         // the secret scanner has to flag, and it is right to.
         harness.paste("s3cr3t-not-real\n")
         #expect(harness.sent.isEmpty)

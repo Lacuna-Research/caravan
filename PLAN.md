@@ -600,7 +600,7 @@ of the same list drift, and the copy nobody edits is the one that gets read.
       inside a `0700` directory. The app is deliberately unsandboxed (see the entitlements
       file), so this needs none of the app-group and code-signing machinery XPC would.
       Cache rather than a new `$XDG_STATE_HOME`: a socket is recreated on launch, so
-      deleting it is harmless, and it keeps the three-directory rule in `CLAUDE.md`
+      deleting it is harmless, and it keeps the three-directory rule in `AGENTS.md`
       intact — that file is at its line cap.
     - **Framing: newline-delimited JSON**, one object per line, request/response by `id`,
       with `event` frames for subscriptions. Trivially testable headlessly, and

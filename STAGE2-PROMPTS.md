@@ -10,7 +10,7 @@ when they touch the same code, and apart when they merely sound related.
 Each block is self-contained and assumes the previous ones are done and merged. Every
 prompt has a **Do not** section: the scope fence that keeps later work from leaking
 backward. Standing rules — Swift 6 strict concurrency, macOS 15, swift-testing, zero
-warnings, zero external dependencies — live in `CLAUDE.md` and load automatically.
+warnings, zero external dependencies — live in `AGENTS.md` and load automatically.
 
 Each prompt is one branch (`prompt-NN-slug`), one PR, squash-merged once CI is green.
 Bump the **Status** line above in the same PR; `make check` fails if it is missing or
