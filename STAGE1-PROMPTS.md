@@ -7,8 +7,8 @@ merged. Every prompt has a **Do not** section — that's the scope fence that ke
 stage 2/3 work from leaking backward.
 
 Standing rules (Swift 6 strict concurrency, macOS 15, swift-testing, zero warnings,
-zero external dependencies) live in `CLAUDE.md` and load automatically — they don't
-need restating per prompt. `CLAUDE.md` also carries the end-of-prompt obligations.
+zero external dependencies) live in `AGENTS.md` and load automatically — they don't
+need restating per prompt. `AGENTS.md` also carries the end-of-prompt obligations.
 
 Each prompt is one branch (`prompt-NN-slug`), one PR, squash-merged to `main` once CI
 is green. Bump the **Status** line above in the same PR — `make check` fails if it is

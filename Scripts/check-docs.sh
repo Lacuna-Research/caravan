@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mechanical enforcement of the documentation discipline described in CLAUDE.md.
+# Mechanical enforcement of the documentation discipline described in AGENTS.md.
 #
 # Every rule here was previously a promise. A promise that a machine does not check
 # is a promise that eventually is not kept.
@@ -9,7 +9,7 @@
 #   ./Scripts/check-docs.sh              # pre-commit: check staged changes
 set -euo pipefail
 
-CLAUDE_MAX_LINES=100
+AGENTS_MAX_LINES=100
 TOTAL_PROMPTS=11
 STAGE2_TOTAL_PROMPTS=18
 
@@ -82,15 +82,15 @@ fi
 
 printf 'Documentation discipline (%s)\n' "$scope"
 
-# 1. CLAUDE.md must stay short.
+# 1. AGENTS.md must stay short.
 # Instruction files rot by accretion: rules get appended, never removed, until the
 # file is long enough that nothing in it is read carefully. A hard cap forces the
 # pruning that good intentions do not.
-lines=$(wc -l <CLAUDE.md | tr -d ' ')
-if [ "$lines" -gt "$CLAUDE_MAX_LINES" ]; then
-	err "CLAUDE.md is $lines lines (cap $CLAUDE_MAX_LINES). Prune it. Do not raise the cap."
+lines=$(wc -l <AGENTS.md | tr -d ' ')
+if [ "$lines" -gt "$AGENTS_MAX_LINES" ]; then
+	err "AGENTS.md is $lines lines (cap $AGENTS_MAX_LINES). Prune it. Do not raise the cap."
 else
-	ok "CLAUDE.md $lines/$CLAUDE_MAX_LINES lines"
+	ok "AGENTS.md $lines/$AGENTS_MAX_LINES lines"
 fi
 
 # 2. BUILD-LOG.md is append-only.

@@ -12,7 +12,7 @@ jobs:
   purity:
     # IRCProtocol must stay free of AppKit, Network.framework and Darwin os.Logger.
     # Linux has none of them, so this job fails the moment that rule is broken —
-    # a convention in CLAUDE.md turned into something a machine checks.
+    # a convention in AGENTS.md turned into something a machine checks.
     #
     # Package.swift reduces itself to IRCProtocol and its tests when os(Linux), so
     # plain `swift test` here builds and *runs* the parser suite cross-platform

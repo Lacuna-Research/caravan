@@ -323,7 +323,7 @@ four required checks, no force-pushes, admins not exempt.
 The interesting part is that the project's own rules are **machine-checked**.
 `Scripts/check-docs.sh` runs as a pre-commit hook and in CI, and fails on:
 
-- `CLAUDE.md` over 100 lines — the cap forces pruning instead of accretion
+- `AGENTS.md` over 100 lines — the cap forces pruning instead of accretion
 - any edit to an existing `BUILD-LOG.md` line — it is append-only
 - a `Sources/` change with no build-log entry
 - a missing or malformed status line, or a progress badge that disagrees with it
@@ -339,7 +339,7 @@ its PR merged.
 | [`PLAN.md`](PLAN.md) | Living roadmap across four stages |
 | [`STAGE1-PROMPTS.md`](STAGE1-PROMPTS.md) | The ten stage-1 work units, authoritative |
 | [`BUILD-LOG.md`](BUILD-LOG.md) | Append-only: decisions, deviations, surprises, measurements |
-| [`CLAUDE.md`](CLAUDE.md) | Build standards and working method |
+| [`AGENTS.md`](AGENTS.md) | Build standards and working method |
 
 `BUILD-LOG.md` is the one worth reading. It records what was decided *and what was
 rejected and why* — including the mistakes, which stay in the log alongside their

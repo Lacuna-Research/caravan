@@ -34,7 +34,7 @@ public protocol CredentialStore {
 /// auditable in Keychain Access — so that is where every secret goes, and the config file
 /// keeps only the *shape* of the credential: which host, which account, which mechanism.
 ///
-/// Reasoning in `BUILD-LOG.md`; the rule is in `CLAUDE.md`.
+/// Reasoning in `BUILD-LOG.md`; the rule is in `AGENTS.md`.
 @MainActor
 public final class Keychain: CredentialStore {
     /// The one the app uses.
