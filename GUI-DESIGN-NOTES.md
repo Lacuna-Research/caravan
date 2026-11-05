@@ -271,14 +271,19 @@ Dashboard                see §13 — new concept, not yet defined
 Settings                 pinned to the bottom (§10)
 ```
 
-**Every row is an ordinary selectable row.** Networks are *not* smaller or
-header-styled — they are the same text size as channels, differentiated by decoration
-only.
+**Every row is an ordinary selectable row.** Networks are *not* header-styled — no
+small caps, no grey, no unclickable look. They *are* set one text size above the
+channels, so where each group begins can be seen at a glance; size is the only
+difference beyond the row's own decoration. The step is relative to the system's
+sidebar size (Small, Medium, Large), not a fixed point size.
 
 Reasoning: a row styled as a section header but behaving as a selectable item is a
 contradiction users have been trained out of, since Finder's "Favourites" and Mail's
 mailbox groups are deliberately unclickable. It also avoids faking header appearance
-onto a row that must behave normally, which is fiddly in `NSOutlineView`.
+onto a row that must behave normally, which is fiddly in `NSOutlineView`. Larger text
+alone does not make a header — Mail's account rows are bigger than its mailboxes and
+still clickable — and at the Small sidebar size, same-size networks gave the eye nothing
+to find the groups by.
 
 **The network row doubles as the status buffer's entry.** Clicking it opens that
 network's status window. mIRC carried a separate status node beneath the network;

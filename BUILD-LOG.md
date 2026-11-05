@@ -5918,3 +5918,43 @@ checkout's `CLAUDE.md` as a parent, and Claude Code will then ignore the worktre
 Revisit if Claude Code stops honouring `AGENTS.md`, or one of the harnesses in use needs a
 file under another name — at which point the answer is a check that the two agree, not a
 second copy maintained by hand.
+
+---
+
+## Decision — network rows are one size larger than their channels
+
+**Date:** 2026-11-05  **Affects:** `Sources/CaravanUI/SidebarTree.swift` (`NetworkRow`),
+GUI-DESIGN-NOTES.md §12
+
+§12 had networks at the same text size as channels, differentiated by decoration only. In
+use, at the Small sidebar size (System Settings ▸ Appearance ▸ Sidebar icon size), that
+left nothing to find the groups by: a green dot and a disclosure triangle at 11 pt do not
+mark where one network ends and the next begins. The user asked for the network rows to be
+bigger.
+
+**One text style up from the sidebar's own row size, not a fixed font.** `NetworkRow`
+reads `@Environment(\.sidebarRowSize)` and sets `.body`, `.title3` or `.title2` for Small,
+Medium and Large. A fixed `.title3` was rejected: a jump of four points at Small and no
+difference at all at Large, which is the size most likely to be chosen by someone who
+needs the help.
+
+**What survives of §12's rule is the part that carried the reasoning.** The row is not
+header-styled: no caps, no grey, still selectable, still the status buffer's entry, still
+wearing its children's activity. Bigger text does not make a header (Mail's account rows
+are larger than their mailboxes and are clickable). Only `NetworkRow` changes. The
+Dashboard, channel-list and canvas rows stay at channel size, and their doc comments now say
+why.
+
+**Verified by rendering, not by a screenshot of the running app.** This machine's terminal
+has neither Screen Recording nor Accessibility access, so neither `screencapture` nor
+System Events could see the live window. A throwaway test hosted `SidebarTree` against two
+scripted networks in an offscreen window at each `SidebarRowSize` and wrote PNGs. The
+network rows render visibly larger at Small and at Large, and channel rows are unchanged.
+The probe was deleted rather than kept: it asserted nothing a reader could not see, and it
+pins pixels.
+
+**Left as written:** stage 1's prompt body in STAGE1-PROMPTS.md, which records the
+same-size instruction as it was carried out.
+
+Revisit if a group needs more than size to be found, for example a gap above each
+network. That is spacing, not header styling, and would not reopen this.
