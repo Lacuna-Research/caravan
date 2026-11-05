@@ -5,10 +5,11 @@ import SwiftUI
 ///
 /// Two rules from the design notes shape every line of this:
 ///
-/// - **Every row is an ordinary selectable row.** Networks are not smaller, and not
-///   styled as section headers — same text size as channels, differentiated by decoration
-///   only. A row that looks like a header but behaves as an item is a contradiction users
-///   have been trained out of by Finder and Mail.
+/// - **Every row is an ordinary selectable row.** Networks are not styled as section
+///   headers: no small caps, no grey, no unclickable look. A row that looks like a header but
+///   behaves as an item is a contradiction users have been trained out of by Finder and Mail.
+///   They *are* set one size up from the channels, so a group's start can be seen at a
+///   glance — size alone, with every other trait of an ordinary row kept.
 /// - **The network row *is* the status buffer's entry.** mIRC carried a separate status
 ///   node beneath the network; folding them together removes a row and a concept.
 ///
@@ -106,8 +107,8 @@ struct SidebarTree: View {
 /// The Dashboard's row: the server list and the empty state (§13).
 ///
 /// No activity dot and no binding digit — those are concepts belonging to buffers, and a
-/// canvas is not one. Same text size as every other row, per §12's rule that a row which
-/// looks like a header but behaves as an item is a contradiction.
+/// canvas is not one. Channel-row size, per §12: only the network rows are set larger,
+/// because they are what marks where a group begins.
 private struct DashboardRow: View {
     var body: some View {
         HStack(spacing: 6) {
@@ -123,8 +124,8 @@ private struct DashboardRow: View {
 
 /// A network's channel-list row, at the top of its group.
 ///
-/// Same text size as every other row, per §12's rule that a row which looks like a header
-/// but behaves as an item is a contradiction — this one behaves as an item.
+/// Channel-row size, per §12: only the network rows are set larger, because they are what
+/// marks where a group begins — and this row sits inside the group.
 private struct ChannelListRow: View {
     let isDetached: Bool
 
@@ -349,6 +350,7 @@ private struct NetworkRow: View {
     let connection: ConnectionViewModel
     let digit: Int?
     let isDetached: Bool
+    @Environment(\.sidebarRowSize) private var rowSize
 
     private var activity: BufferActivity {
         connection.isExpanded ? connection.status.activity : connection.rolledUpActivity
@@ -361,6 +363,7 @@ private struct NetworkRow: View {
                 .frame(width: 7, height: 7)
                 .accessibilityLabel(connection.statusSummary)
             Text(connection.treeName)
+                .font(nameFont)
                 .lineLimit(1)
                 .foregroundStyle(Color(activity.colour))
                 .fontWeight(activity.isBold ? .bold : .regular)
@@ -370,6 +373,19 @@ private struct NetworkRow: View {
             BindingDigit(digit: digit)
         }
         .help(connection.statusSummary)
+    }
+
+    /// **One text style above the sidebar's own row size**, so the step is the same at every
+    /// System Settings ▸ Appearance ▸ Sidebar icon size. A fixed font would be a jump at
+    /// Small and no difference at all at Large. The steps are the system's: the sidebar sets
+    /// its rows at roughly 11, 13 and 15 pt, and these are 13, 15 and 17.
+    private var nameFont: Font {
+        switch rowSize {
+        case .small: .body
+        case .medium: .title3
+        case .large: .title2
+        @unknown default: .title3
+        }
     }
 
     /// Three states, not two: connecting is worth distinguishing from connected, because
